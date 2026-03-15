@@ -7,9 +7,11 @@
 
 import { Router, Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
+import pool from '../config/database.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { githubService } from '../services/githubService.js';
 import { githubSourceService } from '../services/githubSourceService.js';
+import { CacheKeys, clearNotebookCache, clearUserAnalyticsCache, deleteCache } from '../services/cacheService.js';
 import { tokenRevocationService } from '../services/tokenRevocationService.js';
 import { auditLoggerService } from '../services/auditLoggerService.js';
 import { accessControlService, ACCESS_CONTROL_ERROR_CODES } from '../services/accessControlService.js';
@@ -1409,6 +1411,244 @@ router.post('/add-repo-sources', authenticateToken, async (req: Request, res: Re
       success: false,
       error: 'GITHUB_ERROR',
       message: error.message,
+    });
+  }
+});
+
+
+/**
+ * POST /api/github/import-repo-notebook
+ * Create a new notebook for a GitHub repository and import its files as sources
+ */
+router.post('/import-repo-notebook', authenticateToken, async (req: Request, res: Response) => {
+  const userId = (req as any).userId;
+  const {
+    owner,
+    repo,
+    branch,
+    notebookTitle,
+    notebookDescription,
+    notebookCategory,
+    maxFiles,
+    maxFileSizeBytes,
+    includeExtensions,
+    excludeExtensions,
+  } = req.body;
+  const agentSessionId = getAgentSessionId(req);
+  const agentName = req.headers['x-agent-name'] as string | undefined;
+
+  let createdNotebookId: string | null = null;
+
+  try {
+    if (!owner || !repo) {
+      return res.status(400).json({
+        success: false,
+        error: GITHUB_ERROR_CODES.INVALID_REQUEST,
+        message: 'Missing required fields: owner, repo',
+      });
+    }
+
+    // Check GitHub connection first
+    const connectionCheck = await requireGitHubConnection(userId);
+    if (!connectionCheck.connected) {
+      await auditLoggerService.log({
+        userId,
+        action: 'import_repo_notebook',
+        owner,
+        repo,
+        agentSessionId,
+        success: false,
+        errorMessage: connectionCheck.error!.message,
+      });
+
+      return res.status(401).json({
+        success: false,
+        error: connectionCheck.error!.code,
+        message: connectionCheck.error!.message,
+      });
+    }
+
+    // Validate agent session if provided
+    const sessionValidation = await validateAgentSessionForRequest(agentSessionId, userId);
+    if (!sessionValidation.valid) {
+      await auditLoggerService.log({
+        userId,
+        action: 'import_repo_notebook',
+        owner,
+        repo,
+        agentSessionId,
+        success: false,
+        errorMessage: sessionValidation.errorResponse?.message || 'Invalid agent session',
+      });
+
+      return res.status(sessionValidation.statusCode || 401).json(sessionValidation.errorResponse);
+    }
+
+    // Verify repository access
+    const accessCheck = await verifyRepoAccess(userId, owner, repo);
+    if (!accessCheck.hasAccess) {
+      await auditLoggerService.log({
+        userId,
+        action: 'import_repo_notebook',
+        owner,
+        repo,
+        agentSessionId,
+        success: false,
+        errorMessage: accessCheck.errorResponse?.message || 'Repository access denied',
+      });
+
+      return res.status(accessCheck.statusCode || 403).json(accessCheck.errorResponse);
+    }
+
+    // Create notebook (only after all auth/access checks pass)
+    const notebookId = uuidv4();
+    createdNotebookId = notebookId;
+
+    const resolvedTitle =
+      typeof notebookTitle === 'string' && notebookTitle.trim().length > 0
+        ? notebookTitle.trim()
+        : `${owner}/${repo}`;
+
+    const baseDescription =
+      typeof notebookDescription === 'string' && notebookDescription.trim().length > 0
+        ? notebookDescription.trim()
+        : `Imported from GitHub: https://github.com/${owner}/${repo}`;
+
+    const resolvedCategory =
+      typeof notebookCategory === 'string' && notebookCategory.trim().length > 0
+        ? notebookCategory.trim()
+        : 'GitHub';
+
+    const notebookResult = await pool.query(
+      `INSERT INTO notebooks (id, user_id, title, description, category, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+       RETURNING *`,
+      [notebookId, userId, resolvedTitle, baseDescription, resolvedCategory]
+    );
+
+    // Parse import limits/options
+    const parsedMaxFiles =
+      typeof maxFiles === 'number'
+        ? maxFiles
+        : (typeof maxFiles === 'string' ? parseInt(maxFiles, 10) : undefined);
+    const parsedMaxFileSizeBytes =
+      typeof maxFileSizeBytes === 'number'
+        ? maxFileSizeBytes
+        : (typeof maxFileSizeBytes === 'string'
+            ? parseInt(maxFileSizeBytes, 10)
+            : undefined);
+
+    const importResult = await githubSourceService.createRepoSources({
+      notebookId,
+      owner,
+      repo,
+      branch,
+      userId,
+      agentSessionId,
+      agentName,
+      maxFiles: Number.isFinite(parsedMaxFiles as number) ? parsedMaxFiles : undefined,
+      maxFileSizeBytes: Number.isFinite(parsedMaxFileSizeBytes as number)
+        ? parsedMaxFileSizeBytes
+        : undefined,
+      includeExtensions: Array.isArray(includeExtensions)
+        ? includeExtensions.map((ext: any) => String(ext))
+        : undefined,
+      excludeExtensions: Array.isArray(excludeExtensions)
+        ? excludeExtensions.map((ext: any) => String(ext))
+        : undefined,
+    });
+
+    const finalDescription = `${baseDescription}\nBranch: ${importResult.branch}`;
+    const updatedNotebookResult = await pool.query(
+      'UPDATE notebooks SET description = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3 RETURNING *',
+      [finalDescription, notebookId, userId]
+    );
+
+    // Clear caches so the notebook and its sources show up immediately
+    await deleteCache(CacheKeys.userNotebooks(userId));
+    await clearNotebookCache(notebookId);
+    await clearUserAnalyticsCache(userId);
+
+    await auditLoggerService.log({
+      userId,
+      action: 'import_repo_notebook',
+      owner,
+      repo,
+      agentSessionId,
+      success: true,
+      requestMetadata: {
+        notebookId,
+        branch: importResult.branch,
+        addedCount: importResult.addedCount,
+        skippedCount: importResult.skippedCount,
+        limited: importResult.limited,
+        maxFilesApplied: importResult.maxFilesApplied,
+        maxFileSizeBytesApplied: importResult.maxFileSizeBytesApplied,
+      },
+    });
+
+    res.json({
+      success: true,
+      notebook: updatedNotebookResult.rows[0] ?? notebookResult.rows[0],
+      ...importResult,
+    });
+  } catch (error: any) {
+    console.error('GitHub import repo notebook error:', error);
+
+    const rateLimitInfo = parseRateLimitError(error);
+    if (rateLimitInfo.isRateLimited) {
+      await auditLoggerService.log({
+        userId,
+        action: 'import_repo_notebook',
+        owner,
+        repo,
+        agentSessionId,
+        success: false,
+        errorMessage: 'Rate limit exceeded',
+        requestMetadata: { resetTime: rateLimitInfo.resetTime?.toISOString(), notebookId: createdNotebookId },
+      });
+
+      return res.status(429).json({
+        success: false,
+        error: GITHUB_ERROR_CODES.RATE_LIMITED,
+        message: formatRateLimitMessage(rateLimitInfo.resetTime),
+        resetTime: rateLimitInfo.resetTime?.toISOString(),
+        notebookId: createdNotebookId,
+      });
+    }
+
+    await auditLoggerService.log({
+      userId,
+      action: 'import_repo_notebook',
+      owner,
+      repo,
+      agentSessionId,
+      success: false,
+      errorMessage: error.message,
+      requestMetadata: { notebookId: createdNotebookId, branch },
+    });
+
+    if (error.message === 'GitHub not connected') {
+      return res.status(401).json({
+        success: false,
+        error: GITHUB_ERROR_CODES.NOT_CONNECTED,
+        message: 'GitHub account not connected. Please connect your GitHub account in Settings.',
+      });
+    }
+
+    if (error.message?.includes('not found') || error.message?.includes('404')) {
+      return res.status(404).json({
+        success: false,
+        error: GITHUB_ERROR_CODES.NOT_FOUND,
+        message: `Repository not found or access denied: ${owner}/${repo}`,
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      error: 'GITHUB_ERROR',
+      message: error.message,
+      notebookId: createdNotebookId,
     });
   }
 });

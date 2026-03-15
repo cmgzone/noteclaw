@@ -305,6 +305,46 @@ class GitHubNotifier extends StateNotifier<GitHubState> {
     }
   }
 
+  /// Import repository as a new notebook (repo -> notebook, files -> sources)
+  Future<Map<String, dynamic>?> importRepoAsNotebook({
+    required String owner,
+    required String repo,
+    String? branch,
+    String? notebookTitle,
+    String? notebookDescription,
+    String? notebookCategory,
+    int? maxFiles,
+    int? maxFileSizeBytes,
+    List<String>? includeExtensions,
+    List<String>? excludeExtensions,
+  }) async {
+    if (!_isAuthenticated()) {
+      state = state.copyWith(error: 'Authentication required');
+      return null;
+    }
+
+    state = state.copyWith(clearError: true);
+
+    try {
+      final result = await _githubService.importRepoAsNotebook(
+        owner: owner,
+        repo: repo,
+        branch: branch,
+        notebookTitle: notebookTitle,
+        notebookDescription: notebookDescription,
+        notebookCategory: notebookCategory,
+        maxFiles: maxFiles,
+        maxFileSizeBytes: maxFileSizeBytes,
+        includeExtensions: includeExtensions,
+        excludeExtensions: excludeExtensions,
+      );
+      return result;
+    } catch (e) {
+      state = state.copyWith(error: e.toString());
+      return null;
+    }
+  }
+
   /// Analyze repository with AI
   Future<Map<String, dynamic>?> analyzeRepo({
     String? focus,

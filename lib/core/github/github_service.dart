@@ -323,6 +323,34 @@ class GitHubService {
     return response;
   }
 
+  /// Create a new notebook for a repository and import its files as sources
+  Future<Map<String, dynamic>> importRepoAsNotebook({
+    required String owner,
+    required String repo,
+    String? branch,
+    String? notebookTitle,
+    String? notebookDescription,
+    String? notebookCategory,
+    int? maxFiles,
+    int? maxFileSizeBytes,
+    List<String>? includeExtensions,
+    List<String>? excludeExtensions,
+  }) async {
+    final response = await _api.post('/github/import-repo-notebook', {
+      'owner': owner,
+      'repo': repo,
+      if (branch != null) 'branch': branch,
+      if (notebookTitle != null) 'notebookTitle': notebookTitle,
+      if (notebookDescription != null) 'notebookDescription': notebookDescription,
+      if (notebookCategory != null) 'notebookCategory': notebookCategory,
+      if (maxFiles != null) 'maxFiles': maxFiles,
+      if (maxFileSizeBytes != null) 'maxFileSizeBytes': maxFileSizeBytes,
+      if (includeExtensions != null) 'includeExtensions': includeExtensions,
+      if (excludeExtensions != null) 'excludeExtensions': excludeExtensions,
+    });
+    return response;
+  }
+
   /// Request AI analysis of repository
   Future<Map<String, dynamic>> analyzeRepo(
     String owner,

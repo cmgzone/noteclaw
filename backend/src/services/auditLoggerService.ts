@@ -18,6 +18,8 @@ export type GitHubAuditAction =
   | 'search' 
   | 'create_issue' 
   | 'add_source' 
+  | 'add_repo_sources'
+  | 'import_repo_notebook'
   | 'analyze_repo' 
   | 'get_tree'
   | 'github_disconnect'

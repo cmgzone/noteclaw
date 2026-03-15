@@ -6,6 +6,7 @@ import 'github_provider.dart';
 import 'github_file_viewer_screen.dart';
 import 'github_notebook_selector.dart';
 import 'github_repo_source_selector.dart';
+import '../notebook/notebook_detail_screen.dart';
 
 class GitHubFileBrowserScreen extends ConsumerStatefulWidget {
   final GitHubRepo repo;
@@ -46,9 +47,22 @@ class _GitHubFileBrowserScreenState
               onPressed: () => _showSearchDialog(context)),
           IconButton(
               icon: const Icon(Icons.playlist_add),
-              tooltip: 'Add repo as sources',
-              onPressed: () =>
-                  showGitHubRepoSourceSelector(context, repo: widget.repo)),
+              tooltip: 'Import repo as notebook',
+              onPressed: () async {
+                final notebookId = await showGitHubRepoSourceSelector(
+                  context,
+                  repo: widget.repo,
+                );
+                if (!mounted) return;
+                if (notebookId == null || notebookId.isEmpty) return;
+
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (context) =>
+                        NotebookDetailScreen(notebookId: notebookId),
+                  ),
+                );
+              }),
         ],
       ),
       body: _buildBody(state),
