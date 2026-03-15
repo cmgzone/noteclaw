@@ -1,4 +1,4 @@
-FROM node:18-alpine
+FROM node:20-alpine
 
 WORKDIR /app
 
@@ -8,8 +8,8 @@ ARG CACHEBUST=1
 # Copy backend package files
 COPY backend/package*.json ./
 
-# Install dependencies
-RUN npm install
+# Install dependencies (use lockfile for reproducible builds)
+RUN npm ci
 
 # Copy backend source code
 COPY backend/ .
