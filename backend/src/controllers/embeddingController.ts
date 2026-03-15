@@ -109,27 +109,78 @@ export const storeEmbeddings = async (req: Request, res: Response) => {
             return res.status(400).json({ success: false, error: 'Chunks array required' });
         }
 
+        // Verify vector search schema is present. Without this, inserts will fail and can
+        // poison a transaction (Postgres aborts the whole transaction after any statement error).
+        const schema = await client.query(
+            `
+        SELECT
+          EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'chunks') AS has_chunks,
+          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'chunks' AND column_name = 'embedding') AS has_embedding_column
+      `
+        );
+
+        const hasChunks = Boolean(schema.rows?.[0]?.has_chunks);
+        const hasEmbeddingColumn = Boolean(schema.rows?.[0]?.has_embedding_column);
+
+        if (!hasChunks || !hasEmbeddingColumn) {
+            return res.status(500).json({
+                success: false,
+                error: 'VECTOR_SEARCH_NOT_INITIALIZED',
+                message: 'Vector search schema is missing. Apply backend/migrations/enable_vector_search.sql to create the chunks table and pgvector extension.',
+            });
+        }
+
         await client.query('BEGIN');
 
         const results: string[] = [];
+        let failedEmbeddings = 0;
+        let failedInserts = 0;
 
         // Process in batches
         for (const chunk of chunks) {
+            const sourceId = chunk?.sourceId;
+            const content = typeof chunk?.content === 'string' ? chunk.content : '';
+            const metadata = chunk?.metadata && typeof chunk.metadata === 'object' ? chunk.metadata : {};
+
+            if (!sourceId || content.trim().isEmpty) {
+                failedEmbeddings += 1;
+                continue;
+            }
+
             // Generate embedding
             try {
-                const result = await embeddingModel.embedContent(chunk.content);
+                const result = await embeddingModel.embedContent(content);
                 const embedding = result.embedding.values;
+
+                // Gemini text-embedding-004 is 768 dimensions. Enforce the expected size for vector(768).
+                if (!Array.isArray(embedding) || embedding.length !== 768) {
+                    console.warn('Unexpected embedding dimension:', embedding?.length);
+                    failedEmbeddings += 1;
+                    continue;
+                }
+
                 const embeddingString = `[${embedding.join(',')}]`;
 
-                const insertResult = await client.query(
-                    `INSERT INTO chunks (source_id, content, metadata, embedding)
-           VALUES ($1, $2, $3, $4)
-           RETURNING id`,
-                    [chunk.sourceId, chunk.content, chunk.metadata || {}, embeddingString]
-                );
+                // Use a savepoint so a single insert failure doesn't abort the entire transaction.
+                await client.query('SAVEPOINT sp_chunk');
+                try {
+                    const insertResult = await client.query(
+                        `INSERT INTO chunks (source_id, content, metadata, embedding)
+             VALUES ($1, $2, $3, $4::vector)
+             RETURNING id`,
+                        [sourceId, content, metadata, embeddingString]
+                    );
 
-                results.push(insertResult.rows[0].id);
+                    results.push(insertResult.rows[0].id);
+                    await client.query('RELEASE SAVEPOINT sp_chunk');
+                } catch (insertErr) {
+                    failedInserts += 1;
+                    console.warn('Failed to insert chunk:', insertErr);
+                    await client.query('ROLLBACK TO SAVEPOINT sp_chunk').catch(() => { });
+                    await client.query('RELEASE SAVEPOINT sp_chunk').catch(() => { });
+                }
             } catch (e) {
+                failedEmbeddings += 1;
                 console.warn('Failed to embed chunk:', e);
             }
         }
@@ -139,11 +190,13 @@ export const storeEmbeddings = async (req: Request, res: Response) => {
         return res.json({
             success: true,
             count: results.length,
+            failedEmbeddings,
+            failedInserts,
             chunkIds: results
         });
 
     } catch (error: any) {
-        await client.query('ROLLBACK');
+        await client.query('ROLLBACK').catch(() => { });
         console.error('Store embeddings error:', error);
         return res.status(500).json({ success: false, error: error.message });
     } finally {

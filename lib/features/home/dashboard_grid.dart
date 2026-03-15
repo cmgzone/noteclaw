@@ -389,39 +389,53 @@ class _BentoCard extends StatelessWidget {
 
                       // Text - pushed to bottom by spaceBetween
                       Flexible(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          children: [
-                            Text(
-                              title,
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .titleMedium
-                                  ?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: compact ? 13 : 16,
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            // These cards can get very short in some responsive breakpoints,
+                            // so only show the subtitle when there is enough vertical space.
+                            final canShowSubtitle = subtitle != null &&
+                                !compact &&
+                                constraints.maxHeight >= 44;
+                            final subtitleMaxLines =
+                                constraints.maxHeight >= 58 ? 2 : 1;
+
+                            return Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisAlignment: MainAxisAlignment.end,
+                              children: [
+                                Text(
+                                  title,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .titleMedium
+                                      ?.copyWith(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: compact ? 13 : 16,
+                                        height: 1.1,
+                                      ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                if (canShowSubtitle) ...[
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    subtitle!,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodySmall
+                                        ?.copyWith(
+                                          color: scheme.onSurfaceVariant,
+                                          fontSize: 12,
+                                          height: 1.1,
+                                        ),
+                                    maxLines: subtitleMaxLines,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            if (subtitle != null && !compact) ...[
-                              const SizedBox(height: 4),
-                              Text(
-                                subtitle!,
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodySmall
-                                    ?.copyWith(
-                                      color: scheme.onSurfaceVariant,
-                                      fontSize: 12,
-                                    ),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ],
-                          ],
+                                ],
+                              ],
+                            );
+                          },
                         ),
                       ),
                     ],
