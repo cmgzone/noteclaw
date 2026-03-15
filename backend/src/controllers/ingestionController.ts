@@ -95,8 +95,15 @@ export const processSource = async (req: Request, res: Response) => {
 
         // 3. Call embedding service to store chunks
         try {
+            // Call back into this same server instance. Do NOT rely on process.env.PORT here:
+            // the server can auto-increment ports if the requested port is in use.
+            const selfPort = req.socket?.localPort;
+            const selfBaseUrl = selfPort
+                ? `http://127.0.0.1:${selfPort}`
+                : `http://localhost:${process.env.PORT || 3000}`;
+
             const response = await axios.post(
-                `http://localhost:${process.env.PORT || 3000}/api/rag/embeddings/store`,
+                `${selfBaseUrl}/api/rag/embeddings/store`,
                 {
                     chunks: chunks.map(text => ({
                         sourceId,
@@ -122,11 +129,17 @@ export const processSource = async (req: Request, res: Response) => {
             });
 
         } catch (embeddingError: any) {
-            console.error(`Error storing embeddings for source ${sourceId}:`, embeddingError.message);
+            const status = embeddingError?.response?.status;
+            const data = embeddingError?.response?.data;
+            console.error(`Error storing embeddings for source ${sourceId}:`, {
+                message: embeddingError?.message,
+                status,
+                data,
+            });
             return res.status(500).json({
                 success: false,
                 error: 'Failed to store embeddings',
-                details: embeddingError.message
+                details: data || embeddingError.message
             });
         }
 

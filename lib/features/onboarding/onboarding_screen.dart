@@ -277,149 +277,160 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   }
 
   Widget _buildPage(OnboardingPage page, ColorScheme scheme, TextTheme text) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          // Icon badge
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: scheme.primary.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(24),
-            ),
-            child: Icon(
-              page.icon,
-              size: 48,
-              color: scheme.primary,
-            ),
-          ).animate().scale(duration: 600.ms, curve: Curves.easeOut),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Prevent RenderFlex overflows on small viewports by scaling the hero image and spacing.
+        final imageHeight =
+            (constraints.maxHeight * 0.35).clamp(140.0, 240.0).toDouble();
+        final beforeImageSpacing =
+            (constraints.maxHeight * 0.07).clamp(24.0, 48.0).toDouble();
 
-          const SizedBox(height: 32),
-
-          // Title
-          Text(
-            page.title,
-            style: text.headlineMedium?.copyWith(
-              fontWeight: FontWeight.bold,
-              color: scheme.onSurface,
-            ),
-            textAlign: TextAlign.center,
-          ).animate().slideY(begin: 0.2, delay: 100.ms).fadeIn(),
-
-          const SizedBox(height: 16),
-
-          // Description
-          Text(
-            page.description,
-            style: text.bodyLarge?.copyWith(
-              color: scheme.onSurface.withValues(alpha: 0.7),
-              height: 1.5,
-            ),
-            textAlign: TextAlign.center,
-          ).animate().slideY(begin: 0.2, delay: 200.ms).fadeIn(),
-
-          const SizedBox(height: 48),
-
-          // Generated image
-          Container(
-            height: 240,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: [
-                BoxShadow(
-                  color: scheme.primary.withValues(alpha: 0.2),
-                  blurRadius: 20,
-                  offset: const Offset(0, 10),
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // Icon badge
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: scheme.primary.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(24),
                 ),
-              ],
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(20),
-              child: page.imageUrl.startsWith('http')
-                  ? Image.network(
-                      page.imageUrl,
-                      fit: BoxFit.cover,
-                      width: double.infinity,
-                      loadingBuilder: (context, child, loadingProgress) {
-                        if (loadingProgress == null) return child;
-                        return Container(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                              colors: [
-                                scheme.primary.withValues(alpha: 0.1),
-                                scheme.secondary.withValues(alpha: 0.1),
-                              ],
-                            ),
-                          ),
-                          child: Center(
-                            child: CircularProgressIndicator(
-                              value: loadingProgress.expectedTotalBytes != null
-                                  ? loadingProgress.cumulativeBytesLoaded /
-                                      loadingProgress.expectedTotalBytes!
-                                  : null,
-                              color: scheme.primary,
-                            ),
-                          ),
-                        );
-                      },
-                      errorBuilder: (context, error, stackTrace) {
-                        return Container(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                              colors: [
-                                scheme.primary.withValues(alpha: 0.1),
-                                scheme.secondary.withValues(alpha: 0.1),
-                              ],
-                            ),
-                          ),
-                          child: Center(
-                            child: Icon(
-                              page.icon,
-                              size: 64,
-                              color: scheme.primary.withValues(alpha: 0.5),
-                            ),
-                          ),
-                        );
-                      },
-                    )
-                  : Image.asset(
-                      page.imageUrl,
-                      fit: BoxFit.cover,
-                      width: double.infinity,
-                      errorBuilder: (context, error, stackTrace) {
-                        debugPrint(
-                            'Error loading asset image: ${page.imageUrl}, error: $error');
-                        return Container(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                              colors: [
-                                scheme.primary.withValues(alpha: 0.1),
-                                scheme.secondary.withValues(alpha: 0.1),
-                              ],
-                            ),
-                          ),
-                          child: Center(
-                            child: Icon(
-                              page.icon,
-                              size: 64,
-                              color: scheme.primary.withValues(alpha: 0.5),
-                            ),
-                          ),
-                        );
-                      },
+                child: Icon(
+                  page.icon,
+                  size: 48,
+                  color: scheme.primary,
+                ),
+              ).animate().scale(duration: 600.ms, curve: Curves.easeOut),
+
+              const SizedBox(height: 32),
+
+              // Title
+              Text(
+                page.title,
+                style: text.headlineMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: scheme.onSurface,
+                ),
+                textAlign: TextAlign.center,
+              ).animate().slideY(begin: 0.2, delay: 100.ms).fadeIn(),
+
+              const SizedBox(height: 16),
+
+              // Description
+              Text(
+                page.description,
+                style: text.bodyLarge?.copyWith(
+                  color: scheme.onSurface.withValues(alpha: 0.7),
+                  height: 1.5,
+                ),
+                textAlign: TextAlign.center,
+              ).animate().slideY(begin: 0.2, delay: 200.ms).fadeIn(),
+
+              SizedBox(height: beforeImageSpacing),
+
+              // Generated image
+              Container(
+                height: imageHeight,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: scheme.primary.withValues(alpha: 0.2),
+                      blurRadius: 20,
+                      offset: const Offset(0, 10),
                     ),
-            ),
-          ).animate().slideY(begin: 0.3, delay: 300.ms).fadeIn(),
-        ],
-      ),
+                  ],
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(20),
+                  child: page.imageUrl.startsWith('http')
+                      ? Image.network(
+                          page.imageUrl,
+                          fit: BoxFit.cover,
+                          width: double.infinity,
+                          loadingBuilder: (context, child, loadingProgress) {
+                            if (loadingProgress == null) return child;
+                            return Container(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                  colors: [
+                                    scheme.primary.withValues(alpha: 0.1),
+                                    scheme.secondary.withValues(alpha: 0.1),
+                                  ],
+                                ),
+                              ),
+                              child: Center(
+                                child: CircularProgressIndicator(
+                                  value: loadingProgress.expectedTotalBytes !=
+                                          null
+                                      ? loadingProgress.cumulativeBytesLoaded /
+                                          loadingProgress.expectedTotalBytes!
+                                      : null,
+                                  color: scheme.primary,
+                                ),
+                              ),
+                            );
+                          },
+                          errorBuilder: (context, error, stackTrace) {
+                            return Container(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                  colors: [
+                                    scheme.primary.withValues(alpha: 0.1),
+                                    scheme.secondary.withValues(alpha: 0.1),
+                                  ],
+                                ),
+                              ),
+                              child: Center(
+                                child: Icon(
+                                  page.icon,
+                                  size: 64,
+                                  color: scheme.primary.withValues(alpha: 0.5),
+                                ),
+                              ),
+                            );
+                          },
+                        )
+                      : Image.asset(
+                          page.imageUrl,
+                          fit: BoxFit.cover,
+                          width: double.infinity,
+                          errorBuilder: (context, error, stackTrace) {
+                            debugPrint(
+                                'Error loading asset image: ${page.imageUrl}, error: $error');
+                            return Container(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                  colors: [
+                                    scheme.primary.withValues(alpha: 0.1),
+                                    scheme.secondary.withValues(alpha: 0.1),
+                                  ],
+                                ),
+                              ),
+                              child: Center(
+                                child: Icon(
+                                  page.icon,
+                                  size: 64,
+                                  color: scheme.primary.withValues(alpha: 0.5),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                ),
+              ).animate().slideY(begin: 0.3, delay: 300.ms).fadeIn(),
+            ],
+          ),
+        );
+      },
     );
   }
 }

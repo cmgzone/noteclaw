@@ -60,6 +60,15 @@ class BackgroundAIService {
   Future<void> initialize() async {
     if (_isInitialized) return;
 
+    // flutter_background_service only supports Android and iOS. Avoid noisy errors on web/desktop.
+    if (kIsWeb ||
+        !(defaultTargetPlatform == TargetPlatform.android ||
+            defaultTargetPlatform == TargetPlatform.iOS)) {
+      debugPrint(
+          '[BackgroundAI] Background service not supported on this platform, skipping initialization');
+      return;
+    }
+
     try {
       // Check if enabled
       final prefs = await SharedPreferences.getInstance();

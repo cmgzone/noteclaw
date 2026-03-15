@@ -21,7 +21,8 @@ import 'core/theme/theme_provider.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  GoogleFonts.config.allowRuntimeFetching = false;
+  // Allow GoogleFonts to fetch fonts at runtime (especially needed on web unless fonts are bundled as assets).
+  GoogleFonts.config.allowRuntimeFetching = true;
 
   // Capture errors in the framework
   FlutterError.onError = (FlutterErrorDetails details) {
