@@ -666,6 +666,7 @@ router.post('/followups/:id/respond', authenticateToken, async (req: Request, re
       'agent',
       response,
       {
+        agentSessionId: sessionId,
         metadata: {
           codeUpdate,
           inReplyTo: messageId,
@@ -818,7 +819,8 @@ router.post('/followups/send', authenticateToken, async (req: Request, res: Resp
     const userMessage = await sourceConversationService.addMessage(
       sourceId,
       'user',
-      message
+      message,
+      { agentSessionId }
     );
 
     // Get conversation history
@@ -899,6 +901,7 @@ router.post('/followups/send', authenticateToken, async (req: Request, res: Resp
             'agent',
             webhookResponse.response,
             {
+              agentSessionId,
               metadata: {
                 codeUpdate: webhookResponse.codeUpdate,
                 deliveredViaWebhook: true,
@@ -1059,13 +1062,23 @@ router.get('/conversations/:sourceId', authenticateToken, async (req: Request, r
 
     // Verify source ownership
     const sourceResult = await pool.query(
-      `SELECT id FROM sources WHERE id = $1 AND user_id = $2`,
+      `SELECT s.id, s.metadata, n.agent_session_id
+       FROM sources s
+       LEFT JOIN notebooks n ON s.notebook_id = n.id
+       WHERE s.id = $1 AND s.user_id = $2`,
       [sourceId, userId]
     );
 
     if (sourceResult.rows.length === 0) {
       return res.status(404).json({ error: 'Source not found' });
     }
+
+    const sourceRow = sourceResult.rows[0];
+    const metadata =
+      typeof sourceRow.metadata === 'string'
+        ? JSON.parse(sourceRow.metadata)
+        : (sourceRow.metadata || {});
+    const resolvedAgentSessionId = metadata?.agentSessionId || sourceRow.agent_session_id || null;
 
     // Get conversation
     const conversation = await sourceConversationService.getConversation(sourceId);
@@ -1075,6 +1088,7 @@ router.get('/conversations/:sourceId', authenticateToken, async (req: Request, r
         success: true,
         conversation: null,
         messages: [],
+        resolvedAgentSessionId,
       });
     }
 
@@ -1088,6 +1102,7 @@ router.get('/conversations/:sourceId', authenticateToken, async (req: Request, r
         lastMessageAt: conversation.lastMessageAt,
       },
       messages: conversation.messages,
+      resolvedAgentSessionId,
     });
   } catch (error: any) {
     console.error('Get conversation error:', error);

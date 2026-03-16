@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'dart:convert';
 import '../../core/auth/custom_auth_service.dart';
 import '../../core/api/api_service.dart';
+import '../../core/rag/chunk.dart';
 import '../../core/rag/smart_ingestion_provider.dart';
 import '../gamification/gamification_provider.dart';
 import 'source.dart';
@@ -136,14 +137,15 @@ class SourceNotifier extends StateNotifier<List<Source>> {
 
     for (final source in state) {
       try {
-        // This triggers the ingestion provider which adds chunks to vector store
-        ref.read(ingestionProvider(source));
+        // Read the FutureProvider and await its future so that any error is
+        // caught here rather than escaping to Flutter's unhandled-error handler.
+        await ref.read(ingestionProvider(source).future);
       } catch (e) {
         debugPrint('⚠️ Failed to ingest source ${source.id}: $e');
       }
     }
 
-    debugPrint('✅ Ingestion triggered for all sources');
+    debugPrint('✅ Ingestion complete for all sources');
   }
 
   Future<void> addSource({
@@ -227,11 +229,15 @@ class SourceNotifier extends StateNotifier<List<Source>> {
       // Track gamification
       ref.read(gamificationProvider.notifier).trackSourceAdded();
 
-      // Trigger ingestion
+      // Trigger ingestion in the background — observe the future so errors
+      // are caught and don't escape to Flutter's global error handler.
       try {
         debugPrint('Triggering ingestion for source: ${source.id}');
         if (source.notebookId.isNotEmpty) {
-          Future.microtask(() => ref.read(ingestionProvider(source)));
+          ref.read(ingestionProvider(source).future).catchError((e) {
+            debugPrint('Warning: Ingestion failed for source ${source.id}: $e');
+            return <Chunk>[];
+          });
         }
       } catch (e) {
         debugPrint('Warning: Ingestion failed for source ${source.id}: $e');

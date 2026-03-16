@@ -14,6 +14,50 @@ class OpenRouterService {
   // Models are now managed via the database/Admin panel.
   static Map<String, String> get allModels => {};
 
+  // ─── Context-window limits per model (in tokens) ─────────────────────────
+  // Add entries as new models are used. The fallback is 32 000 tokens (safe).
+  static const Map<String, int> _knownContextLimits = {
+    'arcee-ai/trinity-large-preview:free': 131000,
+    'arcee-ai/trinity-large-preview': 131000,
+    'openai/gpt-4o': 128000,
+    'openai/gpt-4o-mini': 128000,
+    'openai/gpt-4-turbo': 128000,
+    'openai/gpt-3.5-turbo': 16385,
+    'anthropic/claude-3-5-sonnet': 200000,
+    'anthropic/claude-3-haiku': 200000,
+    'google/gemini-pro': 32000,
+    'google/gemini-flash-1.5': 1000000,
+    'meta-llama/llama-3.1-8b-instruct:free': 131072,
+    'meta-llama/llama-3.1-70b-instruct': 131072,
+    'mistralai/mistral-7b-instruct:free': 32768,
+  };
+
+  /// Conservative token estimator: ~3.5 characters per token (works for English
+  /// and code; errs on the safe side to avoid going over the limit).
+  static int _estimateTokens(String text) => (text.length / 3.5).ceil();
+
+  /// Truncates [prompt] so that it fits within [model]'s context window minus
+  /// [maxTokens] reserved for the output and a small safety buffer.
+  String _truncatePrompt(String prompt, String model, int maxTokens) {
+    final contextLimit = _knownContextLimits[model] ?? 32000;
+    // Reserve output tokens + 500-token safety buffer.
+    final availableTokens = contextLimit - maxTokens - 500;
+    if (availableTokens <= 0) return prompt;
+
+    final estimatedTokens = _estimateTokens(prompt);
+    if (estimatedTokens <= availableTokens) return prompt; // fits, no-op
+
+    // Truncate to the available character budget.
+    final maxChars = (availableTokens * 3.5).floor();
+    final truncated = prompt.substring(0, maxChars);
+
+    debugPrint(
+        '[OpenRouterService] Prompt truncated: $estimatedTokens → '
+        '~${_estimateTokens(truncated)} tokens (limit: $contextLimit)');
+
+    return '$truncated\n\n[... context truncated to fit model context window ...]';
+  }
+
   Future<String> generateContent(
     String prompt, {
     required String model,
@@ -28,6 +72,7 @@ class OpenRouterService {
             'Missing or invalid OPENROUTER_API_KEY. Please set a valid key in .env or deploy it to the database.');
       }
 
+      final safePrompt = _truncatePrompt(prompt, model, maxTokens);
       debugPrint(
           '[OpenRouterService] generateContent starting for model: $model');
 
@@ -43,7 +88,7 @@ class OpenRouterService {
         body: jsonEncode({
           'model': model,
           'messages': [
-            {'role': 'user', 'content': prompt}
+            {'role': 'user', 'content': safePrompt}
           ],
           'temperature': temperature,
           'max_tokens': maxTokens,
@@ -104,6 +149,7 @@ class OpenRouterService {
       throw Exception('Missing or invalid OPENROUTER_API_KEY');
     }
 
+    final safePrompt = _truncatePrompt(prompt, model, maxTokens);
     debugPrint('[OpenRouterService] Starting stream request to model: $model');
     final client = http.Client();
 
@@ -123,7 +169,7 @@ class OpenRouterService {
       request.body = jsonEncode({
         'model': model,
         'messages': [
-          {'role': 'user', 'content': prompt}
+          {'role': 'user', 'content': safePrompt}
         ],
         'temperature': temperature,
         'max_tokens': maxTokens,

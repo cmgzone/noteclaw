@@ -60,12 +60,10 @@ class SourceDetailScreen extends ConsumerWidget {
     // Check if this source has an agent session
     final hasAgentAsync = ref.watch(sourceHasAgentProvider(sourceId));
     final hasAgent = hasAgentAsync.valueOrNull ?? false;
+    final effectiveHasAgent = source.hasAgentSession || hasAgent;
 
     // Get agent name from source metadata if available
-    String? agentName;
-    // Note: Source model doesn't have metadata field exposed,
-    // but we can check the type for code sources
-    final isCodeSource = source.type == 'code';
+    final String? agentName = source.agentName;
 
     return Scaffold(
       appBar: AppBar(
@@ -79,9 +77,9 @@ class SourceDetailScreen extends ConsumerWidget {
                 color: Colors.white, fontWeight: FontWeight.bold)),
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
-          // Chat with Agent button - only show for code sources with agent session
+          // Chat with Agent button - only show when we can resolve an agent session
           // Requirements: 3.1
-          if (isCodeSource || hasAgent)
+          if (effectiveHasAgent)
             IconButton(
               icon: const Icon(LucideIcons.terminal),
               tooltip: 'Chat with Agent',
@@ -131,7 +129,7 @@ class SourceDetailScreen extends ConsumerWidget {
                   ),
                 ),
                 // Agent badge for code sources
-                if (hasAgent)
+                if (effectiveHasAgent)
                   Container(
                     padding:
                         const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -179,7 +177,7 @@ class SourceDetailScreen extends ConsumerWidget {
         ],
       ),
       // Floating action button for chat with agent
-      floatingActionButton: (isCodeSource || hasAgent)
+      floatingActionButton: effectiveHasAgent
           ? FloatingActionButton.extended(
               onPressed: () => _showAgentChatSheet(context, source, agentName),
               icon: const Icon(LucideIcons.terminal),

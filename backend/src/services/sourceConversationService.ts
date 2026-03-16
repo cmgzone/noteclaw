@@ -32,6 +32,7 @@ export interface SourceConversation {
 
 export interface AddMessageOptions {
   metadata?: Record<string, any>;
+  agentSessionId?: string;
 }
 
 // ==================== SERVICE CLASS ====================
@@ -54,10 +55,10 @@ class SourceConversationService {
     content: string,
     options: AddMessageOptions = {}
   ): Promise<SourceMessage> {
-    const { metadata = {} } = options;
+    const { metadata = {}, agentSessionId } = options;
 
     // Get or create conversation for this source
-    let conversation = await this.getOrCreateConversation(sourceId);
+    const conversation = await this.getOrCreateConversation(sourceId, agentSessionId);
 
     // Create the message
     const messageId = uuidv4();
@@ -208,12 +209,16 @@ class SourceConversationService {
     let sessionId = agentSessionId;
     if (!sessionId) {
       const sourceResult = await pool.query(
-        `SELECT metadata FROM sources WHERE id = $1`,
+        `SELECT s.metadata, n.agent_session_id
+         FROM sources s
+         LEFT JOIN notebooks n ON s.notebook_id = n.id
+         WHERE s.id = $1`,
         [sourceId]
       );
       if (sourceResult.rows.length > 0) {
-        const metadata = sourceResult.rows[0].metadata;
-        sessionId = metadata?.agentSessionId;
+        const row = sourceResult.rows[0];
+        const metadata = typeof row.metadata === 'string' ? JSON.parse(row.metadata) : (row.metadata || {});
+        sessionId = metadata?.agentSessionId || row.agent_session_id;
       }
     }
 

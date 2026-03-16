@@ -18,11 +18,10 @@ class GeminiImageService {
       }
 
       if (provider == 'openrouter') {
-        // Handle empty/null model by defaulting to a free capable model
-        final targetModel = (model != null && model.isNotEmpty)
-            ? model
-            : 'google/gemini-2.0-flash-exp:free';
-        return _generateImageOpenRouter(prompt, targetModel);
+        if (model == null || model.isEmpty) {
+          throw Exception('No image model selected. Please select an AI model with image generation capabilities in Settings.');
+        }
+        return _generateImageOpenRouter(prompt, model);
       }
 
       // Default to placeholder for Gemini until specialized Imagen API is implemented

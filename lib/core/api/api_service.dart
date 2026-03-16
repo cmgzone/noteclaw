@@ -318,6 +318,28 @@ class ApiService {
     }
   }
 
+  /// Like [post] but allows overriding the receive/send timeouts for
+  /// long-running requests such as source ingestion.
+  Future<T> postWithTimeout<T>(
+    String endpoint,
+    dynamic data, {
+    Duration receiveTimeout = const Duration(seconds: 60),
+    Duration sendTimeout = const Duration(seconds: 60),
+  }) async {
+    try {
+      final response = await _dio.post(
+          endpoint.startsWith('/') ? endpoint.substring(1) : endpoint,
+          data: data,
+          options: Options(
+            receiveTimeout: receiveTimeout,
+            sendTimeout: sendTimeout,
+          ));
+      return _handleResponse<T>(response);
+    } catch (e) {
+      throw _handleError(e);
+    }
+  }
+
   Future<T> put<T>(String endpoint, dynamic data, {Options? options}) async {
     try {
       final response = await _dio.put(

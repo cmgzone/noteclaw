@@ -49,6 +49,7 @@ class _GitHubFileBrowserScreenState
               icon: const Icon(Icons.playlist_add),
               tooltip: 'Import repo as notebook',
               onPressed: () async {
+                final navigator = Navigator.of(context);
                 final notebookId = await showGitHubRepoSourceSelector(
                   context,
                   repo: widget.repo,
@@ -56,7 +57,7 @@ class _GitHubFileBrowserScreenState
                 if (!mounted) return;
                 if (notebookId == null || notebookId.isEmpty) return;
 
-                Navigator.of(context).push(
+                navigator.push(
                   MaterialPageRoute(
                     builder: (context) =>
                         NotebookDetailScreen(notebookId: notebookId),

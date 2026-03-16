@@ -368,77 +368,80 @@ class _BentoCard extends StatelessWidget {
                   ),
                 ),
 
-                Padding(
-                  padding: EdgeInsets.all(compact ? 12 : 20),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    mainAxisSize: MainAxisSize.max,
-                    children: [
-                      // Icon
-                      Container(
-                        padding: EdgeInsets.all(compact ? 8 : 12),
-                        decoration: BoxDecoration(
-                          color: color.withValues(alpha: 0.1),
-                          borderRadius:
-                              BorderRadius.circular(compact ? 12 : 16),
+                // Content: icon + title/subtitle
+                Positioned.fill(
+                  child: Padding(
+                    padding: EdgeInsets.all(compact ? 12 : 20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      mainAxisSize: MainAxisSize.max,
+                      children: [
+                        // Icon
+                        Container(
+                          padding: EdgeInsets.all(compact ? 8 : 12),
+                          decoration: BoxDecoration(
+                            color: color.withValues(alpha: 0.1),
+                            borderRadius:
+                                BorderRadius.circular(compact ? 12 : 16),
+                          ),
+                          child:
+                              Icon(icon, color: color, size: compact ? 20 : 24),
                         ),
-                        child:
-                            Icon(icon, color: color, size: compact ? 20 : 24),
-                      ),
 
-                      // Text - pushed to bottom by spaceBetween
-                      Flexible(
-                        child: LayoutBuilder(
-                          builder: (context, constraints) {
-                            // These cards can get very short in some responsive breakpoints,
-                            // so only show the subtitle when there is enough vertical space.
-                            final canShowSubtitle = subtitle != null &&
-                                !compact &&
-                                constraints.maxHeight >= 44;
-                            final subtitleMaxLines =
-                                constraints.maxHeight >= 58 ? 2 : 1;
+                        // Text - pushed to bottom by spaceBetween
+                        Flexible(
+                          child: LayoutBuilder(
+                            builder: (context, constraints) {
+                              // These cards can get very short in some responsive breakpoints,
+                              // so only show the subtitle when there is enough vertical space.
+                              final canShowSubtitle = subtitle != null &&
+                                  !compact &&
+                                  constraints.maxHeight >= 44;
+                              final subtitleMaxLines =
+                                  constraints.maxHeight >= 58 ? 2 : 1;
 
-                            return Column(
-                              mainAxisSize: MainAxisSize.min,
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisAlignment: MainAxisAlignment.end,
-                              children: [
-                                Text(
-                                  title,
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .titleMedium
-                                      ?.copyWith(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: compact ? 13 : 16,
-                                        height: 1.1,
-                                      ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                if (canShowSubtitle) ...[
-                                  const SizedBox(height: 4),
+                              return Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisAlignment: MainAxisAlignment.end,
+                                children: [
                                   Text(
-                                    subtitle!,
+                                    title,
                                     style: Theme.of(context)
                                         .textTheme
-                                        .bodySmall
+                                        .titleMedium
                                         ?.copyWith(
-                                          color: scheme.onSurfaceVariant,
-                                          fontSize: 12,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: compact ? 13 : 16,
                                           height: 1.1,
                                         ),
-                                    maxLines: subtitleMaxLines,
+                                    maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                   ),
+                                  if (canShowSubtitle) ...[
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      subtitle!,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.copyWith(
+                                            color: scheme.onSurfaceVariant,
+                                            fontSize: 12,
+                                            height: 1.1,
+                                          ),
+                                      maxLines: subtitleMaxLines,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
                                 ],
-                              ],
-                            );
-                          },
+                              );
+                            },
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ],

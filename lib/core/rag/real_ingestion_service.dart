@@ -11,14 +11,17 @@ class RealIngestionService {
 
   Future<List<Chunk>> chunkSource(Source source) async {
     try {
-      // Call backend to process source (chunk + embed + store)
-      await _api.post('/rag/ingestion/process', {
-        'sourceId': source.id,
-      });
+      // Ingestion is heavy: PDF parse → chunking → N embedding API calls →
+      // pgvector inserts. Use a generous 5-minute receive timeout.
+      await _api.postWithTimeout(
+        '/rag/ingestion/process',
+        {'sourceId': source.id},
+        receiveTimeout: const Duration(minutes: 5),
+        sendTimeout: const Duration(minutes: 2),
+      );
 
-      // We don't need to return actual chunks with embeddings to the client anymore
-      // as search will happen on backend. We return empty list to satisfy signature
-      // or we could fetch chunks without embeddings if UI needs snippet display.
+      // Embeddings are stored server-side; no chunks need to be returned to
+      // the client (search happens via the backend RAG endpoint).
       return [];
     } catch (e) {
       if (kDebugMode) {

@@ -142,7 +142,7 @@ export const storeEmbeddings = async (req: Request, res: Response) => {
             const content = typeof chunk?.content === 'string' ? chunk.content : '';
             const metadata = chunk?.metadata && typeof chunk.metadata === 'object' ? chunk.metadata : {};
 
-            if (!sourceId || content.trim().isEmpty) {
+            if (!sourceId || content.trim() === '') {
                 failedEmbeddings += 1;
                 continue;
             }

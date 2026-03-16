@@ -42,7 +42,7 @@ Primary color: ${project.branding.primaryColorValue.toRadixString(16)}
 ''';
 
     return await imageService.generateImage(prompt,
-        provider: settings.provider);
+        provider: settings.provider, model: settings.model);
   }
 
   Future<String> generateChapterIllustration(
@@ -63,7 +63,7 @@ Style: $style, consistent, professional.
 ''';
 
     return await imageService.generateImage(prompt,
-        provider: settings.provider);
+        provider: settings.provider, model: settings.model);
   }
 }
 

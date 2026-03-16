@@ -24,19 +24,32 @@ class SourceMessage {
   });
 
   factory SourceMessage.fromJson(Map<String, dynamic> json) {
+    DateTime parseTimestamp(dynamic value) {
+      if (value == null) return DateTime.now();
+      if (value is DateTime) return value;
+      if (value is int) return DateTime.fromMillisecondsSinceEpoch(value);
+      if (value is String) return DateTime.tryParse(value) ?? DateTime.now();
+      return DateTime.now();
+    }
+
+    Map<String, dynamic>? parseMetadata(dynamic value) {
+      if (value == null) return null;
+      if (value is Map<String, dynamic>) return value;
+      if (value is Map) return Map<String, dynamic>.from(value);
+      return null;
+    }
+
     return SourceMessage(
       id: json['id'] as String,
       sourceId:
           json['source_id'] as String? ?? json['sourceId'] as String? ?? '',
       role: json['role'] as String,
       content: json['content'] as String,
-      timestamp: json['created_at'] != null
-          ? DateTime.parse(json['created_at'] as String)
-          : json['timestamp'] != null
-              ? DateTime.parse(json['timestamp'] as String)
-              : DateTime.now(),
-      metadata: json['metadata'] as Map<String, dynamic>?,
-      isRead: json['is_read'] as bool? ?? false,
+      timestamp: parseTimestamp(
+        json['created_at'] ?? json['createdAt'] ?? json['timestamp'],
+      ),
+      metadata: parseMetadata(json['metadata']),
+      isRead: (json['is_read'] as bool?) ?? (json['isRead'] as bool?) ?? false,
     );
   }
 
@@ -177,7 +190,10 @@ class SourceConversationNotifier
       state = state.copyWith(
         messages: messages,
         isLoading: false,
-        agentSessionId: conversation?['agent_session_id'] as String?,
+        agentSessionId: (conversation?['agentSessionId'] as String?) ??
+            (conversation?['agent_session_id'] as String?) ??
+            (response['resolvedAgentSessionId'] as String?) ??
+            (response['resolved_agent_session_id'] as String?),
         lastMessageAt: messages.isNotEmpty ? messages.last.timestamp : null,
       );
 
@@ -303,7 +319,13 @@ final sourceHasAgentProvider = FutureProvider.family<bool, String>(
       final apiService = ref.read(apiServiceProvider);
       final response = await apiService.getSourceConversation(sourceId);
       final conversation = response['conversation'];
-      return conversation != null && conversation['agent_session_id'] != null;
+      final sessionId = conversation?['agentSessionId'] ??
+          conversation?['agent_session_id'] ??
+          response['resolvedAgentSessionId'] ??
+          response['resolved_agent_session_id'];
+      return sessionId != null &&
+          sessionId is String &&
+          sessionId.trim().isNotEmpty;
     } catch (e) {
       return false;
     }

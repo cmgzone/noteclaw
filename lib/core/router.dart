@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../theme/motion.dart';
@@ -83,6 +84,20 @@ final rootNavigatorKey = GlobalKey<NavigatorState>();
 final shellNavigatorKey = GlobalKey<NavigatorState>();
 
 String getInitialLocation(bool hasSeenOnboarding) {
+  // On web, prefer the browser's actual path so deep links work correctly.
+  // For example, opening https://app.com/notebook/:id should land on that
+  // notebook rather than getting redirected to /home.
+  if (kIsWeb) {
+    final browserPath = Uri.base.path;
+    // Only use the browser path if it looks like a real app route (not '/',
+    // '/index.html', or an empty string which all mean "no deep link").
+    final isDeepLink = browserPath.isNotEmpty &&
+        browserPath != '/' &&
+        !browserPath.endsWith('index.html');
+    if (isDeepLink) {
+      return browserPath;
+    }
+  }
   return hasSeenOnboarding ? '/home' : '/onboarding';
 }
 
