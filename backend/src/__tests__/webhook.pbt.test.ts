@@ -138,6 +138,13 @@ const webhookSecretArb = fc.hexaString({ minLength: 32, maxLength: 64 });
 
 // Generate valid webhook URLs
 const webhookUrlArb = fc.webUrl({ validSchemes: ['https'] });
+const imageAttachmentArb = fc.record({
+  id: fc.uuid(),
+  name: fc.string({ minLength: 1, maxLength: 120 }),
+  mimeType: fc.constantFrom('image/png', 'image/jpeg', 'image/webp', 'image/gif'),
+  base64Data: fc.base64String({ minLength: 8, maxLength: 1024 }),
+  sizeBytes: fc.integer({ min: 1, max: 1024 * 1024 }),
+});
 
 // ==================== PROPERTY TESTS ====================
 
@@ -261,6 +268,31 @@ describe('Webhook Service - Property-Based Tests', () => {
               expect(payload.conversationHistory[i].content).toBe(history[i].content);
               expect(payload.conversationHistory[i].role).toBe(history[i].role);
             }
+          }
+        ),
+        { numRuns: 5, timeout: 30000 }
+      );
+    }, 60000);
+
+    it('image attachments are preserved in payload when provided', async () => {
+      await fc.assert(
+        fc.asyncProperty(
+          fc.array(imageAttachmentArb, { minLength: 1, maxLength: 4 }),
+          fc.string({ minLength: 1, maxLength: 100 }),
+          async (attachments, message) => {
+            const userId = await createTestUser();
+            const notebookId = await createTestNotebook(userId);
+            const sourceId = await createTestSource(notebookId);
+
+            const payload = await webhookService.buildPayload(
+              sourceId,
+              message,
+              [],
+              userId,
+              attachments
+            );
+
+            expect(payload.imageAttachments).toEqual(attachments);
           }
         ),
         { numRuns: 5, timeout: 30000 }

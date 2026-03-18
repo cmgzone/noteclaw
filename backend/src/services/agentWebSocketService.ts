@@ -10,6 +10,7 @@ import { IncomingMessage } from 'http';
 import { parse } from 'url';
 import pool from '../config/database.js';
 import { tokenService } from './tokenService.js';
+import { ImageAttachmentPayload } from './webhookService.js';
 
 // ==================== INTERFACES ====================
 
@@ -36,6 +37,7 @@ interface FollowupPayload {
   message: string;
   messageId: string;
   conversationHistory: any[];
+  imageAttachments?: ImageAttachmentPayload[];
   userId: string;
   timestamp: string;
 }
@@ -146,7 +148,7 @@ class AgentWebSocketService {
         type: 'subscribe',
         payload: {
           sessionId,
-          message: 'Connected to NotebookLLM WebSocket',
+          message: 'Connected to NoteClaw WebSocket',
           timestamp: new Date().toISOString(),
         },
       });

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/security/global_credentials_service.dart';
+import '../../core/security/credentials_service.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/motion.dart';
 
@@ -40,7 +40,7 @@ class _ApiKeysScreenState extends ConsumerState<ApiKeysScreen> {
   Future<void> _refreshStatus() async {
     setState(() => _loading = true);
     try {
-      final creds = ref.read(globalCredentialsServiceProvider);
+      final creds = ref.read(credentialsServiceProvider);
       final gemini = await creds.getApiKey('gemini');
       final openrouter = await creds.getApiKey('openrouter');
       if (!mounted) return;
@@ -59,7 +59,7 @@ class _ApiKeysScreenState extends ConsumerState<ApiKeysScreen> {
 
     setState(() => _loading = true);
     try {
-      final creds = ref.read(globalCredentialsServiceProvider);
+      final creds = ref.read(credentialsServiceProvider);
       await creds.storeApiKey(service: service, apiKey: trimmed);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -105,7 +105,7 @@ class _ApiKeysScreenState extends ConsumerState<ApiKeysScreen> {
 
     setState(() => _loading = true);
     try {
-      final creds = ref.read(globalCredentialsServiceProvider);
+      final creds = ref.read(credentialsServiceProvider);
       await creds.deleteApiKey(service);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -227,7 +227,7 @@ class _InfoCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'Keys are saved only on this device using secure storage. For backend AI features, the app may send your key with the request to run the model, but the backend does not store it.',
+                  'Keys are encrypted and saved per signed-in user on this device. Other users on the same device cannot use your saved keys.',
                   style: TextStyle(
                     fontSize: 12,
                     color: scheme.onSurface.withValues(alpha: 0.65),

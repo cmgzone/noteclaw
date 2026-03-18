@@ -6,7 +6,7 @@
  */
 
 import pool from '../config/database.js';
-import { WebhookPayload } from './webhookService.js';
+import { ImageAttachmentPayload, WebhookPayload } from './webhookService.js';
 import { SourceMessage } from './sourceConversationService.js';
 import { GitHubSourceMetadata } from './githubSourceService.js';
 
@@ -34,6 +34,7 @@ export interface BuildGitHubPayloadParams {
   sourceId: string;
   message: string;
   conversationHistory: SourceMessage[];
+  imageAttachments?: ImageAttachmentPayload[];
   userId: string;
   includeRepoStructure?: boolean;
 }
@@ -73,7 +74,14 @@ class GitHubWebhookBuilder {
    * @returns A GitHubWebhookPayload with full GitHub context
    */
   async buildPayload(params: BuildGitHubPayloadParams): Promise<GitHubWebhookPayload> {
-    const { sourceId, message, conversationHistory, userId, includeRepoStructure = false } = params;
+    const {
+      sourceId,
+      message,
+      conversationHistory,
+      imageAttachments,
+      userId,
+      includeRepoStructure = false,
+    } = params;
 
     // Get source details
     const sourceResult = await pool.query(
@@ -124,6 +132,7 @@ class GitHubWebhookBuilder {
       sourceLanguage: metadata.language || 'unknown',
       message,
       conversationHistory,
+      ...(imageAttachments && imageAttachments.length > 0 && { imageAttachments }),
       userId,
       timestamp: new Date().toISOString(),
       githubContext,

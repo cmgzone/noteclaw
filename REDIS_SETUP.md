@@ -1,7 +1,7 @@
 # Redis Integration Guide
 
 ## Overview
-Redis has been integrated into the NotebookLLM backend to provide:
+Redis has been integrated into the NoteClaw backend to provide:
 - **Caching** - Reduce database load by caching frequently accessed data
 - **Performance** - Faster response times for repeated queries
 - **Session Management** - Efficient session storage

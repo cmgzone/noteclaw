@@ -248,7 +248,7 @@ If the file is private, please make it publicly accessible or copy the content m
       final response = await http.get(
         Uri.parse(url),
         headers: {
-          'User-Agent': 'Mozilla/5.0 (compatible; NotebookLLM/1.0)',
+          'User-Agent': 'Mozilla/5.0 (compatible; NoteClaw/1.0)',
         },
       ).timeout(const Duration(seconds: 15));
 

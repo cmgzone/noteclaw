@@ -3,8 +3,8 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:encrypt/encrypt.dart' as encrypt;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import '../auth/custom_auth_service.dart';
 
 final globalCredentialsServiceProvider =
     Provider<GlobalCredentialsService>((ref) {
@@ -22,15 +22,15 @@ class GlobalCredentialsService {
 
   GlobalCredentialsService(this.ref);
 
-  // Generate encryption key from fixed secret
-  encrypt.Key _getEncryptionKey() {
-    final hash = sha256.convert(utf8.encode(_encryptionSecret));
+  // Generate encryption key from fixed secret + user id
+  encrypt.Key _getEncryptionKey(String userId) {
+    final hash = sha256.convert(utf8.encode('$_encryptionSecret$userId'));
     return encrypt.Key(Uint8List.fromList(hash.bytes));
   }
 
   // Encrypt API key for local storage
-  String _encryptValue(String value) {
-    final key = _getEncryptionKey();
+  String _encryptValue(String value, String userId) {
+    final key = _getEncryptionKey(userId);
     final iv = encrypt.IV.fromLength(16);
     final encrypter = encrypt.Encrypter(encrypt.AES(key));
     final encrypted = encrypter.encrypt(value, iv: iv);
@@ -38,9 +38,9 @@ class GlobalCredentialsService {
   }
 
   // Decrypt API key
-  String _decryptValue(String encryptedValue) {
+  String _decryptValue(String encryptedValue, String userId) {
     try {
-      final key = _getEncryptionKey();
+      final key = _getEncryptionKey(userId);
 
       if (!_isValidBase64(encryptedValue) || encryptedValue.length < 32) {
         return encryptedValue;
@@ -80,50 +80,37 @@ class GlobalCredentialsService {
     required String apiKey,
     String? description,
   }) async {
-    final encryptedKey = _encryptValue(apiKey);
-    await _storage.write(key: 'api_key_$service', value: encryptedKey);
+    final authState = ref.read(customAuthStateProvider);
+    final user = authState.user;
+    if (user == null) throw Exception('User not logged in');
+
+    final encryptedKey = _encryptValue(apiKey, user.uid);
+    await _storage.write(
+      key: 'user_${user.uid}_$service',
+      value: encryptedKey,
+    );
   }
 
-  // Retrieve API key - try .env first, then secure storage
+  // Retrieve API key for signed-in user only
   Future<String?> getApiKey(String service) async {
-    // Map service name to .env key format
-    final envKey = _getEnvKeyName(service);
+    final authState = ref.read(customAuthStateProvider);
+    final user = authState.user;
+    if (user == null) return null;
 
-    // Try secure storage first (User override)
-    final stored = await _storage.read(key: 'api_key_$service');
+    final stored = await _storage.read(key: 'user_${user.uid}_$service');
     if (stored != null && stored.isNotEmpty) {
-      return _decryptValue(stored);
-    }
-
-    // Try .env file fallback
-    final envValue = dotenv.env[envKey];
-    if (envValue != null && envValue.isNotEmpty) {
-      return envValue;
+      return _decryptValue(stored, user.uid);
     }
 
     return null;
   }
 
-  String _getEnvKeyName(String service) {
-    switch (service.toLowerCase()) {
-      case 'gemini':
-        return 'GEMINI_API_KEY';
-      case 'openrouter':
-        return 'OPENROUTER_API_KEY';
-      case 'elevenlabs':
-        return 'ELEVENLABS_API_KEY';
-      case 'serper':
-        return 'SERPER_API_KEY';
-      case 'murf':
-        return 'MURF_API_KEY';
-      default:
-        return '${service.toUpperCase()}_API_KEY';
-    }
-  }
-
   // Delete API key from secure storage
   Future<void> deleteApiKey(String service) async {
-    await _storage.delete(key: 'api_key_$service');
+    final authState = ref.read(customAuthStateProvider);
+    final user = authState.user;
+    if (user == null) return;
+    await _storage.delete(key: 'user_${user.uid}_$service');
   }
 
   // List all stored services

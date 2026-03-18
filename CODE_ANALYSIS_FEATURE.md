@@ -21,7 +21,7 @@ Users can configure code analysis settings in the **MCP Dashboard → Settings**
   - **Specific Model**: Choose from admin-configured models (Gemini, OpenRouter, etc.)
 
 ### Accessing Settings
-1. Go to the web app: `https://notebookllm.app/dashboard/mcp`
+1. Go to the web app: `https://noteclaw.app/dashboard/mcp`
 2. Click the **Settings** tab
 3. Configure your preferences
 4. Click **Save Settings**

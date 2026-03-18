@@ -110,7 +110,7 @@ class StripeService {
       await Stripe.instance.initPaymentSheet(
         paymentSheetParameters: SetupPaymentSheetParameters(
           paymentIntentClientSecret: clientSecret,
-          merchantDisplayName: 'Notebook LLM',
+          merchantDisplayName: 'NoteClaw',
           style: ThemeMode.system,
           appearance: PaymentSheetAppearance(
             colors: PaymentSheetAppearanceColors(
@@ -187,7 +187,7 @@ class StripeService {
       await Stripe.instance.initPaymentSheet(
         paymentSheetParameters: SetupPaymentSheetParameters(
           paymentIntentClientSecret: clientSecret,
-          merchantDisplayName: 'Notebook LLM',
+          merchantDisplayName: 'NoteClaw',
           style: ThemeMode.system,
           appearance: PaymentSheetAppearance(
             colors: PaymentSheetAppearanceColors(

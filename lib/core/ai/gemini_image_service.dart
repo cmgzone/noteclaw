@@ -19,7 +19,8 @@ class GeminiImageService {
 
       if (provider == 'openrouter') {
         if (model == null || model.isEmpty) {
-          throw Exception('No image model selected. Please select an AI model with image generation capabilities in Settings.');
+          throw Exception(
+              'No image model selected. Please select an AI model with image generation capabilities in Settings.');
         }
         return _generateImageOpenRouter(prompt, model);
       }
@@ -56,8 +57,8 @@ class GeminiImageService {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $apiKey',
-          'HTTP-Referer': 'https://notebookllm.app',
-          'X-Title': 'NotBook LLM',
+          'HTTP-Referer': 'https://noteclaw.app',
+          'X-Title': 'NoteClaw',
         },
         body: jsonEncode({
           'model': imageModel,

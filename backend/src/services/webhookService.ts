@@ -20,8 +20,17 @@ export interface WebhookPayload {
   sourceLanguage: string;
   message: string;
   conversationHistory: SourceMessage[];
+  imageAttachments?: ImageAttachmentPayload[];
   userId: string;
   timestamp: string;
+}
+
+export interface ImageAttachmentPayload {
+  id: string;
+  name: string;
+  mimeType: string;
+  base64Data: string;
+  sizeBytes: number;
 }
 
 export interface WebhookResponse {
@@ -181,7 +190,8 @@ class WebhookService {
     sourceId: string,
     message: string,
     conversationHistory: SourceMessage[],
-    userId: string
+    userId: string,
+    imageAttachments?: ImageAttachmentPayload[]
   ): Promise<WebhookPayload> {
     // Get source details
     const sourceResult = await pool.query(
@@ -206,6 +216,7 @@ class WebhookService {
       sourceLanguage: metadata.language || 'unknown',
       message,
       conversationHistory,
+      ...(imageAttachments && imageAttachments.length > 0 && { imageAttachments }),
       userId,
       timestamp: new Date().toISOString(),
     };

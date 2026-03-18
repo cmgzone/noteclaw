@@ -5,8 +5,8 @@ Future<AudioHandler> initAudioService() async {
   return await AudioService.init(
     builder: () => AudioPlayerHandler(),
     config: const AudioServiceConfig(
-      androidNotificationChannelId: 'com.notebookllm.audio',
-      androidNotificationChannelName: 'Notebook LLM Audio',
+      androidNotificationChannelId: 'com.noteclaw.audio',
+      androidNotificationChannelName: 'NoteClaw Audio',
       androidNotificationOngoing: true,
       androidStopForegroundOnPause: true,
     ),

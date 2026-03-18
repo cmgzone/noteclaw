@@ -13,7 +13,7 @@ export interface AuthRequest extends Request {
 }
 
 /**
- * Check if a token is a personal API token (starts with nllm_)
+ * Check if a token is a personal API token (starts with nclaw_)
  */
 const isApiToken = (token: string): boolean => {
     return token.startsWith(TOKEN_PREFIX);
@@ -24,7 +24,7 @@ const isApiToken = (token: string): boolean => {
  * 
  * Supports two authentication methods:
  * 1. JWT tokens - Standard JWT authentication
- * 2. Personal API tokens - Format: Bearer nllm_xxxxx
+ * 2. Personal API tokens - Format: Bearer nclaw_xxxxx
  * 
  * Requirements: 3.1, 3.5
  */

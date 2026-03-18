@@ -789,7 +789,6 @@ Sources to analyze:''';
                   () => _isWebBrowsingEnabled = !_isWebBrowsingEnabled),
               onPickImage: _pickImage,
               onTakePhoto: _takePhoto,
-              onOpenAIBrowser: () => context.push('/ai-browser'),
               selectedImage: _selectedImage,
               onRemoveImage: _removeSelectedImage,
               isRecording: _recording,
@@ -1695,7 +1694,6 @@ class _ChatInputArea extends StatelessWidget {
     required this.onToggleWebBrowsing,
     required this.onPickImage,
     required this.onTakePhoto,
-    required this.onOpenAIBrowser,
     this.selectedImage,
     this.onRemoveImage,
     this.isRecording = false,
@@ -1711,7 +1709,6 @@ class _ChatInputArea extends StatelessWidget {
   final VoidCallback onToggleWebBrowsing;
   final VoidCallback onPickImage;
   final VoidCallback onTakePhoto;
-  final VoidCallback onOpenAIBrowser;
   final XFile? selectedImage;
   final VoidCallback? onRemoveImage;
   final bool isRecording;
@@ -1919,16 +1916,6 @@ class _ChatInputArea extends StatelessWidget {
                             tooltip: isWebBrowsingEnabled
                                 ? 'Web Browsing ON'
                                 : 'Enable Web Browsing (with screenshots)',
-                          ),
-                          // AI Browser button
-                          IconButton(
-                            onPressed: onOpenAIBrowser,
-                            icon: Icon(
-                              Icons.open_in_browser,
-                              color: scheme.tertiary,
-                              size: 20,
-                            ),
-                            tooltip: 'Open AI Browser (real browser control)',
                           ),
                           Expanded(
                             child: TextField(

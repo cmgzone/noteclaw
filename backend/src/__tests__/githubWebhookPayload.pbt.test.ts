@@ -156,6 +156,13 @@ const sourceMessageArb = fc.record({
   isRead: fc.boolean(),
   createdAt: fc.date(),
 });
+const imageAttachmentArb = fc.record({
+  id: fc.uuid(),
+  name: fc.string({ minLength: 1, maxLength: 120 }),
+  mimeType: fc.constantFrom('image/png', 'image/jpeg', 'image/webp', 'image/gif'),
+  base64Data: fc.base64String({ minLength: 8, maxLength: 1024 }),
+  sizeBytes: fc.integer({ min: 1, max: 1024 * 1024 }),
+});
 
 
 // ==================== PROPERTY TESTS ====================
@@ -300,6 +307,39 @@ describe('GitHub Webhook Payload - Property-Based Tests', () => {
               expect(payload.conversationHistory[i].content).toBe(history[i].content);
               expect(payload.conversationHistory[i].role).toBe(history[i].role);
             }
+          }
+        ),
+        { numRuns: 5, timeout: 60000 }
+      );
+    }, 120000);
+
+    it('image attachments are preserved in github payload', async () => {
+      await fc.assert(
+        fc.asyncProperty(
+          ownerArb,
+          repoArb,
+          filePathArb,
+          branchArb,
+          languageArb,
+          codeContentArb,
+          messageArb,
+          fc.array(imageAttachmentArb, { minLength: 1, maxLength: 4 }),
+          async (owner, repo, path, branch, language, content, message, attachments) => {
+            const userId = await createTestUser();
+            const notebookId = await createTestNotebook(userId);
+            const sourceId = await createGitHubSource(notebookId, userId, {
+              owner, repo, path, branch, language, content,
+            });
+
+            const payload = await webhookBuilder.buildPayload({
+              sourceId,
+              message,
+              conversationHistory: [],
+              imageAttachments: attachments,
+              userId,
+            });
+
+            expect(payload.imageAttachments).toEqual(attachments);
           }
         ),
         { numRuns: 5, timeout: 60000 }

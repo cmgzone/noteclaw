@@ -1,5 +1,5 @@
-import 'package:notebook_llm/core/utils/app_logger.dart';
-import 'package:notebook_llm/core/utils/json_parsing.dart';
+import 'package:noteclaw/core/utils/app_logger.dart';
+import 'package:noteclaw/core/utils/json_parsing.dart';
 
 const _logger = AppLogger('StudyGroup');
 

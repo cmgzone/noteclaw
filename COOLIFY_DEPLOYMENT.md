@@ -1,6 +1,6 @@
 # Deploying Backend to Coolify
 
-This guide details how to deploy the **Notebook LLM Backend** to your self-hosted Coolify instance.
+This guide details how to deploy the **NoteClaw Backend** to your self-hosted Coolify instance.
 
 ## Prerequisites
 

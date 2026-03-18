@@ -1,5 +1,8 @@
 // ignore_for_file: deprecated_member_use
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons/lucide_icons.dart';
@@ -23,6 +26,9 @@ class AgentSession {
   final DateTime lastActivity;
   final DateTime createdAt;
   final Map<String, dynamic>? metadata;
+  final List<String> memoryNamespaces;
+  final DateTime? memoryUpdatedAt;
+  final bool hasMemory;
 
   const AgentSession({
     required this.id,
@@ -34,6 +40,9 @@ class AgentSession {
     required this.lastActivity,
     required this.createdAt,
     this.metadata,
+    this.memoryNamespaces = const [],
+    this.memoryUpdatedAt,
+    this.hasMemory = false,
   });
 
   factory AgentSession.fromJson(Map<String, dynamic> json) {
@@ -61,6 +70,15 @@ class AgentSession {
               ? DateTime.parse(json['createdAt'] as String)
               : DateTime.now(),
       metadata: json['metadata'] as Map<String, dynamic>?,
+      memoryNamespaces: json['memory_namespaces'] is List
+          ? List<String>.from(json['memory_namespaces'])
+          : const [],
+      memoryUpdatedAt: json['memory_updated_at'] != null
+          ? DateTime.tryParse(json['memory_updated_at'] as String)
+          : json['memoryUpdatedAt'] != null
+              ? DateTime.tryParse(json['memoryUpdatedAt'] as String)
+              : null,
+      hasMemory: json['has_memory'] as bool? ?? json['hasMemory'] as bool? ?? false,
     );
   }
 
@@ -114,18 +132,54 @@ class AgentConnectionsNotifier extends StateNotifier<AgentConnectionsState> {
     try {
       final apiService = ref.read(apiServiceProvider);
       final notebooks = await apiService.getAgentNotebooks();
+      final memorySessions = await apiService.getAgentMemories();
+
+      final memoryBySessionId = <String, Map<String, dynamic>>{};
+      for (final row in memorySessions) {
+        final sessionData =
+            (row['session'] as Map<String, dynamic>?) ?? const <String, dynamic>{};
+        final memoryData =
+            (row['memory'] as Map<String, dynamic>?) ?? const <String, dynamic>{};
+        final sessionId = sessionData['id'] as String?;
+        if (sessionId == null || sessionId.isEmpty) {
+          continue;
+        }
+        final memoryUpdatedAtRaw = memoryData['memoryUpdatedAt'] ??
+            memoryData['memory_updated_at'];
+        memoryBySessionId[sessionId] = {
+          'hasMemory': memoryData['hasMemory'] as bool? ??
+              memoryData['has_memory'] as bool? ??
+              false,
+          'memoryNamespaces': memoryData['namespaces'] is List
+              ? List<String>.from(memoryData['namespaces'])
+              : const <String>[],
+          'memoryUpdatedAt': memoryUpdatedAtRaw is String
+              ? DateTime.tryParse(memoryUpdatedAtRaw)
+              : null,
+        };
+      }
 
       final sessions = notebooks.map((n) {
+        final nestedSession =
+            n['session'] as Map<String, dynamic>? ?? const <String, dynamic>{};
+        final sessionId = n['agent_session_id'] as String? ??
+            nestedSession['id'] as String? ??
+            n['id'] as String;
+        final memoryInfo = memoryBySessionId[sessionId] ?? const <String, dynamic>{};
+
         // Extract agent session info from notebook metadata
         return AgentSession(
-          id: n['agent_session_id'] as String? ?? n['id'] as String,
+          id: sessionId,
           agentName: n['agent_name'] as String? ??
+              nestedSession['agentName'] as String? ??
               n['agentName'] as String? ??
               'Unknown Agent',
           agentIdentifier: n['agent_identifier'] as String? ??
+              nestedSession['agentIdentifier'] as String? ??
               n['agentIdentifier'] as String? ??
               '',
           status: n['agent_status'] as String? ??
+              nestedSession['status'] as String? ??
               n['agentStatus'] as String? ??
               'active',
           notebookId: n['id'] as String?,
@@ -139,6 +193,11 @@ class AgentConnectionsNotifier extends StateNotifier<AgentConnectionsState> {
               ? DateTime.parse(n['created_at'] as String)
               : DateTime.now(),
           metadata: n['metadata'] as Map<String, dynamic>?,
+          hasMemory: memoryInfo['hasMemory'] as bool? ?? false,
+          memoryNamespaces: memoryInfo['memoryNamespaces'] is List
+              ? List<String>.from(memoryInfo['memoryNamespaces'])
+              : const [],
+          memoryUpdatedAt: memoryInfo['memoryUpdatedAt'] as DateTime?,
         );
       }).toList();
 
@@ -174,6 +233,9 @@ class AgentConnectionsNotifier extends StateNotifier<AgentConnectionsState> {
             lastActivity: DateTime.now(),
             createdAt: s.createdAt,
             metadata: s.metadata,
+            memoryNamespaces: s.memoryNamespaces,
+            memoryUpdatedAt: s.memoryUpdatedAt,
+            hasMemory: s.hasMemory,
           );
         }
         return s;
@@ -394,6 +456,7 @@ class AgentConnectionsScreen extends ConsumerWidget {
             onViewNotebook: session.notebookId != null
                 ? () => context.push('/notebook/${session.notebookId}')
                 : null,
+            onViewMemory: () => _showMemoryDialog(context, ref, session),
           ).animate().fadeIn(delay: Duration(milliseconds: index * 100)),
         );
       }),
@@ -498,6 +561,271 @@ class AgentConnectionsScreen extends ConsumerWidget {
       ),
     );
   }
+
+  Future<void> _showMemoryDialog(
+    BuildContext context,
+    WidgetRef ref,
+    AgentSession session,
+  ) async {
+    final scheme = Theme.of(context).colorScheme;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const AlertDialog(
+        content: Padding(
+          padding: EdgeInsets.symmetric(vertical: 8),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              SizedBox(width: 12),
+              Text('Loading memory...'),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    try {
+      final apiService = ref.read(apiServiceProvider);
+      final first = await apiService.getAgentMemory(
+        agentSessionId: session.id,
+        namespace: 'default',
+      );
+
+      final namespacesRaw = first['availableNamespaces'];
+      final namespaces = namespacesRaw is List
+          ? List<String>.from(namespacesRaw)
+          : <String>[];
+      final namespaceList = namespaces.isEmpty ? <String>['default'] : namespaces;
+
+      final memoryByNamespace = <String, dynamic>{};
+      for (final namespace in namespaceList) {
+        final response = namespace == 'default'
+            ? first
+            : await apiService.getAgentMemory(
+                agentSessionId: session.id,
+                namespace: namespace,
+              );
+        memoryByNamespace[namespace] = response['memory'];
+      }
+
+      if (context.mounted) {
+        Navigator.pop(context);
+      }
+
+      if (!context.mounted) {
+        return;
+      }
+
+      showDialog(
+        context: context,
+        builder: (context) => _AgentMemoryViewerDialog(
+          session: session,
+          memoryByNamespace: memoryByNamespace,
+          memoryUpdatedAt: first['memoryUpdatedAt'] as String?,
+        ),
+      );
+    } catch (e) {
+      if (context.mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to load memory: $e'),
+            backgroundColor: scheme.error,
+          ),
+        );
+      }
+    }
+  }
+}
+
+class _AgentMemoryViewerDialog extends StatefulWidget {
+  final AgentSession session;
+  final Map<String, dynamic> memoryByNamespace;
+  final String? memoryUpdatedAt;
+
+  const _AgentMemoryViewerDialog({
+    required this.session,
+    required this.memoryByNamespace,
+    required this.memoryUpdatedAt,
+  });
+
+  @override
+  State<_AgentMemoryViewerDialog> createState() =>
+      _AgentMemoryViewerDialogState();
+}
+
+class _AgentMemoryViewerDialogState extends State<_AgentMemoryViewerDialog>
+    with SingleTickerProviderStateMixin {
+  late final List<String> _namespaces;
+  late final TabController _tabController;
+  final TextEditingController _searchController = TextEditingController();
+  String _query = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _namespaces = widget.memoryByNamespace.keys.toList(growable: false);
+    _tabController = TabController(length: _namespaces.length, vsync: this);
+    _searchController.addListener(() {
+      setState(() {
+        _query = _searchController.text.trim().toLowerCase();
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  String _namespaceText(String namespace) {
+    final memory = widget.memoryByNamespace[namespace];
+    return const JsonEncoder.withIndent('  ').convert(memory);
+  }
+
+  String _filteredText(String fullText) {
+    if (_query.isEmpty) {
+      return fullText;
+    }
+    final lines = const LineSplitter().convert(fullText);
+    final filtered = lines
+        .where((line) => line.toLowerCase().contains(_query))
+        .toList(growable: false);
+    if (filtered.isEmpty) {
+      return 'No matches for "$_query"';
+    }
+    return filtered.join('\n');
+  }
+
+  Future<void> _copyCurrentNamespace() async {
+    if (_namespaces.isEmpty) return;
+    final namespace = _namespaces[_tabController.index];
+    final text = _namespaceText(namespace);
+    await Clipboard.setData(ClipboardData(text: text));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Copied "$namespace" memory'),
+        backgroundColor: Colors.green,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final updatedAt = widget.memoryUpdatedAt;
+
+    return AlertDialog(
+      icon: Icon(LucideIcons.brain, size: 36, color: scheme.primary),
+      title: Text('${widget.session.agentName} Memory'),
+      content: SizedBox(
+        width: 820,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Wrap(
+              spacing: 12,
+              runSpacing: 6,
+              children: [
+                Text(
+                  'Namespaces: ${_namespaces.length}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: scheme.secondaryText,
+                  ),
+                ),
+                if (updatedAt != null && updatedAt.isNotEmpty)
+                  Text(
+                    'Updated: $updatedAt',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: scheme.secondaryText,
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                isDense: true,
+                hintText: 'Search memory JSON',
+                prefixIcon: const Icon(LucideIcons.search, size: 16),
+                suffixIcon: _query.isEmpty
+                    ? null
+                    : IconButton(
+                        onPressed: () => _searchController.clear(),
+                        icon: const Icon(Icons.close, size: 16),
+                      ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              decoration: BoxDecoration(
+                color: scheme.surfaceContainerHighest.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: TabBar(
+                controller: _tabController,
+                isScrollable: true,
+                tabAlignment: TabAlignment.start,
+                tabs: _namespaces.map((namespace) => Tab(text: namespace)).toList(),
+              ),
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              height: 420,
+              child: TabBarView(
+                controller: _tabController,
+                children: _namespaces.map((namespace) {
+                  final fullText = _namespaceText(namespace);
+                  final display = _filteredText(fullText);
+                  return Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: scheme.surfaceContainerHighest.withValues(alpha: 0.3),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: SingleChildScrollView(
+                      child: SelectableText(
+                        display,
+                        style: TextStyle(
+                          fontFamily: 'monospace',
+                          fontSize: 12,
+                          color: scheme.onSurface,
+                        ),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton.icon(
+          onPressed: _copyCurrentNamespace,
+          icon: const Icon(LucideIcons.copy, size: 16),
+          label: const Text('Copy Namespace'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Close'),
+        ),
+      ],
+    );
+  }
 }
 
 /// Stat item widget for the summary
@@ -551,11 +879,13 @@ class _AgentSessionCard extends StatelessWidget {
   final AgentSession session;
   final VoidCallback onDisconnect;
   final VoidCallback? onViewNotebook;
+  final VoidCallback onViewMemory;
 
   const _AgentSessionCard({
     required this.session,
     required this.onDisconnect,
     this.onViewNotebook,
+    required this.onViewMemory,
   });
 
   IconData _getAgentIcon() {
@@ -649,8 +979,18 @@ class _AgentSessionCard extends StatelessWidget {
                     ],
                   ),
                 ),
-                // Status indicator
-                _StatusChip(status: session.status),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    _StatusChip(status: session.status),
+                    const SizedBox(height: 6),
+                    _MemoryHealthChip(
+                      hasMemory: session.hasMemory,
+                      namespaceCount: session.memoryNamespaces.length,
+                      updatedAt: session.memoryUpdatedAt,
+                    ),
+                  ],
+                ),
               ],
             ),
           ),
@@ -678,6 +1018,22 @@ class _AgentSessionCard extends StatelessWidget {
                   label: 'Connected',
                   value: _formatTimeAgo(session.createdAt),
                 ),
+                const SizedBox(height: 8),
+                _DetailRow(
+                  icon: LucideIcons.brain,
+                  label: 'Memory',
+                  value: session.hasMemory
+                      ? '${session.memoryNamespaces.length} namespaces'
+                      : 'No memory saved',
+                ),
+                if (session.memoryUpdatedAt != null) ...[
+                  const SizedBox(height: 8),
+                  _DetailRow(
+                    icon: LucideIcons.clock3,
+                    label: 'Memory Updated',
+                    value: _formatTimeAgo(session.memoryUpdatedAt!),
+                  ),
+                ],
               ],
             ),
           ),
@@ -693,6 +1049,14 @@ class _AgentSessionCard extends StatelessWidget {
             ),
             child: Row(
               children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: onViewMemory,
+                    icon: const Icon(LucideIcons.brain, size: 16),
+                    label: const Text('View Memory'),
+                  ),
+                ),
+                const SizedBox(width: 8),
                 if (onViewNotebook != null)
                   Expanded(
                     child: OutlinedButton.icon(
@@ -799,6 +1163,80 @@ class _StatusChip extends StatelessWidget {
             _getLabel(),
             style: TextStyle(
               fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MemoryHealthChip extends StatelessWidget {
+  final bool hasMemory;
+  final int namespaceCount;
+  final DateTime? updatedAt;
+
+  const _MemoryHealthChip({
+    required this.hasMemory,
+    required this.namespaceCount,
+    required this.updatedAt,
+  });
+
+  Color _chipColor() {
+    if (!hasMemory) {
+      return const Color(0xFF9CA3AF);
+    }
+    if (updatedAt == null) {
+      return const Color(0xFF10B981);
+    }
+    final age = DateTime.now().difference(updatedAt!);
+    if (age.inDays <= 1) {
+      return const Color(0xFF22C55E);
+    }
+    if (age.inDays <= 7) {
+      return const Color(0xFFF59E0B);
+    }
+    return const Color(0xFFEF4444);
+  }
+
+  String _label() {
+    if (!hasMemory) {
+      return 'Memory empty';
+    }
+    if (updatedAt == null) {
+      return '$namespaceCount namespaces';
+    }
+    final age = DateTime.now().difference(updatedAt!);
+    if (age.inHours < 1) {
+      return '$namespaceCount ns · fresh';
+    }
+    if (age.inDays < 1) {
+      return '$namespaceCount ns · ${age.inHours}h';
+    }
+    return '$namespaceCount ns · ${age.inDays}d';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _chipColor();
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(LucideIcons.brain, size: 10, color: color),
+          const SizedBox(width: 5),
+          Text(
+            _label(),
+            style: TextStyle(
+              fontSize: 10,
               fontWeight: FontWeight.w600,
               color: color,
             ),

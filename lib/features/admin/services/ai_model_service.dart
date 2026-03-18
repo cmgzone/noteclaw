@@ -17,6 +17,8 @@ class AIModel {
   final bool isActive;
   final bool isPremium;
   final bool canAccess; // Whether current user can use this model
+  final bool isUserModel;
+  final bool hasPersonalApiKey;
 
   AIModel({
     required this.id,
@@ -30,6 +32,8 @@ class AIModel {
     this.isActive = true,
     this.isPremium = false,
     this.canAccess = true, // Default to true for backward compatibility
+    this.isUserModel = false,
+    this.hasPersonalApiKey = false,
   });
 
   factory AIModel.fromMap(Map<String, dynamic> map) {
@@ -48,6 +52,9 @@ class AIModel {
       isActive: map['is_active'] ?? map['isActive'] ?? true,
       isPremium: map['is_premium'] ?? map['isPremium'] ?? false,
       canAccess: map['can_access'] ?? map['canAccess'] ?? true,
+      isUserModel: map['is_user_model'] ?? map['isUserModel'] ?? false,
+      hasPersonalApiKey:
+          map['has_personal_api_key'] ?? map['hasPersonalApiKey'] ?? false,
     );
   }
 
@@ -62,6 +69,8 @@ class AIModel {
       'context_window': contextWindow,
       'is_active': isActive,
       'is_premium': isPremium,
+      'is_user_model': isUserModel,
+      'has_personal_api_key': hasPersonalApiKey,
     };
   }
 }
@@ -96,6 +105,59 @@ class AIModelService {
 
   Future<void> deleteModel(String id) async {
     await _api.deleteAIModel(id);
+  }
+
+  Future<List<AIModel>> listPersonalModels() async {
+    final results = await _api.getPersonalAIModels();
+    return results.map((m) => AIModel.fromMap(m)).toList();
+  }
+
+  Future<AIModel> addPersonalModel({
+    required String name,
+    required String modelId,
+    required String provider,
+    required String apiKey,
+    String? description,
+    int contextWindow = 0,
+  }) async {
+    final result = await _api.addPersonalAIModel({
+      'name': name,
+      'model_id': modelId,
+      'provider': provider,
+      'api_key': apiKey,
+      'description': description,
+      'context_window': contextWindow,
+    });
+    return AIModel.fromMap(result);
+  }
+
+  Future<AIModel> updatePersonalModel({
+    required String id,
+    required String name,
+    required String modelId,
+    required String provider,
+    String? apiKey,
+    String? description,
+    int contextWindow = 0,
+    bool isActive = true,
+  }) async {
+    final payload = <String, dynamic>{
+      'name': name,
+      'model_id': modelId,
+      'provider': provider,
+      'description': description,
+      'context_window': contextWindow,
+      'is_active': isActive,
+    };
+    if (apiKey != null && apiKey.trim().isNotEmpty) {
+      payload['api_key'] = apiKey.trim();
+    }
+    final result = await _api.updatePersonalAIModel(id, payload);
+    return AIModel.fromMap(result);
+  }
+
+  Future<void> deletePersonalModel(String id) async {
+    await _api.deletePersonalAIModel(id);
   }
 
   // Table is managed by backend, no need to create it from Flutter

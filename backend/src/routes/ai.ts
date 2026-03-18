@@ -12,8 +12,31 @@ import {
 import { checkCredits, consumeCredits, calculateChatCreditCost } from '../services/creditService.js';
 import { getCache, setCache, CacheTTL, CacheKeys, getOrSetCache } from '../services/cacheService.js';
 import pool from '../config/database.js';
+import { encryptSecret, decryptSecretAllowLegacy } from '../services/secretEncryptionService.js';
 
 const router = express.Router();
+
+async function ensureUserAIModelsTable() {
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS user_ai_models (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            name TEXT NOT NULL,
+            model_id TEXT NOT NULL,
+            provider TEXT NOT NULL,
+            encrypted_api_key TEXT NOT NULL,
+            description TEXT,
+            context_window INTEGER DEFAULT 0,
+            is_active BOOLEAN DEFAULT TRUE,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW(),
+            UNIQUE(user_id, model_id)
+        )
+    `);
+    await pool.query(
+        'CREATE INDEX IF NOT EXISTS idx_user_ai_models_user_id ON user_ai_models(user_id)'
+    );
+}
 
 // Helper function to check if user has premium access
 async function userHasPremiumAccess(userId: string): Promise<boolean> {
@@ -41,6 +64,11 @@ async function userHasPremiumAccess(userId: string): Promise<boolean> {
 router.get('/models', authenticateToken, async (req: AuthRequest, res: Response) => {
     try {
         const userId = req.userId;
+        if (!userId) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+
+        await ensureUserAIModelsTable();
 
         // Try to get from cache first
         const cacheKey = CacheKeys.aiModels();
@@ -49,16 +77,35 @@ router.get('/models', authenticateToken, async (req: AuthRequest, res: Response)
         if (cached) {
             // Get user's subscription status
             const hasPremiumAccess = userId ? await userHasPremiumAccess(userId) : false;
+
+            const userModelsResult = await pool.query(
+                `SELECT id, name, model_id, provider, description, context_window, is_active
+                 FROM user_ai_models
+                 WHERE user_id = $1 AND is_active = TRUE
+                 ORDER BY created_at DESC`,
+                [userId]
+            );
             
             // Add can_access field based on user's subscription
             const modelsWithAccess = cached.map(model => ({
                 ...model,
-                can_access: !model.is_premium || hasPremiumAccess
+                can_access: !model.is_premium || hasPremiumAccess,
+                is_user_model: false,
+                has_personal_api_key: false
+            }));
+
+            const userModels = userModelsResult.rows.map(model => ({
+                ...model,
+                is_premium: false,
+                is_default: false,
+                can_access: true,
+                is_user_model: true,
+                has_personal_api_key: true
             }));
 
             return res.json({
                 success: true,
-                models: modelsWithAccess,
+                models: [...userModels, ...modelsWithAccess],
                 has_premium_access: hasPremiumAccess,
                 cached: true
             });
@@ -71,18 +118,37 @@ router.get('/models', authenticateToken, async (req: AuthRequest, res: Response)
             'SELECT id, name, model_id, provider, description, context_window, is_active, is_premium, is_default FROM ai_models WHERE is_active = true ORDER BY is_default DESC NULLS LAST, provider, name'
         );
 
+        const userModelsResult = await pool.query(
+            `SELECT id, name, model_id, provider, description, context_window, is_active
+             FROM user_ai_models
+             WHERE user_id = $1 AND is_active = TRUE
+             ORDER BY created_at DESC`,
+            [userId]
+        );
+
         // Cache the models list for 1 hour
         await setCache(cacheKey, result.rows, CacheTTL.HOUR);
 
         // Add can_access field to each model based on user's subscription
         const modelsWithAccess = result.rows.map(model => ({
             ...model,
-            can_access: !model.is_premium || hasPremiumAccess
+            can_access: !model.is_premium || hasPremiumAccess,
+            is_user_model: false,
+            has_personal_api_key: false
+        }));
+
+        const userModels = userModelsResult.rows.map(model => ({
+            ...model,
+            is_premium: false,
+            is_default: false,
+            can_access: true,
+            is_user_model: true,
+            has_personal_api_key: true
         }));
 
         res.json({
             success: true,
-            models: modelsWithAccess,
+            models: [...userModels, ...modelsWithAccess],
             has_premium_access: hasPremiumAccess
         });
     } catch (error) {
@@ -119,6 +185,215 @@ router.get('/models/default', authenticateToken, async (req: AuthRequest, res: R
     }
 });
 
+router.get('/models/personal', authenticateToken, async (req: AuthRequest, res: Response) => {
+    try {
+        if (!req.userId) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+
+        await ensureUserAIModelsTable();
+
+        const result = await pool.query(
+            `SELECT id, name, model_id, provider, description, context_window, is_active, created_at, updated_at
+             FROM user_ai_models
+             WHERE user_id = $1
+             ORDER BY created_at DESC`,
+            [req.userId]
+        );
+
+        return res.json({
+            success: true,
+            models: result.rows.map((row) => ({
+                ...row,
+                is_user_model: true,
+                can_access: true,
+                is_premium: false,
+                has_personal_api_key: true
+            }))
+        });
+    } catch (error) {
+        console.error('Error listing personal AI models:', error);
+        return res.status(500).json({ error: 'Failed to list personal AI models' });
+    }
+});
+
+router.post('/models/personal', authenticateToken, async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.userId;
+        if (!userId) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+
+        const {
+            name,
+            modelId,
+            model_id,
+            provider,
+            description,
+            apiKey,
+            api_key,
+            contextWindow,
+            context_window
+        } = req.body ?? {};
+
+        const finalModelId = (modelId ?? model_id ?? '').toString().trim();
+        const finalName = (name ?? '').toString().trim();
+        const finalProvider = (provider ?? '').toString().trim().toLowerCase();
+        const finalApiKey = (apiKey ?? api_key ?? '').toString().trim();
+        const finalContextWindow = Number(contextWindow ?? context_window ?? 0);
+
+        if (!finalName || !finalModelId || !finalProvider || !finalApiKey) {
+            return res.status(400).json({ error: 'name, modelId, provider, and apiKey are required' });
+        }
+
+        if (!['gemini', 'openrouter', 'openai', 'anthropic'].includes(finalProvider)) {
+            return res.status(400).json({ error: 'Invalid provider' });
+        }
+
+        await ensureUserAIModelsTable();
+        const encryptedApiKey = encryptSecret(finalApiKey);
+
+        const result = await pool.query(
+            `INSERT INTO user_ai_models (
+                user_id, name, model_id, provider, encrypted_api_key, description, context_window, is_active
+             ) VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE)
+             ON CONFLICT (user_id, model_id)
+             DO UPDATE SET
+                name = EXCLUDED.name,
+                provider = EXCLUDED.provider,
+                encrypted_api_key = EXCLUDED.encrypted_api_key,
+                description = EXCLUDED.description,
+                context_window = EXCLUDED.context_window,
+                is_active = TRUE,
+                updated_at = NOW()
+             RETURNING id, name, model_id, provider, description, context_window, is_active, created_at, updated_at`,
+            [userId, finalName, finalModelId, finalProvider, encryptedApiKey, description ?? null, Number.isFinite(finalContextWindow) ? finalContextWindow : 0]
+        );
+
+        return res.status(201).json({
+            success: true,
+            model: {
+                ...result.rows[0],
+                is_user_model: true,
+                can_access: true,
+                is_premium: false,
+                has_personal_api_key: true
+            }
+        });
+    } catch (error) {
+        console.error('Error saving personal AI model:', error);
+        return res.status(500).json({ error: 'Failed to save personal AI model' });
+    }
+});
+
+router.put('/models/personal/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.userId;
+        if (!userId) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+
+        const { id } = req.params;
+        const {
+            name,
+            modelId,
+            model_id,
+            provider,
+            description,
+            apiKey,
+            api_key,
+            contextWindow,
+            context_window,
+            isActive,
+            is_active
+        } = req.body ?? {};
+
+        await ensureUserAIModelsTable();
+
+        const existing = await pool.query(
+            `SELECT * FROM user_ai_models WHERE id = $1 AND user_id = $2`,
+            [id, userId]
+        );
+
+        if (existing.rows.length === 0) {
+            return res.status(404).json({ error: 'Personal model not found' });
+        }
+
+        const row = existing.rows[0];
+        const nextName = (name ?? row.name).toString().trim();
+        const nextModelId = (modelId ?? model_id ?? row.model_id).toString().trim();
+        const nextProvider = (provider ?? row.provider).toString().trim().toLowerCase();
+        const nextDescription = description ?? row.description ?? null;
+        const nextContextWindow = Number(contextWindow ?? context_window ?? row.context_window ?? 0);
+        const nextIsActive = (isActive ?? is_active ?? row.is_active) === true;
+        const nextApiKey = (apiKey ?? api_key ?? '').toString().trim();
+        const encryptedApiKey = nextApiKey
+            ? encryptSecret(nextApiKey)
+            : row.encrypted_api_key;
+
+        if (!nextName || !nextModelId || !nextProvider) {
+            return res.status(400).json({ error: 'name, modelId, and provider are required' });
+        }
+        if (!['gemini', 'openrouter', 'openai', 'anthropic'].includes(nextProvider)) {
+            return res.status(400).json({ error: 'Invalid provider' });
+        }
+
+        const updated = await pool.query(
+            `UPDATE user_ai_models
+             SET name = $1,
+                 model_id = $2,
+                 provider = $3,
+                 encrypted_api_key = $4,
+                 description = $5,
+                 context_window = $6,
+                 is_active = $7,
+                 updated_at = NOW()
+             WHERE id = $8 AND user_id = $9
+             RETURNING id, name, model_id, provider, description, context_window, is_active, created_at, updated_at`,
+            [nextName, nextModelId, nextProvider, encryptedApiKey, nextDescription, Number.isFinite(nextContextWindow) ? nextContextWindow : 0, nextIsActive, id, userId]
+        );
+
+        return res.json({
+            success: true,
+            model: {
+                ...updated.rows[0],
+                is_user_model: true,
+                can_access: true,
+                is_premium: false,
+                has_personal_api_key: true
+            }
+        });
+    } catch (error) {
+        console.error('Error updating personal AI model:', error);
+        return res.status(500).json({ error: 'Failed to update personal AI model' });
+    }
+});
+
+router.delete('/models/personal/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.userId;
+        if (!userId) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+
+        await ensureUserAIModelsTable();
+
+        const result = await pool.query(
+            `DELETE FROM user_ai_models WHERE id = $1 AND user_id = $2 RETURNING id`,
+            [req.params.id, userId]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Personal model not found' });
+        }
+
+        return res.json({ success: true });
+    } catch (error) {
+        console.error('Error deleting personal AI model:', error);
+        return res.status(500).json({ error: 'Failed to delete personal AI model' });
+    }
+});
+
 router.use(authenticateToken);
 
 // Chat completion endpoint with premium model validation
@@ -126,6 +401,7 @@ router.post('/chat', async (req: AuthRequest, res: Response) => {
     try {
         let { messages, provider = 'gemini', model } = req.body;
         const userApiKey = (req.get('x-user-api-key') || '').trim();
+        await ensureUserAIModelsTable();
 
         console.log(`[AI Chat] Received request - provider: ${provider}, model: ${model}`);
 
@@ -147,41 +423,66 @@ router.post('/chat', async (req: AuthRequest, res: Response) => {
             return res.status(400).json({ error: 'messages array is required' });
         }
 
-        // Check if the requested model is premium and if user has access
         let maxTokens = 4096;
-        if (model) {
-            const modelResult = await pool.query(
-                'SELECT is_premium, context_window FROM ai_models WHERE model_id = $1 AND is_active = true',
-                [model]
+        let personalApiKey: string | undefined;
+        let isUserModel = false;
+        if (model && req.userId) {
+            const personalModelResult = await pool.query(
+                `SELECT provider, encrypted_api_key, context_window
+                 FROM user_ai_models
+                 WHERE user_id = $1 AND model_id = $2 AND is_active = TRUE
+                 LIMIT 1`,
+                [req.userId, model]
             );
-
-            if (modelResult.rows.length > 0) {
-                const modelData = modelResult.rows[0];
-
-                // Calculate max output tokens from context window
-                if (modelData.context_window) {
-                    maxTokens = Math.min(Math.floor(modelData.context_window / 4), 131072);
+            if (personalModelResult.rows.length > 0) {
+                const personalModel = personalModelResult.rows[0];
+                isUserModel = true;
+                provider = personalModel.provider;
+                personalApiKey = decryptSecretAllowLegacy(personalModel.encrypted_api_key);
+                if (personalModel.context_window) {
+                    maxTokens = Math.min(Math.floor(personalModel.context_window / 4), 131072);
                     if (maxTokens < 2000) maxTokens = 2000;
                 }
+            }
+        }
 
-                if (modelData.is_premium) {
-                    const hasPremiumAccess = await userHasPremiumAccess(req.userId!);
-                    if (!hasPremiumAccess) {
-                        return res.status(403).json({
-                            error: 'Premium model access required',
-                            message: 'This model is only available to paid subscribers. Please upgrade your plan to access premium AI models.',
-                            upgrade_required: true
-                        });
+        // Check if the requested model is premium and if user has access
+        if (model) {
+            if (!isUserModel) {
+                const modelResult = await pool.query(
+                    'SELECT is_premium, context_window FROM ai_models WHERE model_id = $1 AND is_active = true',
+                    [model]
+                );
+
+                if (modelResult.rows.length > 0) {
+                    const modelData = modelResult.rows[0];
+
+                    // Calculate max output tokens from context window
+                    if (modelData.context_window) {
+                        maxTokens = Math.min(Math.floor(modelData.context_window / 4), 131072);
+                        if (maxTokens < 2000) maxTokens = 2000;
+                    }
+
+                    if (modelData.is_premium) {
+                        const hasPremiumAccess = await userHasPremiumAccess(req.userId!);
+                        if (!hasPremiumAccess) {
+                            return res.status(403).json({
+                                error: 'Premium model access required',
+                                message: 'This model is only available to paid subscribers. Please upgrade your plan to access premium AI models.',
+                                upgrade_required: true
+                            });
+                        }
                     }
                 }
             }
         }
 
+        const effectiveApiKey = userApiKey || personalApiKey || undefined;
         let response: string;
         if (provider === 'openrouter') {
-            response = await generateWithOpenRouter(messages, model, maxTokens, userApiKey || undefined);
+            response = await generateWithOpenRouter(messages, model, maxTokens, effectiveApiKey);
         } else {
-            response = await generateWithGemini(messages, model, userApiKey || undefined);
+            response = await generateWithGemini(messages, model, effectiveApiKey);
         }
 
         res.json({ success: true, response });
@@ -197,7 +498,32 @@ router.post('/chat/stream', async (req: AuthRequest, res: Response) => {
         let { messages, provider = 'gemini', model, useDeepSearch = false, hasImage = false } = req.body;
         const userId = req.userId!;
         const userApiKey = (req.get('x-user-api-key') || '').trim();
-        const isByok = userApiKey.length > 0;
+        await ensureUserAIModelsTable();
+        let personalApiKey: string | undefined;
+        let isUserModel = false;
+        let maxTokens = 4096;
+        if (model) {
+            const personalModelResult = await pool.query(
+                `SELECT provider, encrypted_api_key, context_window
+                 FROM user_ai_models
+                 WHERE user_id = $1 AND model_id = $2 AND is_active = TRUE
+                 LIMIT 1`,
+                [userId, model]
+            );
+            if (personalModelResult.rows.length > 0) {
+                const personalModel = personalModelResult.rows[0];
+                isUserModel = true;
+                provider = personalModel.provider;
+                personalApiKey = decryptSecretAllowLegacy(personalModel.encrypted_api_key);
+                if (personalModel.context_window) {
+                    maxTokens = Math.min(Math.floor(personalModel.context_window / 4), 131072);
+                    if (maxTokens < 2000) maxTokens = 2000;
+                }
+            }
+        }
+
+        const effectiveApiKey = userApiKey || personalApiKey || '';
+        const isByok = effectiveApiKey.length > 0;
 
         console.log(`[AI Stream] Received request - provider: ${provider}, model: ${model}, userId: ${userId}`);
 
@@ -270,37 +596,38 @@ router.post('/chat/stream', async (req: AuthRequest, res: Response) => {
         }
 
         // Check if the requested model is premium and if user has access
-        let maxTokens = 4096;
         if (model) {
-            const modelResult = await pool.query(
-                'SELECT is_premium, context_window FROM ai_models WHERE model_id = $1 AND is_active = true',
-                [model]
-            );
+            if (!isUserModel) {
+                const modelResult = await pool.query(
+                    'SELECT is_premium, context_window FROM ai_models WHERE model_id = $1 AND is_active = true',
+                    [model]
+                );
 
-            if (modelResult.rows.length > 0) {
-                const modelData = modelResult.rows[0];
+                if (modelResult.rows.length > 0) {
+                    const modelData = modelResult.rows[0];
 
-                // Calculate max output tokens from context window
-                if (modelData.context_window) {
-                    maxTokens = Math.min(Math.floor(modelData.context_window / 4), 131072);
-                    if (maxTokens < 2000) maxTokens = 2000;
-                }
+                    // Calculate max output tokens from context window
+                    if (modelData.context_window) {
+                        maxTokens = Math.min(Math.floor(modelData.context_window / 4), 131072);
+                        if (maxTokens < 2000) maxTokens = 2000;
+                    }
 
-                if (modelData.is_premium) {
-                    const hasPremiumAccess = await userHasPremiumAccess(userId);
-                    if (!hasPremiumAccess) {
-                        // Refund credits since we can't process the request
-                        if (consumedCredits) {
-                            await consumeCredits(userId, -creditCost, 'refund', {
-                                reason: 'Premium model access denied'
+                    if (modelData.is_premium) {
+                        const hasPremiumAccess = await userHasPremiumAccess(userId);
+                        if (!hasPremiumAccess) {
+                            // Refund credits since we can't process the request
+                            if (consumedCredits) {
+                                await consumeCredits(userId, -creditCost, 'refund', {
+                                    reason: 'Premium model access denied'
+                                });
+                            }
+                            
+                            return res.status(403).json({
+                                error: 'Premium model access required',
+                                message: 'This model is only available to paid subscribers. Please upgrade your plan to access premium AI models.',
+                                upgrade_required: true
                             });
                         }
-                        
-                        return res.status(403).json({
-                            error: 'Premium model access required',
-                            message: 'This model is only available to paid subscribers. Please upgrade your plan to access premium AI models.',
-                            upgrade_required: true
-                        });
                     }
                 }
             }
@@ -314,9 +641,9 @@ router.post('/chat/stream', async (req: AuthRequest, res: Response) => {
 
         let generator;
         if (provider === 'openrouter') {
-            generator = streamWithOpenRouter(messages, model, maxTokens, userApiKey || undefined);
+            generator = streamWithOpenRouter(messages, model, maxTokens, effectiveApiKey || undefined);
         } else {
-            generator = streamWithGemini(messages, model, userApiKey || undefined);
+            generator = streamWithGemini(messages, model, effectiveApiKey || undefined);
         }
 
         for await (const chunk of generator) {

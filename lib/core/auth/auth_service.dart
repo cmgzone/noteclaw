@@ -1,5 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:notebook_llm/core/api/api_service.dart';
+import 'package:noteclaw/core/api/api_service.dart';
 
 final authServiceProvider = Provider<AuthService>((ref) {
   return AuthService(ref.read(apiServiceProvider));

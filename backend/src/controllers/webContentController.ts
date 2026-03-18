@@ -34,7 +34,7 @@ export const extractWebContent = async (req: Request, res: Response) => {
             timeout: 30000,
             maxContentLength: 10 * 1024 * 1024, // 10MB limit
             headers: {
-                'User-Agent': 'Mozilla/5.0 (compatible; NotebookLLM/1.0; +https://notebookllm.com/bot)',
+                'User-Agent': 'Mozilla/5.0 (compatible; NoteClaw/1.0; +https://noteclaw.com/bot)',
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
                 'Accept-Language': 'en-US,en;q=0.5',
             }

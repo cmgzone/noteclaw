@@ -17,7 +17,7 @@ async function seed() {
       await activityFeedService.createActivity({
         userId: user.id,
         activityType: 'notebook_created',
-        title: `Welcome to NotebookLLM! 🎉`,
+        title: `Welcome to NoteClaw! 🎉`,
         description: 'Started using the app',
         isPublic: true,
         metadata: { welcome: true }

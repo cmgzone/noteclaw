@@ -61,7 +61,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     setState(() {
       _pages = [
         OnboardingPage(
-          title: 'Welcome to Notebook AI',
+          title: 'Welcome to NoteClaw',
           description:
               'Your intelligent companion for organizing, understanding, and creating knowledge from any source. Now with advanced AI.',
           imageUrl: 'assets/images/onboarding_collaboration.png',

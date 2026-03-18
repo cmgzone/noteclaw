@@ -1,11 +1,11 @@
 {
-  "name": "@notebookllm/mcp-server",
+  "name": "@noteclaw/mcp-server",
   "version": "1.1.0",
   "type": "module",
-  "description": "MCP Server for NotebookLM - connect AI coding agents to your notebooks for knowledge retrieval and code verification",
+  "description": "MCP Server for NoteClaw - connect AI coding agents to your notebooks for knowledge retrieval and code verification",
   "main": "dist/index.js",
   "bin": {
-    "notebookllm-mcp": "./dist/index.js"
+    "noteclaw-mcp": "./dist/index.js"
   },
   "files": [
     "dist"

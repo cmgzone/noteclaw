@@ -13,6 +13,7 @@ export interface ResearchConfig {
     depth: ResearchDepth;
     template: ResearchTemplate;
     notebookId?: string;
+    useNotebookContext?: boolean;
     useContextEngineering?: boolean;
     provider?: 'gemini' | 'openrouter';
     model?: string;
@@ -220,13 +221,19 @@ async function generateSubQueries(
     query: string,
     template: ResearchTemplate,
     count: number,
+    notebookContext?: string,
     provider?: 'gemini' | 'openrouter',
     model?: string
 ): Promise<string[]> {
+    const notebookContextPrompt = notebookContext && notebookContext.trim().length > 0
+        ? `Use this notebook context to make the queries more aligned with the user's notes:\n${notebookContext}\n`
+        : '';
+
     const messages: ChatMessage[] = [{
         role: 'user',
         content: `Generate ${count} specific search queries to research: "${query}"
 Template focus: ${template}
+${notebookContextPrompt}
 Return only queries, one per line, no bullets or numbers.`
     }];
 
@@ -259,6 +266,7 @@ async function synthesizeReport(
     images: string[],
     videos: string[],
     template: ResearchTemplate,
+    notebookContext?: string,
     provider?: 'gemini' | 'openrouter',
     model?: string
 ): Promise<string> {
@@ -277,6 +285,9 @@ async function synthesizeReport(
     ).join('\n\n---\n\n');
 
     const templatePrompt = getTemplatePrompt(template);
+    const notebookContextPrompt = notebookContext && notebookContext.trim().length > 0
+        ? `USER NOTEBOOK CONTEXT (highest priority when relevant):\n${notebookContext}`
+        : 'No notebook context provided.';
 
     const messages: ChatMessage[] = [{
         role: 'user',
@@ -285,9 +296,12 @@ async function synthesizeReport(
 ${templatePrompt}
 
 Use markdown formatting. Cite sources with [Title](URL). Prioritize high-credibility sources.
+When notebook context exists, align recommendations with user notes and explicitly mention agreements/conflicts between notes and web findings.
 
 SOURCES:
 ${sourcesText}
+
+${notebookContextPrompt}
 
 IMAGES (embed relevant ones): ${images.slice(0, 4).join(', ')}
 VIDEOS (reference relevant ones): ${videos.slice(0, 2).join(', ')}
@@ -346,6 +360,48 @@ Please try again later or contact support if this issue persists.`;
     }
 }
 
+async function getNotebookContext(
+    userId: string,
+    notebookId: string,
+    query: string
+): Promise<string> {
+    const searchTerm = `%${query}%`;
+    let contextRows = await pool.query(
+        `SELECT s.title, s.type, substring(s.content from 1 for 1200) AS content
+         FROM sources s
+         JOIN notebooks n ON n.id = s.notebook_id
+         WHERE n.id = $1 AND n.user_id = $2
+           AND (s.title ILIKE $3 OR s.content ILIKE $3)
+         ORDER BY s.updated_at DESC
+         LIMIT 6`,
+        [notebookId, userId, searchTerm]
+    );
+
+    if (contextRows.rows.length === 0) {
+        contextRows = await pool.query(
+            `SELECT s.title, s.type, substring(s.content from 1 for 1200) AS content
+             FROM sources s
+             JOIN notebooks n ON n.id = s.notebook_id
+             WHERE n.id = $1 AND n.user_id = $2
+             ORDER BY s.updated_at DESC
+             LIMIT 4`,
+            [notebookId, userId]
+        );
+    }
+
+    const chunks = contextRows.rows
+        .map((row: any, index: number) => {
+            const title = row.title || `Note ${index + 1}`;
+            const type = row.type || 'note';
+            const content = (row.content || '').toString().trim();
+            if (!content) return '';
+            return `[${type}] ${title}\n${content}`;
+        })
+        .filter((chunk: string) => chunk.length > 0);
+
+    return chunks.join('\n\n---\n\n');
+}
+
 // Main research function
 export async function performCloudResearch(
     userId: string,
@@ -362,17 +418,23 @@ export async function performCloudResearch(
     const sources: ResearchSource[] = [];
     const allImages: string[] = [];
     const allVideos: string[] = [];
+    let notebookContext = '';
 
     try {
         // Update progress
         onProgress?.({ status: `[${config.depth.toUpperCase()}] Starting research...`, progress: 0.1, isComplete: false });
 
         // Generate sub-queries
+        if (config.useNotebookContext && config.notebookId) {
+            onProgress?.({ status: 'Loading notebook context...', progress: 0.12, isComplete: false });
+            notebookContext = await getNotebookContext(userId, config.notebookId, normalizedQuery);
+        }
         onProgress?.({ status: 'Generating research angles...', progress: 0.15, isComplete: false });
         const subQueries = await generateSubQueries(
             normalizedQuery,
             config.template,
             depthConfig.subQueryCount,
+            notebookContext,
             config.provider,
             config.model
         );
@@ -485,6 +547,7 @@ export async function performCloudResearch(
             uniqueImages,
             uniqueVideos,
             config.template,
+            notebookContext,
             config.provider,
             config.model
         );

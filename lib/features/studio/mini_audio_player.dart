@@ -87,7 +87,7 @@ class MiniAudioPlayer extends ConsumerWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                     Text(
-                      'Notebook LLM',
+                      'NoteClaw',
                       style: text.labelSmall?.copyWith(
                         color: scheme.secondary,
                       ),

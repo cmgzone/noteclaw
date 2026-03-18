@@ -28,7 +28,7 @@ async function runMigration() {
         revoked_at TIMESTAMPTZ,
         metadata JSONB DEFAULT '{}',
         created_at TIMESTAMPTZ DEFAULT NOW(),
-        CONSTRAINT valid_token_prefix CHECK (token_prefix LIKE 'nllm_%')
+        CONSTRAINT valid_token_prefix CHECK (token_prefix LIKE 'nclaw_%')
       )
     `);
     console.log('✅ Created api_tokens table');

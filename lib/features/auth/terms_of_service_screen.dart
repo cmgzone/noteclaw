@@ -31,12 +31,12 @@ class TermsOfServiceScreen extends StatelessWidget {
             _buildSection(
               theme,
               'Agreement to Terms',
-              'By accessing or using Notebook LLM, you agree to be bound by these Terms of Service. If you do not agree to these terms, please do not use our services.',
+              'By accessing or using NoteClaw, you agree to be bound by these Terms of Service. If you do not agree to these terms, please do not use our services.',
             ),
             _buildSection(
               theme,
               'Description of Service',
-              'Notebook LLM is an AI-powered note-taking and research assistant application that helps you organize information, conduct research, and generate insights using artificial intelligence.',
+              'NoteClaw is an AI-powered note-taking and research assistant application that helps you organize information, conduct research, and generate insights using artificial intelligence.',
             ),
             _buildSection(
               theme,
@@ -87,7 +87,7 @@ class TermsOfServiceScreen extends StatelessWidget {
             _buildSection(
               theme,
               'Intellectual Property',
-              'The Notebook LLM service, including its software, design, and content, is owned by us and protected by intellectual property laws. You may not copy, modify, or distribute our service without permission.',
+              'The NoteClaw service, including its software, design, and content, is owned by us and protected by intellectual property laws. You may not copy, modify, or distribute our service without permission.',
             ),
             _buildSection(
               theme,
@@ -127,7 +127,7 @@ class TermsOfServiceScreen extends StatelessWidget {
               theme,
               'Contact Us',
               'For questions about these Terms of Service, contact us at:\n\n'
-                  'Email: support@notebookllm.com',
+                  'Email: support@noteclaw.com',
             ),
             const SizedBox(height: 32),
           ],

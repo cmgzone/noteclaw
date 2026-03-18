@@ -1,6 +1,6 @@
-# NotebookLLM Backend Deployment Guide
+# NoteClaw Backend Deployment Guide
 
-This guide covers deploying the NotebookLLM backend to various platforms including GitHub Container Registry, Render, Railway, and self-hosted environments.
+This guide covers deploying the NoteClaw backend to various platforms including GitHub Container Registry, Render, Railway, and self-hosted environments.
 
 ## Quick Start
 

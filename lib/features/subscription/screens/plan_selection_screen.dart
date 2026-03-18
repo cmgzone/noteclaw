@@ -57,6 +57,18 @@ class _PlanSelectionScreenState extends ConsumerState<PlanSelectionScreen> {
     }
   }
 
+  Future<void> _continueWithoutPlan() async {
+    if (_submitting) return;
+    setState(() => _submitting = true);
+    try {
+      await _markCompleted();
+      if (!mounted) return;
+      context.go('/home');
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -69,146 +81,265 @@ class _PlanSelectionScreenState extends ConsumerState<PlanSelectionScreen> {
         elevation: 0,
         iconTheme: IconThemeData(color: scheme.onSurface),
       ),
-      body: plansAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (err, _) => Center(child: Text('Failed to load plans: $err')),
-        data: (plans) {
-          if (plans.isEmpty) {
-            return const Center(child: Text('No plans available'));
-          }
-
-          _selectedPlanId ??= _pickDefaultPlanId(plans);
-
-          final selectedPlan = plans.firstWhere(
-            (p) => p['id'].toString() == _selectedPlanId,
-            orElse: () => plans.first,
-          );
-          final isFree = (selectedPlan['is_free_plan'] as bool?) ?? false;
-
-          return Stack(
-            children: [
-              // Background Accents
-              Positioned(
-                top: -100,
-                right: -100,
-                child: Container(
-                  width: 300,
-                  height: 300,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: AppTheme.premiumGradient.colors.first.withValues(alpha: 0.15),
-                  ),
-                ),
-              ),
-              Positioned(
-                bottom: -50,
-                left: -100,
-                child: Container(
-                  width: 250,
-                  height: 250,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: AppTheme.premiumGradient.colors.last.withValues(alpha: 0.15),
-                  ),
-                ),
-              ),
-              SafeArea(
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              scheme.surface,
+              scheme.surfaceContainerLowest,
+            ],
+          ),
+        ),
+        child: plansAsync.when(
+          loading: () => Center(
+            child: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
                 child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                      child: Column(
-                        children: [
-                          ShaderMask(
-                            shaderCallback: (bounds) => AppTheme.premiumGradient.createShader(bounds),
-                            child: const Text(
-                              'Choose Your Plan',
-                              style: TextStyle(
-                                fontSize: 32,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          Text(
-                            'Unlock the full potential of your AI assistant. You can switch plans at any time.',
-                            style: TextStyle(
-                              fontSize: 15,
-                              color: scheme.onSurface.withValues(alpha: 0.7),
-                              height: 1.4,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                        ],
+                    const CircularProgressIndicator(),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Loading plans...',
+                      style: TextStyle(
+                        color: scheme.onSurface.withValues(alpha: 0.7),
+                        fontSize: 15,
                       ),
                     ),
-                    Expanded(
-                      child: ListView.builder(
-                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-                        itemCount: plans.length,
-                        itemBuilder: (context, index) {
-                          final plan = plans[index];
-                          return _buildPlanCard(plan, context);
-                        },
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.all(24),
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).scaffoldBackgroundColor,
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.05),
-                            blurRadius: 10,
-                            offset: const Offset(0, -5),
-                          ),
-                        ],
-                      ),
-                      child: SafeArea(
-                        top: false,
-                        child: SizedBox(
-                          width: double.infinity,
-                          height: 56,
-                          child: InkWell(
-                            onTap: _submitting ? null : () => _continueWithPlan(selectedPlan),
-                            borderRadius: BorderRadius.circular(16),
-                            child: Ink(
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(16),
-                                gradient: AppTheme.premiumGradient,
-                              ),
-                              child: Center(
-                                child: _submitting
-                                    ? const SizedBox(
-                                        height: 24,
-                                        width: 24,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2.5,
-                                          color: Colors.white,
-                                        ),
-                                      )
-                                    : Text(
-                                        isFree ? 'Get Started' : 'Continue to Payment',
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
+                    const SizedBox(height: 24),
+                    _buildPrimaryButton(
+                      label: 'Continue',
+                      onTap: _continueWithoutPlan,
                     ),
                   ],
                 ),
               ),
-            ],
-          );
-        },
+            ),
+          ),
+          error: (err, _) => Center(
+            child: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      'Failed to load plans',
+                      style: TextStyle(
+                        color: scheme.onSurface,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      err.toString(),
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: scheme.onSurface.withValues(alpha: 0.65),
+                        fontSize: 13,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    _buildPrimaryButton(
+                      label: 'Continue',
+                      onTap: _continueWithoutPlan,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          data: (plans) {
+            if (plans.isEmpty) {
+              return Center(
+                child: SafeArea(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          'No plans available right now',
+                          style: TextStyle(
+                            color: scheme.onSurface,
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          'You can continue and choose a plan later.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: scheme.onSurface.withValues(alpha: 0.7),
+                            fontSize: 14,
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                        _buildPrimaryButton(
+                          label: 'Continue',
+                          onTap: _continueWithoutPlan,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            }
+
+            _selectedPlanId ??= _pickDefaultPlanId(plans);
+
+            final selectedPlan = plans.firstWhere(
+              (p) => p['id'].toString() == _selectedPlanId,
+              orElse: () => plans.first,
+            );
+            final isFree = (selectedPlan['is_free_plan'] as bool?) ?? false;
+
+            return Stack(
+              children: [
+                Positioned(
+                  top: -100,
+                  right: -100,
+                  child: Container(
+                    width: 300,
+                    height: 300,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: AppTheme.premiumGradient.colors.first
+                          .withValues(alpha: 0.15),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  bottom: -50,
+                  left: -100,
+                  child: Container(
+                    width: 250,
+                    height: 250,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: AppTheme.premiumGradient.colors.last
+                          .withValues(alpha: 0.15),
+                    ),
+                  ),
+                ),
+                SafeArea(
+                  child: Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 24, vertical: 16),
+                        child: Column(
+                          children: [
+                            ShaderMask(
+                              shaderCallback: (bounds) =>
+                                  AppTheme.premiumGradient.createShader(bounds),
+                              child: const Text(
+                                'Choose Your Plan',
+                                style: TextStyle(
+                                  fontSize: 32,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              'Unlock the full potential of your AI assistant. You can switch plans at any time.',
+                              style: TextStyle(
+                                fontSize: 15,
+                                color: scheme.onSurface.withValues(alpha: 0.7),
+                                height: 1.4,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ),
+                      ),
+                      Expanded(
+                        child: ListView.builder(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 24, vertical: 8),
+                          itemCount: plans.length,
+                          itemBuilder: (context, index) {
+                            final plan = plans[index];
+                            return _buildPlanCard(plan, context);
+                          },
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.all(24),
+                        decoration: BoxDecoration(
+                          color: scheme.surface.withValues(alpha: 0.92),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.05),
+                              blurRadius: 10,
+                              offset: const Offset(0, -5),
+                            ),
+                          ],
+                        ),
+                        child: SafeArea(
+                          top: false,
+                          child: _buildPrimaryButton(
+                            label: isFree
+                                ? 'Get Started'
+                                : 'Continue to Payment',
+                            onTap: () => _continueWithPlan(selectedPlan),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPrimaryButton({
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return SizedBox(
+      width: double.infinity,
+      height: 56,
+      child: InkWell(
+        onTap: _submitting ? null : onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Ink(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            gradient: AppTheme.premiumGradient,
+          ),
+          child: Center(
+            child: _submitting
+                ? const SizedBox(
+                    height: 24,
+                    width: 24,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.5,
+                      color: Colors.white,
+                    ),
+                  )
+                : Text(
+                    label,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+          ),
+        ),
       ),
     );
   }

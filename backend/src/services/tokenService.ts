@@ -10,8 +10,8 @@ import pool from '../config/database.js';
 
 // ==================== CONSTANTS ====================
 
-/** Token prefix for NotebookLLM tokens */
-export const TOKEN_PREFIX = 'nllm_';
+/** Token prefix for NoteClaw tokens */
+export const TOKEN_PREFIX = 'nclaw_';
 
 /** Length of the random part of the token (32 bytes = 43 base64url chars) */
 export const TOKEN_RANDOM_BYTES = 32;
@@ -55,7 +55,7 @@ export interface TokenValidationResult {
 class TokenService {
   /**
    * Generate a cryptographically secure random token.
-   * Token format: nllm_[43 chars of base64url encoded random data]
+   * Token format: nclaw_[43 chars of base64url encoded random data]
    * 
    * Requirements: 1.1, 4.2
    * 
@@ -120,7 +120,7 @@ class TokenService {
     const tokenHash = this.hashToken(token);
 
     // Extract prefix and suffix for display
-    const tokenPrefix = token.substring(0, 8);  // "nllm_xxx"
+    const tokenPrefix = token.substring(0, 9);  // "nclaw_xxx"
     const tokenSuffix = token.substring(token.length - 4);  // Last 4 chars
 
     // Store in database

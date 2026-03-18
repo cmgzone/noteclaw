@@ -38,30 +38,14 @@ class DashboardGrid extends ConsumerWidget {
               isWide: true,
             ),
             const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: _BentoCard(
-                    title: 'AI Browser',
-                    subtitle: 'Browse pages with AI help',
-                    icon: LucideIcons.globe,
-                    color: const Color(0xFF60A5FA), // Blue 400
-                    onTap: () => context.push('/ai-browser'),
-                    height: 120,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _BentoCard(
-                    title: 'Sources',
-                    subtitle: 'Manage your imported content',
-                    icon: LucideIcons.fileText,
-                    color: const Color(0xFF34D399), // Emerald 400
-                    onTap: () => context.push('/sources'),
-                    height: 120,
-                  ),
-                ),
-              ],
+            _BentoCard(
+              title: 'Sources',
+              subtitle: 'Manage your imported content',
+              icon: LucideIcons.fileText,
+              color: const Color(0xFF34D399), // Emerald 400
+              onTap: () => context.push('/sources'),
+              height: 120,
+              isWide: true,
             ),
             const SizedBox(height: 24),
 

@@ -360,8 +360,8 @@ class CodeReviewService {
                 headers: {
                   'Authorization': `Bearer ${openRouterApiKey}`,
                   'Content-Type': 'application/json',
-                  'HTTP-Referer': 'https://notebookllm.app',
-                  'X-Title': 'Notebook LLM Code Review'
+                  'HTTP-Referer': 'https://noteclaw.app',
+                  'X-Title': 'NoteClaw Code Review'
                 }
               }
             );
@@ -394,8 +394,8 @@ class CodeReviewService {
               headers: {
                 'Authorization': `Bearer ${openRouterApiKey}`,
                 'Content-Type': 'application/json',
-                'HTTP-Referer': 'https://notebookllm.app',
-                'X-Title': 'Notebook LLM Code Review'
+                'HTTP-Referer': 'https://noteclaw.app',
+                'X-Title': 'NoteClaw Code Review'
               }
             }
           );

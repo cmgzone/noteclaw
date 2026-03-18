@@ -1,4 +1,4 @@
-import 'package:notebook_llm/core/utils/app_logger.dart';
+import 'package:noteclaw/core/utils/app_logger.dart';
 
 const _logger = AppLogger('Friend');
 

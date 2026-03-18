@@ -51,8 +51,7 @@ class OpenRouterService {
     final maxChars = (availableTokens * 3.5).floor();
     final truncated = prompt.substring(0, maxChars);
 
-    debugPrint(
-        '[OpenRouterService] Prompt truncated: $estimatedTokens → '
+    debugPrint('[OpenRouterService] Prompt truncated: $estimatedTokens → '
         '~${_estimateTokens(truncated)} tokens (limit: $contextLimit)');
 
     return '$truncated\n\n[... context truncated to fit model context window ...]';
@@ -82,8 +81,8 @@ class OpenRouterService {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $key',
-          'HTTP-Referer': 'https://notebook-llm.app',
-          'X-Title': 'Notebook LLM',
+          'HTTP-Referer': 'https://noteclaw.app',
+          'X-Title': 'NoteClaw',
         },
         body: jsonEncode({
           'model': model,
@@ -162,8 +161,8 @@ class OpenRouterService {
       request.headers.addAll({
         'Content-Type': 'application/json',
         'Authorization': 'Bearer $key',
-        'HTTP-Referer': 'https://notebook-llm.app',
-        'X-Title': 'Notebook LLM',
+        'HTTP-Referer': 'https://noteclaw.app',
+        'X-Title': 'NoteClaw',
       });
 
       request.body = jsonEncode({
@@ -247,8 +246,8 @@ class OpenRouterService {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $key',
-          'HTTP-Referer': 'https://notebook-llm.app',
-          'X-Title': 'Notebook LLM',
+          'HTTP-Referer': 'https://noteclaw.app',
+          'X-Title': 'NoteClaw',
         },
         body: jsonEncode({
           'model': model,

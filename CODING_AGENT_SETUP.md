@@ -66,9 +66,9 @@ A backend-only coding agent that verifies code and saves it as sources to your a
 
 ### 1. Generate a Personal API Token
 
-Before setting up the MCP server, you need to generate a personal API token from the NotebookLLM app:
+Before setting up the MCP server, you need to generate a personal API token from the NoteClaw app:
 
-1. Open the NotebookLLM app
+1. Open the NoteClaw app
 2. Go to **Settings** → **Agent Connections**
 3. In the **API Tokens** section, click **Generate New Token**
 4. Enter a name for your token (e.g., "Kiro Coding Agent")
@@ -76,9 +76,9 @@ Before setting up the MCP server, you need to generate a personal API token from
 6. Click **Generate**
 7. **Copy the token immediately** - it will only be shown once!
 
-The token format is: `nllm_` followed by 43 random characters.
+The token format is: `nclaw_` followed by 43 random characters.
 
-Example: `nllm_a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2`
+Example: `nclaw_a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2`
 
 > ⚠️ **Security Note**: Treat this token like a password. Anyone with this token can access your account through the API.
 
@@ -116,20 +116,20 @@ Add to your MCP config (e.g., `.kiro/settings/mcp.json`):
       "args": ["./backend/mcp-server/dist/index.js"],
       "env": {
         "BACKEND_URL": "http://localhost:3000",
-        "CODING_AGENT_API_KEY": "nllm_your-personal-api-token-here"
+        "CODING_AGENT_API_KEY": "nclaw_your-personal-api-token-here"
       }
     }
   }
 }
 ```
 
-Replace `nllm_your-personal-api-token-here` with the token you generated in Step 1.
+Replace `nclaw_your-personal-api-token-here` with the token you generated in Step 1.
 
 ## Token Management
 
 ### Viewing Your Tokens
 
-In the NotebookLLM app, go to **Settings** → **Agent Connections** to see all your active tokens:
+In the NoteClaw app, go to **Settings** → **Agent Connections** to see all your active tokens:
 - Token name and description
 - Creation date
 - Last used date (updated each time the token is used)
@@ -191,7 +191,7 @@ Requires authentication with a personal API token. Code must score >= 60 to be s
 ```bash
 curl -X POST http://localhost:3000/api/coding-agent/verify-and-save \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer nllm_your-personal-api-token-here" \
+  -H "Authorization: Bearer nclaw_your-personal-api-token-here" \
   -d '{
     "code": "function add(a, b) { return a + b; }",
     "language": "javascript",

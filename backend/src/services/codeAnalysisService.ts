@@ -228,8 +228,8 @@ class CodeAnalysisService {
         headers: {
           'Authorization': `Bearer ${this.openRouterApiKey}`,
           'Content-Type': 'application/json',
-          'HTTP-Referer': 'https://notebookllm.app',
-          'X-Title': 'Notebook LLM Code Analysis'
+          'HTTP-Referer': 'https://noteclaw.app',
+          'X-Title': 'NoteClaw Code Analysis'
         }
       }
     );
@@ -267,8 +267,8 @@ class CodeAnalysisService {
                 headers: {
                   'Authorization': `Bearer ${this.openRouterApiKey}`,
                   'Content-Type': 'application/json',
-                  'HTTP-Referer': 'https://notebookllm.app',
-                  'X-Title': 'Notebook LLM Code Analysis'
+                  'HTTP-Referer': 'https://noteclaw.app',
+                  'X-Title': 'NoteClaw Code Analysis'
                 }
               }
             );

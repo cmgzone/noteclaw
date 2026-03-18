@@ -53,7 +53,7 @@ import '../features/gamification/daily_challenges_screen.dart';
 import '../features/language_learning/language_learning_hub.dart';
 import '../features/language_learning/language_session_screen.dart';
 import '../features/admin/ai_models_manager_screen.dart';
-import '../features/ai_browser/ai_browser_screen.dart';
+
 import '../features/settings/agent_connections_screen.dart';
 import '../features/agent_skills/agent_skills_screen.dart';
 import '../features/custom_agents/custom_agents_screen.dart';
@@ -405,13 +405,7 @@ GoRouter createRouter(bool hasSeenOnboarding, ProviderContainer container) {
               );
             },
           ),
-          GoRoute(
-            path: '/ai-browser',
-            name: 'ai-browser',
-            pageBuilder: (context, state) =>
-                buildTransitionPage(child: const AIBrowserScreen()),
-          ),
-          GoRoute(
+GoRoute(
             path: '/agent-connections',
             name: 'agent-connections',
             pageBuilder: (context, state) =>

@@ -13,6 +13,7 @@ import '../../theme/motion.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../core/audio/murf_service.dart';
 import '../../core/ai/ai_models_provider.dart';
+import '../admin/services/ai_model_service.dart';
 
 // Providers for selected models
 final selectedAIModelProvider = StateProvider<String>((ref) {
@@ -51,11 +52,15 @@ class _AIModelSettingsScreenState extends ConsumerState<AIModelSettingsScreen> {
   String _aiProvider = 'gemini'; // gemini or openrouter
   String _ttsProvider = 'google'; // google or elevenlabs
   String _sttProvider = 'device'; // device or deepgram
+  bool _isSavingPersonalModel = false;
+  bool _isLoadingPersonalModels = false;
+  List<AIModel> _personalModels = [];
 
   @override
   void initState() {
     super.initState();
     _loadSettings();
+    _loadPersonalModels();
   }
 
   Future<void> _loadSettings() async {
@@ -158,6 +163,177 @@ class _AIModelSettingsScreenState extends ConsumerState<AIModelSettingsScreen> {
         ),
       );
     }
+  }
+
+  Future<void> _loadPersonalModels() async {
+    setState(() => _isLoadingPersonalModels = true);
+    try {
+      final models = await ref.read(aiModelServiceProvider).listPersonalModels();
+      if (!mounted) return;
+      setState(() {
+        _personalModels = models;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _personalModels = [];
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _isLoadingPersonalModels = false);
+      }
+    }
+  }
+
+  Future<void> _deletePersonalModel(String id) async {
+    await ref.read(aiModelServiceProvider).deletePersonalModel(id);
+    ref.invalidate(availableModelsProvider);
+    await _loadPersonalModels();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Personal model deleted'),
+      ),
+    );
+  }
+
+  Future<void> _showAddPersonalModelDialog() async {
+    final formKey = GlobalKey<FormState>();
+    final nameController = TextEditingController();
+    final modelIdController = TextEditingController();
+    final apiKeyController = TextEditingController();
+    final descriptionController = TextEditingController();
+    final contextWindowController = TextEditingController(text: '0');
+    String provider = 'openrouter';
+
+    await showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Add Personal AI Model'),
+          content: Form(
+            key: formKey,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextFormField(
+                    controller: nameController,
+                    decoration: const InputDecoration(labelText: 'Display Name'),
+                    validator: (value) => (value == null || value.trim().isEmpty)
+                        ? 'Name is required'
+                        : null,
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: modelIdController,
+                    decoration: const InputDecoration(labelText: 'Model ID'),
+                    validator: (value) =>
+                        (value == null || value.trim().isEmpty)
+                            ? 'Model ID is required'
+                            : null,
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    value: provider,
+                    decoration: const InputDecoration(labelText: 'Provider'),
+                    items: const [
+                      DropdownMenuItem(
+                          value: 'gemini', child: Text('Gemini')),
+                      DropdownMenuItem(
+                          value: 'openrouter', child: Text('OpenRouter')),
+                      DropdownMenuItem(value: 'openai', child: Text('OpenAI')),
+                      DropdownMenuItem(
+                          value: 'anthropic', child: Text('Anthropic')),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) {
+                        setDialogState(() => provider = value);
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: apiKeyController,
+                    obscureText: true,
+                    decoration: const InputDecoration(labelText: 'API Key'),
+                    validator: (value) =>
+                        (value == null || value.trim().isEmpty)
+                            ? 'API key is required'
+                            : null,
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: contextWindowController,
+                    keyboardType: TextInputType.number,
+                    decoration:
+                        const InputDecoration(labelText: 'Context Window'),
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: descriptionController,
+                    decoration:
+                        const InputDecoration(labelText: 'Description (optional)'),
+                    maxLines: 2,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: _isSavingPersonalModel
+                  ? null
+                  : () {
+                      Navigator.pop(context);
+                    },
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: _isSavingPersonalModel
+                  ? null
+                  : () async {
+                      if (!(formKey.currentState?.validate() ?? false)) return;
+                      setState(() => _isSavingPersonalModel = true);
+                      try {
+                        await ref.read(aiModelServiceProvider).addPersonalModel(
+                              name: nameController.text.trim(),
+                              modelId: modelIdController.text.trim(),
+                              provider: provider,
+                              apiKey: apiKeyController.text.trim(),
+                              description: descriptionController.text.trim(),
+                              contextWindow:
+                                  int.tryParse(contextWindowController.text) ??
+                                      0,
+                            );
+                        ref.invalidate(availableModelsProvider);
+                        if (!mounted) return;
+                        Navigator.of(this.context).pop();
+                        await _loadPersonalModels();
+                        if (!mounted) return;
+                        ScaffoldMessenger.of(this.context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Personal model added'),
+                            backgroundColor: Colors.green,
+                          ),
+                        );
+                      } catch (e) {
+                        if (!mounted) return;
+                        ScaffoldMessenger.of(this.context).showSnackBar(
+                          SnackBar(content: Text('Failed to add model: $e')),
+                        );
+                      } finally {
+                        if (mounted) {
+                          setState(() => _isSavingPersonalModel = false);
+                        }
+                      }
+                    },
+              child: const Text('Add Model'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _showUpgradeDialog(BuildContext context) {
@@ -418,6 +594,94 @@ class _AIModelSettingsScreenState extends ConsumerState<AIModelSettingsScreen> {
                   },
                 ),
               ],
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: scheme.surfaceContainer,
+                  borderRadius: BorderRadius.circular(12),
+                  border:
+                      Border.all(color: scheme.outline.withValues(alpha: 0.12)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            'My Private Models',
+                            style: TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 14),
+                          ),
+                        ),
+                        TextButton.icon(
+                          onPressed: _showAddPersonalModelDialog,
+                          icon: const Icon(Icons.add),
+                          label: const Text('Add'),
+                        ),
+                      ],
+                    ),
+                    if (_isLoadingPersonalModels)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 8),
+                        child: LinearProgressIndicator(minHeight: 2),
+                      )
+                    else if (_personalModels.isEmpty)
+                      Text(
+                        'No personal models yet',
+                        style: TextStyle(
+                          color: scheme.onSurface.withValues(alpha: 0.6),
+                          fontSize: 12,
+                        ),
+                      )
+                    else
+                      ..._personalModels.map((model) {
+                        final isSelected = selectedAIModel == model.modelId;
+                        return ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          dense: true,
+                          title: Text(
+                            model.name,
+                            style: const TextStyle(fontSize: 13),
+                          ),
+                          subtitle: Text(
+                            '${model.provider} • ${model.modelId}',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: scheme.onSurface.withValues(alpha: 0.6),
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              TextButton(
+                                onPressed: () async {
+                                  setState(() {
+                                    _aiProvider = model.provider == 'gemini'
+                                        ? 'gemini'
+                                        : 'openrouter';
+                                  });
+                                  ref
+                                      .read(selectedAIModelProvider.notifier)
+                                      .state = model.modelId;
+                                  await _saveSettings();
+                                },
+                                child: Text(isSelected ? 'Selected' : 'Use'),
+                              ),
+                              IconButton(
+                                onPressed: () => _deletePersonalModel(model.id),
+                                icon: const Icon(Icons.delete_outline, size: 18),
+                              ),
+                            ],
+                          ),
+                        );
+                      }),
+                  ],
+                ),
+              ),
             ],
           ).animate().premiumFade().premiumSlide(),
 
@@ -738,7 +1002,7 @@ class _AIModelSettingsScreenState extends ConsumerState<AIModelSettingsScreen> {
             children: [
               _ActionTile(
                 title: 'API Keys',
-                subtitle: 'Use your own Gemini/OpenRouter keys (local)',
+                subtitle: 'Use your own Gemini/OpenRouter keys (private per user)',
                 icon: Icons.vpn_key,
                 color: Colors.amber,
                 onTap: () => context.push('/settings/api-keys'),

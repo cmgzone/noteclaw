@@ -1,5 +1,5 @@
-name: notebook_llm
-description: Premium source-grounded Notebook LLM mobile app (Flutter)
+name: noteclaw
+description: Premium source-grounded NoteClaw mobile app (Flutter)
 publish_to: "none"
 
 environment:
@@ -55,7 +55,6 @@ dependencies:
   wakelock_plus: ^1.2.8
   flutter_background_service: ^5.0.10
   flutter_local_notifications: ^18.0.1
-  flutter_overlay_window: ^0.4.5
   showcaseview: ^3.0.0
   flutter_paypal_payment: ^1.0.6
   flutter_stripe: ^11.2.0

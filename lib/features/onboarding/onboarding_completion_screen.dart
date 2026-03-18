@@ -96,7 +96,7 @@ class _OnboardingCompletionScreenState
 
                   // Success message
                   Text(
-                    'Welcome to Notebook AI!',
+                    'Welcome to NoteClaw!',
                     style: text.headlineMedium?.copyWith(
                       fontWeight: FontWeight.bold,
                       color: scheme.onSurface,

@@ -132,6 +132,7 @@ class DeepResearchService {
     required String notebookId,
     ResearchDepth depth = ResearchDepth.standard,
     ResearchTemplate template = ResearchTemplate.general,
+    bool useNotebookContext = false,
   }) async* {
     try {
       final api = ref.read(apiServiceProvider);
@@ -146,6 +147,7 @@ class DeepResearchService {
         depth: depth.name,
         template: template.name,
         includeImages: true,
+        useNotebookContext: useNotebookContext,
         provider: settings.provider,
         model: settings.model,
       );

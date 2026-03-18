@@ -11,12 +11,12 @@ import 'dart:async';
 import '../sources/source_provider.dart';
 import '../../core/ai/ai_provider.dart';
 import '../../core/ai/web_browsing_service.dart';
+import '../../core/ai/deep_research_service.dart';
 import 'notebook_provider.dart';
 import '../../core/api/api_service.dart';
 import '../../theme/app_theme.dart';
 import '../chat/context_usage_widget.dart';
 import '../subscription/services/credit_manager.dart';
-import '../ai_browser/ai_browser_screen.dart';
 import '../chat/github_action_detector.dart';
 import '../github/github_issue_dialog.dart';
 import '../chat/github_chat_context_builder.dart';
@@ -44,6 +44,7 @@ class _NotebookChatScreenState extends ConsumerState<NotebookChatScreen> {
   double _voiceSoundLevel = 0.0;
   ChatStyle _selectedStyle = ChatStyle.standard;
   bool _isWebBrowsingEnabled = false;
+  bool _isDeepResearchEnabled = false;
   String? _webBrowsingStatus;
   List<String> _webBrowsingScreenshots = [];
   List<String> _webBrowsingSources = [];
@@ -226,13 +227,21 @@ class _NotebookChatScreenState extends ConsumerState<NotebookChatScreen> {
     final message = _messageController.text.trim();
     if (message.isEmpty || _isLoading) return;
 
-    // Check credits (more for web browsing)
+    // Check credits
+    int creditCost = CreditCosts.chatMessage;
+    String featureName = 'chat_message';
+    if (_isDeepResearchEnabled) {
+      creditCost = CreditCosts.deepResearch;
+      featureName = 'deep_research';
+    } else if (_isWebBrowsingEnabled) {
+      creditCost = CreditCosts.chatMessage * 3;
+      featureName = 'web_browsing_chat';
+    }
+
     final hasCredits = await ref.tryUseCredits(
       context: context,
-      amount: _isWebBrowsingEnabled
-          ? CreditCosts.chatMessage * 3
-          : CreditCosts.chatMessage,
-      feature: _isWebBrowsingEnabled ? 'web_browsing_chat' : 'chat_message',
+      amount: creditCost,
+      feature: featureName,
     );
     if (!hasCredits) return;
 
@@ -270,21 +279,19 @@ class _NotebookChatScreenState extends ConsumerState<NotebookChatScreen> {
         return <String, dynamic>{};
       });
 
-      if (_isWebBrowsingEnabled) {
+      if (_isDeepResearchEnabled) {
+        await _handleDeepResearch(message);
+      } else if (_isWebBrowsingEnabled) {
         // Use web browsing service
         await _handleWebBrowsing(message);
       } else {
         // Regular chat flow
         await _handleRegularChat(message);
       }
-    } catch (e, stackTrace) {
+    } catch (e) {
       debugPrint('Error in _sendMessage: $e');
-      debugPrint('Stack trace: $stackTrace');
 
       if (mounted) {
-        // Remove the loading state
-        setState(() => _isLoading = false);
-
         // Show user-friendly error message
         String errorMessage = 'Failed to send message';
         if (e.toString().contains('network') ||
@@ -314,6 +321,88 @@ class _NotebookChatScreenState extends ConsumerState<NotebookChatScreen> {
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  Future<void> _handleDeepResearch(String message) async {
+    if (!mounted) return;
+
+    try {
+      final deepResearchService = ref.read(deepResearchServiceProvider);
+
+      await for (final update in deepResearchService.research(
+          query: message, 
+          notebookId: widget.notebookId, 
+          depth: ResearchDepth.standard, 
+          template: ResearchTemplate.general,
+          useNotebookContext: true)) {
+        if (!mounted) return;
+
+        setState(() {
+          _webBrowsingStatus = update.status;
+          
+          if (update.sources != null) {
+            final newSources = update.sources!.map((s) => s.url).toList();
+            for (final url in newSources) {
+              if (!_webBrowsingSources.contains(url)) {
+                _webBrowsingSources.add(url);
+              }
+            }
+          }
+          
+          if (update.images != null) {
+            for (final url in update.images!) {
+              if (!_webBrowsingScreenshots.contains(url)) {
+                _webBrowsingScreenshots.add(url);
+              }
+            }
+          }
+        });
+        _scrollToBottom();
+
+        if (update.isComplete && update.result != null) {
+          // Save AI Message (non-blocking)
+          ref
+              .read(apiServiceProvider)
+              .saveChatMessage(
+                role: 'model',
+                content: update.result!,
+                notebookId: widget.notebookId,
+              )
+              .catchError((e) {
+            debugPrint('Error saving AI message: $e');
+            return <String, dynamic>{};
+          });
+
+          if (mounted) {
+            setState(() {
+              _messages.add(ChatMessage(
+                text: update.result!,
+                isUser: false,
+                timestamp: DateTime.now(),
+                isWebBrowsing: true, // Reuse the nice styling
+                webBrowsingScreenshots: List.from(_webBrowsingScreenshots),
+                webBrowsingSources: List.from(_webBrowsingSources),
+              ));
+              _webBrowsingStatus = null;
+            });
+            _scrollToBottom();
+          }
+          break;
+        }
+      }
+    } catch (e) {
+      debugPrint('Error in deep research: $e');
+      
+      if (mounted) {
+        setState(() => _webBrowsingStatus = null);
+
+        _messages.add(ChatMessage(
+          text: '⚠️ **Deep Research Error**\n\nFailed to research. Please try again or use regular chat mode.',
+          isUser: false,
+          timestamp: DateTime.now(),
+        ));
       }
     }
   }
@@ -1018,8 +1107,10 @@ class _NotebookChatScreenState extends ConsumerState<NotebookChatScreen> {
                         // Web browsing toggle
                         IconButton(
                           onPressed: () {
-                            setState(() =>
-                                _isWebBrowsingEnabled = !_isWebBrowsingEnabled);
+                            setState(() {
+                                _isWebBrowsingEnabled = !_isWebBrowsingEnabled;
+                                if (_isWebBrowsingEnabled) _isDeepResearchEnabled = false;
+                            });
                           },
                           icon: Icon(
                             Icons.language,
@@ -1032,21 +1123,24 @@ class _NotebookChatScreenState extends ConsumerState<NotebookChatScreen> {
                               ? 'Web Browsing ON'
                               : 'Enable Web Browsing (with screenshots)',
                         ),
-                        // AI Browser button
+                        // Deep Research toggle
                         IconButton(
-                          onPressed: () => Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => AIBrowserScreen(
-                                notebookId: widget.notebookId,
-                              ),
-                            ),
-                          ),
+                          onPressed: () {
+                            setState(() {
+                                _isDeepResearchEnabled = !_isDeepResearchEnabled;
+                                if (_isDeepResearchEnabled) _isWebBrowsingEnabled = false;
+                            });
+                          },
                           icon: Icon(
-                            Icons.open_in_browser,
-                            color: scheme.tertiary,
+                            Icons.auto_awesome,
+                            color: _isDeepResearchEnabled
+                                ? scheme.primary
+                                : scheme.onSurface.withValues(alpha: 0.5),
                             size: 22,
                           ),
-                          tooltip: 'Open AI Browser',
+                          tooltip: _isDeepResearchEnabled
+                              ? 'Deep Research ON'
+                              : 'Enable Deep Research',
                         ),
                         Transform.scale(
                           scale: 1 + (_voiceSoundLevel * 0.18),

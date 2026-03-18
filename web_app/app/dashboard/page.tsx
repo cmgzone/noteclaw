@@ -98,7 +98,7 @@ export default function DashboardPage() {
                             {notebooks.length === 0 ? (
                                 <div className="rounded-xl border border-white/5 bg-neutral-900/30 p-12 text-center">
                                     <div className="mx-auto w-12 h-12 rounded-full bg-neutral-800 flex items-center justify-center mb-4 text-neutral-500">
-                                        <size={24} />
+                                        <Database size={24} />
                                     </div>
                                     <h3 className="text-lg font-medium text-white mb-2">No notebooks yet</h3>
                                     <p className="text-neutral-400 mb-6">Create your first notebook in the mobile app to start organizing your ideas.</p>
@@ -113,7 +113,7 @@ export default function DashboardPage() {
                                             >
                                                 <div className="flex justify-between items-start mb-4">
                                                     <div className="p-3 rounded-lg bg-blue-500/10 text-blue-400 group-hover:bg-blue-500/20 transition-colors">
-                                                        <size={24} />
+                                                        <Database size={24} />
                                                     </div>
                                                     {notebook.category && (
                                                         <span className="text-xs font-mono bg-white/5 px-2 py-1 rounded text-neutral-400 border border-white/5">
@@ -314,7 +314,7 @@ function SubscriptionCard({ subscription }: { subscription: Subscription | null 
                         <span>{subscription?.credits_per_month || 50} monthly credits</span>
                     </div>
                     <div className="flex items-center gap-2 text-sm text-neutral-300">
-                        <size={16} className="text-purple-400" />
+                        <Bot size={16} className="text-purple-400" />
                         <span>{isFree ? "Limited Deep Research" : "Unlimited Deep Research"}</span>
                     </div>
                 </div>

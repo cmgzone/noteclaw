@@ -106,11 +106,11 @@ class _BackgroundSettingsScreenState
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'To ensure background tasks complete reliably, please disable battery optimization for Notebook LLM:',
+              'To ensure background tasks complete reliably, please disable battery optimization for NoteClaw:',
               style: TextStyle(fontWeight: FontWeight.w500),
             ),
             const SizedBox(height: 16),
-            const Text('1. Open Settings → Apps → Notebook LLM'),
+            const Text('1. Open Settings → Apps → NoteClaw'),
             const SizedBox(height: 4),
             const Text('2. Tap "Battery" or "App battery usage"'),
             const SizedBox(height: 4),

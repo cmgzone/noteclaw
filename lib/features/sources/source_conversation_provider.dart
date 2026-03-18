@@ -80,6 +80,17 @@ class SourceMessage {
   /// Get the issue suggestion if present (Requirements: 4.5)
   Map<String, dynamic>? get issueSuggestion =>
       metadata?['issueSuggestion'] as Map<String, dynamic>?;
+
+  List<Map<String, dynamic>> get imageAttachments {
+    final raw = metadata?['imageAttachments'];
+    if (raw is List) {
+      return raw
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .toList();
+    }
+    return const [];
+  }
 }
 
 /// Represents a code diff for displaying changes (Requirements: 4.4)
@@ -214,6 +225,7 @@ class SourceConversationNotifier
   Future<bool> sendMessage(
     String message, {
     Map<String, dynamic>? githubContext,
+    List<Map<String, dynamic>>? imageAttachments,
   }) async {
     if (message.trim().isEmpty) return false;
 
@@ -225,6 +237,7 @@ class SourceConversationNotifier
         sourceId,
         message,
         githubContext: githubContext,
+        imageAttachments: imageAttachments,
       );
 
       // Add the user's message to the local state immediately
@@ -235,6 +248,9 @@ class SourceConversationNotifier
         role: 'user',
         content: message,
         timestamp: DateTime.now(),
+        metadata: (imageAttachments != null && imageAttachments.isNotEmpty)
+            ? {'imageAttachments': imageAttachments}
+            : null,
         isRead: true,
       );
 

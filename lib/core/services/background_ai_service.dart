@@ -94,8 +94,8 @@ class BackgroundAIService {
           onStart: onStart,
           isForegroundMode: true,
           autoStartOnBoot: false,
-          notificationChannelId: 'notebook_llm_background',
-          initialNotificationTitle: 'Notebook LLM',
+          notificationChannelId: 'noteclaw_background',
+          initialNotificationTitle: 'NoteClaw',
           initialNotificationContent: 'AI processing in background',
           foregroundServiceNotificationId: 888,
           foregroundServiceTypes: [
@@ -258,7 +258,7 @@ class BackgroundAIService {
   Future<void> _updateNotification(String content, int progress) async {
     await _notifications.show(
       888,
-      'Notebook LLM - Processing',
+      'NoteClaw - Processing',
       content,
       NotificationDetails(
         android: AndroidNotificationDetails(
@@ -417,7 +417,7 @@ Future<void> _showProgressNotification(
 ) async {
   await notifications.show(
     888,
-    'Notebook LLM - Processing',
+    'NoteClaw - Processing',
     content,
     NotificationDetails(
       android: AndroidNotificationDetails(
@@ -442,7 +442,7 @@ Future<void> _showCompletionNotification(
 ) async {
   await notifications.show(
     889,
-    'Notebook LLM - Complete',
+    'NoteClaw - Complete',
     content,
     const NotificationDetails(
       android: AndroidNotificationDetails(
@@ -464,7 +464,7 @@ Future<void> _showErrorNotification(
 ) async {
   await notifications.show(
     890,
-    'Notebook LLM - Error',
+    'NoteClaw - Error',
     content,
     const NotificationDetails(
       android: AndroidNotificationDetails(
@@ -486,7 +486,7 @@ Future<void> _showWakeWordNotification(
 ) async {
   await notifications.show(
     888,
-    'Notebook LLM - Listening',
+    'NoteClaw - Listening',
     'Listening for "$phrase"...',
     const NotificationDetails(
       android: AndroidNotificationDetails(
@@ -506,9 +506,8 @@ Future<void> _notifyWakeWordDetected(
   FlutterLocalNotificationsPlugin notifications,
   String transcript,
 ) async {
-  final snippet = transcript.length > 60
-      ? '${transcript.substring(0, 60)}...'
-      : transcript;
+  final snippet =
+      transcript.length > 60 ? '${transcript.substring(0, 60)}...' : transcript;
   await notifications.show(
     891,
     'Wake word detected',
@@ -534,10 +533,9 @@ Future<void> _runWakeWordListener(
 ) async {
   final phraseRaw = (params['phrase'] as String?) ??
       prefs.getString('assistant_wake_word_phrase');
-  final phrase =
-      (phraseRaw == null || phraseRaw.trim().isEmpty)
-          ? 'hey assistant'
-          : phraseRaw;
+  final phrase = (phraseRaw == null || phraseRaw.trim().isEmpty)
+      ? 'hey assistant'
+      : phraseRaw;
   final phraseLower = phrase.toLowerCase();
 
   final envKey = dotenv.env['DEEPGRAM_API_KEY'];
@@ -608,7 +606,8 @@ Future<void> _runWakeWordListener(
             final alternatives =
                 channelData?['alternatives'] as List<dynamic>? ?? const [];
             if (alternatives.isEmpty) return;
-            final transcript = alternatives.first['transcript'] as String? ?? '';
+            final transcript =
+                alternatives.first['transcript'] as String? ?? '';
             if (transcript.isEmpty) return;
             final transcriptLower = transcript.toLowerCase();
             if (!transcriptLower.contains(phraseLower)) return;
@@ -617,7 +616,8 @@ Future<void> _runWakeWordListener(
             if (now.difference(lastTrigger) < cooldown) return;
 
             lastTrigger = now;
-            prefs.setInt('wake_word_last_triggered', now.millisecondsSinceEpoch);
+            prefs.setInt(
+                'wake_word_last_triggered', now.millisecondsSinceEpoch);
             prefs.setString('wake_word_last_transcript', transcript);
             service.invoke('wakeWordDetected', {
               'phrase': phrase,
@@ -833,7 +833,7 @@ Future<String> _callOpenRouterAPI(
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $apiKey',
-          'HTTP-Referer': 'https://notebookllm.app',
+          'HTTP-Referer': 'https://noteclaw.app',
         },
         body: jsonEncode({
           'model': model,

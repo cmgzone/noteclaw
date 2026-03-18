@@ -336,6 +336,108 @@ Use this instead of verify_and_save when you want to:
     },
   },
   {
+    name: 'memory_get',
+    description: `Read the persisted memory bank for an agent session.
+
+Use this to restore identity, working memory, preferences, and checkpoints between runs.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        agentSessionId: {
+          type: 'string',
+          description: 'The agent session ID to load memory from',
+        },
+        agentIdentifier: {
+          type: 'string',
+          description: 'Alternative: load session by agent identifier',
+        },
+        namespace: {
+          type: 'string',
+          description: 'Logical namespace for memory segmentation',
+          default: 'default',
+        },
+      },
+    },
+  },
+  {
+    name: 'memory_put',
+    description: `Write to the persisted memory bank for an agent session.
+
+Use mode "merge" for partial updates or "replace" for full namespace overwrite.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        agentSessionId: {
+          type: 'string',
+          description: 'The agent session ID to update',
+        },
+        agentIdentifier: {
+          type: 'string',
+          description: 'Alternative: update session by agent identifier',
+        },
+        namespace: {
+          type: 'string',
+          description: 'Logical namespace for memory segmentation',
+          default: 'default',
+        },
+        mode: {
+          type: 'string',
+          description: 'Update mode: merge or replace',
+          enum: ['merge', 'replace'],
+          default: 'merge',
+        },
+        memory: {
+          type: 'object',
+          description: 'Memory payload object to persist',
+        },
+      },
+      required: ['memory'],
+    },
+  },
+  {
+    name: 'memory_compact',
+    description: `Compact long memory history into checkpoint summaries.
+
+This trims old items from a history array while preserving compacted checkpoints in a target namespace.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        agentSessionId: {
+          type: 'string',
+          description: 'The agent session ID to compact',
+        },
+        agentIdentifier: {
+          type: 'string',
+          description: 'Alternative: compact session by agent identifier',
+        },
+        namespace: {
+          type: 'string',
+          description: 'Source namespace containing history',
+          default: 'default',
+        },
+        targetNamespace: {
+          type: 'string',
+          description: 'Target namespace to store checkpoints',
+        },
+        historyField: {
+          type: 'string',
+          description: 'Field name of history array in source namespace',
+          default: 'history',
+        },
+        keepRecent: {
+          type: 'number',
+          description: 'How many recent history items to keep',
+          default: 20,
+        },
+        summaryMaxItems: {
+          type: 'number',
+          description: 'Maximum sampled removed items to include in checkpoint',
+          default: 50,
+        },
+      },
+    },
+  },
+  {
     name: 'get_followup_messages',
     description: `Poll for pending follow-up messages from the user.
     
@@ -347,7 +449,14 @@ Use this tool to:
 Returns messages with:
 - Message ID, content, and timestamp
 - Source information (title, code, language)
-- Conversation history`,
+- Conversation history
+- Optional imageAttachments (up to 4) at message.imageAttachments
+
+Each image attachment includes:
+- id, name, mimeType, base64Data, sizeBytes
+
+Compatibility note:
+- If imageAttachments is not present at top level, check message.metadata.imageAttachments`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -416,6 +525,7 @@ The webhook will receive POST requests with:
 - sourceId, sourceTitle, sourceCode, sourceLanguage
 - message: The user's message
 - conversationHistory: Previous messages
+- imageAttachments: Optional image attachments (id, name, mimeType, base64Data, sizeBytes)
 - userId, timestamp
 
 Webhook requests are signed with HMAC-SHA256 using the provided secret.`,
@@ -452,6 +562,7 @@ Returns:
 - WebSocket URL to connect to
 - Authentication method (query parameters)
 - Message format for sending responses
+- Incoming followup_message payload includes optional imageAttachments (id, name, mimeType, base64Data, sizeBytes)
 
 Use this for the most responsive agent experience.`,
     inputSchema: {
@@ -950,7 +1061,7 @@ Use this to provide feedback or updates on issues/PRs.`,
     name: 'github_add_as_source',
     description: `Add a GitHub file as a source to a notebook.
     
-This imports a file from GitHub into NotebookLLM as a code source,
+This imports a file from GitHub into NoteClaw as a code source,
 allowing the app's AI to analyze and discuss it.
 
 Parameters:
@@ -960,7 +1071,7 @@ Parameters:
 
 Returns the created source with ID.
 
-Use this to bring GitHub code into NotebookLLM for AI analysis.`,
+Use this to bring GitHub code into NoteClaw for AI analysis.`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -992,7 +1103,7 @@ Use this to bring GitHub code into NotebookLLM for AI analysis.`,
     name: 'github_analyze_repo',
     description: `Request AI analysis of a GitHub repository.
     
-This asks the NotebookLLM app's AI to analyze a repository and provide insights.
+This asks the NoteClaw app's AI to analyze a repository and provide insights.
 
 Analysis includes:
 - Repository structure overview
@@ -1598,6 +1709,30 @@ const SaveCodeWithContextSchema = z.object({
   strictMode: z.boolean().optional().default(false),
 });
 
+const MemoryGetSchema = z.object({
+  agentSessionId: z.string().optional(),
+  agentIdentifier: z.string().optional(),
+  namespace: z.string().optional().default('default'),
+});
+
+const MemoryPutSchema = z.object({
+  agentSessionId: z.string().optional(),
+  agentIdentifier: z.string().optional(),
+  namespace: z.string().optional().default('default'),
+  mode: z.enum(['merge', 'replace']).optional().default('merge'),
+  memory: z.record(z.string(), z.any()),
+});
+
+const MemoryCompactSchema = z.object({
+  agentSessionId: z.string().optional(),
+  agentIdentifier: z.string().optional(),
+  namespace: z.string().optional().default('default'),
+  targetNamespace: z.string().optional(),
+  historyField: z.string().optional().default('history'),
+  keepRecent: z.number().int().min(0).optional().default(20),
+  summaryMaxItems: z.number().int().min(1).optional().default(50),
+});
+
 const GetFollowupMessagesSchema = z.object({
   agentSessionId: z.string().optional(),
   agentIdentifier: z.string().optional(),
@@ -1932,6 +2067,50 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
       case 'save_code_with_context': {
         const input = SaveCodeWithContextSchema.parse(args);
         const response = await api.post('/sources/with-context', input);
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(response.data, null, 2),
+            },
+          ],
+        };
+      }
+
+      case 'memory_get': {
+        const input = MemoryGetSchema.parse(args);
+        const params = new URLSearchParams();
+        if (input.agentSessionId) params.append('agentSessionId', input.agentSessionId);
+        if (input.agentIdentifier) params.append('agentIdentifier', input.agentIdentifier);
+        if (input.namespace) params.append('namespace', input.namespace);
+
+        const response = await api.get(`/memory?${params.toString()}`);
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(response.data, null, 2),
+            },
+          ],
+        };
+      }
+
+      case 'memory_put': {
+        const input = MemoryPutSchema.parse(args);
+        const response = await api.put('/memory', input);
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(response.data, null, 2),
+            },
+          ],
+        };
+      }
+
+      case 'memory_compact': {
+        const input = MemoryCompactSchema.parse(args);
+        const response = await api.post('/memory/compact', input);
         return {
           content: [
             {

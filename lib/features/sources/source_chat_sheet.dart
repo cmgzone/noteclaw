@@ -4,6 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:lucide_icons/lucide_icons.dart';
+import 'package:image_picker/image_picker.dart';
+import 'dart:convert';
+import 'dart:typed_data';
 import 'dart:ui';
 
 import 'source_conversation_provider.dart';
@@ -33,6 +36,8 @@ class _SourceChatSheetState extends ConsumerState<SourceChatSheet> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final FocusNode _focusNode = FocusNode();
+  final ImagePicker _imagePicker = ImagePicker();
+  List<_PendingImageAttachment> _pendingImageAttachments = [];
 
   @override
   void dispose() {
@@ -70,16 +75,25 @@ class _SourceChatSheetState extends ConsumerState<SourceChatSheet> {
 
   Future<void> _sendMessage() async {
     final message = _messageController.text.trim();
-    if (message.isEmpty) return;
+    if (message.isEmpty && _pendingImageAttachments.isEmpty) return;
+
+    final imageAttachments = _pendingImageAttachments
+        .map((item) => item.toPayload())
+        .toList(growable: false);
 
     _messageController.clear();
+    setState(() => _pendingImageAttachments = []);
 
     // Include GitHub context for GitHub sources (Requirements: 4.2)
     final githubContext = _buildGitHubContext();
 
     final success = await ref
         .read(sourceConversationProvider(widget.source.id).notifier)
-        .sendMessage(message, githubContext: githubContext);
+        .sendMessage(
+          message,
+          githubContext: githubContext,
+          imageAttachments: imageAttachments,
+        );
 
     if (success) {
       _scrollToBottom();
@@ -96,6 +110,37 @@ class _SourceChatSheetState extends ConsumerState<SourceChatSheet> {
       owner: widget.source.githubOwner,
       repo: widget.source.githubRepo,
     );
+  }
+
+  Future<void> _pickImage() async {
+    final picked = await _imagePicker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 80,
+      maxWidth: 1600,
+      maxHeight: 1600,
+    );
+    if (picked == null) return;
+    final bytes = await picked.readAsBytes();
+    if (!mounted) return;
+    setState(() {
+      _pendingImageAttachments = [
+        ..._pendingImageAttachments,
+        _PendingImageAttachment(
+          id: DateTime.now().microsecondsSinceEpoch.toString(),
+          fileName: picked.name,
+          mimeType: _resolveMimeType(picked.name),
+          bytes: bytes,
+        ),
+      ].take(4).toList();
+    });
+  }
+
+  String _resolveMimeType(String fileName) {
+    final lower = fileName.toLowerCase();
+    if (lower.endsWith('.png')) return 'image/png';
+    if (lower.endsWith('.webp')) return 'image/webp';
+    if (lower.endsWith('.gif')) return 'image/gif';
+    return 'image/jpeg';
   }
 
   @override
@@ -374,72 +419,141 @@ class _SourceChatSheetState extends ConsumerState<SourceChatSheet> {
           ),
         ),
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          // Text input
-          Expanded(
-            child: Container(
-              constraints: const BoxConstraints(maxHeight: 120),
-              decoration: BoxDecoration(
-                color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color: scheme.outline.withValues(alpha: 0.1),
-                ),
-              ),
-              child: TextField(
-                controller: _messageController,
-                focusNode: _focusNode,
-                maxLines: null,
-                textInputAction: TextInputAction.newline,
-                decoration: InputDecoration(
-                  hintText: 'Ask about this code...',
-                  hintStyle: TextStyle(
-                    color: scheme.onSurface.withValues(alpha: 0.4),
-                  ),
-                  border: InputBorder.none,
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
-                  ),
-                ),
-                onSubmitted: (_) => _sendMessage(),
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-
-          // Send button
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            child: Material(
-              color: state.isSending
-                  ? scheme.primary.withValues(alpha: 0.5)
-                  : scheme.primary,
-              borderRadius: BorderRadius.circular(20),
-              child: InkWell(
-                onTap: state.isSending ? null : _sendMessage,
-                borderRadius: BorderRadius.circular(20),
-                child: Container(
-                  padding: const EdgeInsets.all(12),
-                  child: state.isSending
-                      ? SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: scheme.onPrimary,
-                          ),
-                        )
-                      : Icon(
-                          LucideIcons.send,
-                          size: 20,
-                          color: scheme.onPrimary,
+          if (_pendingImageAttachments.isNotEmpty) ...[
+            SizedBox(
+              height: 72,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: _pendingImageAttachments.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 8),
+                itemBuilder: (context, index) {
+                  final item = _pendingImageAttachments[index];
+                  return Stack(
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(10),
+                        child: Image.memory(
+                          item.bytes,
+                          width: 72,
+                          height: 72,
+                          fit: BoxFit.cover,
                         ),
-                ),
+                      ),
+                      Positioned(
+                        top: 2,
+                        right: 2,
+                        child: InkWell(
+                          onTap: () {
+                            setState(() {
+                              _pendingImageAttachments =
+                                  _pendingImageAttachments
+                                      .where((e) => e.id != item.id)
+                                      .toList();
+                            });
+                          },
+                          borderRadius: BorderRadius.circular(10),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.65),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            padding: const EdgeInsets.all(2),
+                            child: const Icon(
+                              Icons.close,
+                              color: Colors.white,
+                              size: 14,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                },
               ),
             ),
+            const SizedBox(height: 8),
+          ],
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Material(
+                color: scheme.surfaceContainerHighest.withValues(alpha: 0.7),
+                borderRadius: BorderRadius.circular(20),
+                child: InkWell(
+                  onTap: state.isSending ? null : _pickImage,
+                  borderRadius: BorderRadius.circular(20),
+                  child: const Padding(
+                    padding: EdgeInsets.all(10),
+                    child: Icon(LucideIcons.image, size: 18),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Container(
+                  constraints: const BoxConstraints(maxHeight: 120),
+                  decoration: BoxDecoration(
+                    color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: scheme.outline.withValues(alpha: 0.1),
+                    ),
+                  ),
+                  child: TextField(
+                    controller: _messageController,
+                    focusNode: _focusNode,
+                    maxLines: null,
+                    textInputAction: TextInputAction.newline,
+                    decoration: InputDecoration(
+                      hintText: 'Ask about this code...',
+                      hintStyle: TextStyle(
+                        color: scheme.onSurface.withValues(alpha: 0.4),
+                      ),
+                      border: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                    ),
+                    onSubmitted: (_) => _sendMessage(),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                child: Material(
+                  color: state.isSending
+                      ? scheme.primary.withValues(alpha: 0.5)
+                      : scheme.primary,
+                  borderRadius: BorderRadius.circular(20),
+                  child: InkWell(
+                    onTap: state.isSending ? null : _sendMessage,
+                    borderRadius: BorderRadius.circular(20),
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      child: state.isSending
+                          ? SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: scheme.onPrimary,
+                              ),
+                            )
+                          : Icon(
+                              LucideIcons.send,
+                              size: 20,
+                              color: scheme.onPrimary,
+                            ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -538,6 +652,14 @@ class _MessageBubble extends StatelessWidget {
               ),
               child: _buildMessageContent(context, scheme, text, isUser),
             ),
+            if (message.imageAttachments.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: _MessageImageAttachments(
+                  attachments: message.imageAttachments,
+                  isUser: isUser,
+                ),
+              ),
 
             // Code update indicator
             if (message.hasCodeUpdate)
@@ -662,6 +784,91 @@ class _MessageBubble extends StatelessWidget {
     } else {
       return '${time.day}/${time.month}';
     }
+  }
+}
+
+class _PendingImageAttachment {
+  final String id;
+  final String fileName;
+  final String mimeType;
+  final Uint8List bytes;
+
+  _PendingImageAttachment({
+    required this.id,
+    required this.fileName,
+    required this.mimeType,
+    required this.bytes,
+  });
+
+  Map<String, dynamic> toPayload() {
+    return {
+      'id': id,
+      'name': fileName,
+      'mimeType': mimeType,
+      'base64Data': base64Encode(bytes),
+      'sizeBytes': bytes.length,
+    };
+  }
+}
+
+class _MessageImageAttachments extends StatelessWidget {
+  final List<Map<String, dynamic>> attachments;
+  final bool isUser;
+
+  const _MessageImageAttachments({
+    required this.attachments,
+    required this.isUser,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      children: attachments.take(4).map((attachment) {
+        final base64Data = attachment['base64Data']?.toString() ?? '';
+        if (base64Data.isEmpty) {
+          return Container(
+            width: 72,
+            height: 72,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: isUser
+                  ? scheme.primary.withValues(alpha: 0.12)
+                  : scheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(Icons.image_not_supported_outlined, size: 18),
+          );
+        }
+        try {
+          final bytes = base64Decode(base64Data);
+          return ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: Image.memory(
+              bytes,
+              width: 96,
+              height: 96,
+              fit: BoxFit.cover,
+            ),
+          );
+        } catch (_) {
+          return Container(
+            width: 72,
+            height: 72,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: isUser
+                  ? scheme.primary.withValues(alpha: 0.12)
+                  : scheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(Icons.broken_image_outlined, size: 18),
+          );
+        }
+      }).toList(),
+    );
   }
 }
 

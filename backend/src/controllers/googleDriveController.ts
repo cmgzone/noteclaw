@@ -141,7 +141,7 @@ async function exportGoogleDoc(fileId: string): Promise<string> {
     const response = await axios.get(exportUrl, {
         timeout: 30000,
         headers: {
-            'User-Agent': 'Mozilla/5.0 (compatible; NotebookLLM/1.0)'
+            'User-Agent': 'Mozilla/5.0 (compatible; NoteClaw/1.0)'
         }
     });
 
@@ -161,7 +161,7 @@ async function exportGoogleSheet(fileId: string): Promise<string> {
     const response = await axios.get(exportUrl, {
         timeout: 30000,
         headers: {
-            'User-Agent': 'Mozilla/5.0 (compatible; NotebookLLM/1.0)'
+            'User-Agent': 'Mozilla/5.0 (compatible; NoteClaw/1.0)'
         }
     });
 
@@ -195,7 +195,7 @@ export async function exportGoogleSlides(fileId: string): Promise<string> {
         const response = await axios.get(exportUrl, {
             timeout: 30000,
             headers: {
-                'User-Agent': 'Mozilla/5.0 (compatible; NotebookLLM/1.0)'
+                'User-Agent': 'Mozilla/5.0 (compatible; NoteClaw/1.0)'
             }
         });
 
@@ -227,7 +227,7 @@ async function downloadFile(fileId: string): Promise<string> {
         timeout: 30000,
         maxContentLength: 10 * 1024 * 1024, // 10MB limit
         headers: {
-            'User-Agent': 'Mozilla/5.0 (compatible; NotebookLLM/1.0)'
+            'User-Agent': 'Mozilla/5.0 (compatible; NoteClaw/1.0)'
         }
     });
 

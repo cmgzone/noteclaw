@@ -120,7 +120,7 @@ Make sure:
 Sometimes cached data causes issues:
 
 **On Android:**
-1. Settings → Apps → NotebookLLM
+1. Settings → Apps → NoteClaw
 2. Storage → Clear Cache
 3. Restart app
 

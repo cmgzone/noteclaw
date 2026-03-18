@@ -558,7 +558,7 @@ class _AppDrawer extends ConsumerWidget {
                       ),
                       const SizedBox(height: 16),
                       Text(
-                        'Notebook LLM',
+                        'NoteClaw',
                         style: text.headlineSmall?.copyWith(
                           fontWeight: FontWeight.bold,
                           color: scheme.onSurface,
@@ -647,14 +647,7 @@ class _AppDrawer extends ConsumerWidget {
                           context.push('/chat');
                         },
                       ),
-                      _DrawerItem(
-                        icon: LucideIcons.globe,
-                        label: 'AI Browser',
-                        onTap: () {
-                          Navigator.pop(context);
-                          context.push('/ai-browser');
-                        },
-                      ),
+
                       _DrawerItem(
                         icon: LucideIcons.github,
                         label: 'GitHub',

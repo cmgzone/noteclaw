@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS api_tokens (
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   token_hash TEXT NOT NULL UNIQUE,
-  token_prefix TEXT NOT NULL,       -- First 8 chars (e.g., "nllm_abc")
+  token_prefix TEXT NOT NULL,       -- First 9 chars (e.g., "nclaw_abc")
   token_suffix TEXT NOT NULL,       -- Last 4 chars for display
   expires_at TIMESTAMPTZ,
   last_used_at TIMESTAMPTZ,
@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS api_tokens (
   metadata JSONB DEFAULT '{}',
   created_at TIMESTAMPTZ DEFAULT NOW(),
   
-  CONSTRAINT valid_token_prefix CHECK (token_prefix LIKE 'nllm_%')
+  CONSTRAINT valid_token_prefix CHECK (token_prefix LIKE 'nclaw_%')
 );
 
 -- ==================== TOKEN USAGE LOGS TABLE ====================

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'dart:convert';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/search/search_provider.dart';
 import '../../core/search/serper_service.dart';
 import '../../features/sources/source_provider.dart';
@@ -21,6 +23,8 @@ class WebSearchScreen extends ConsumerStatefulWidget {
 }
 
 class _WebSearchScreenState extends ConsumerState<WebSearchScreen> {
+  static const _webSearchHistoryKey = 'web_search_history_v1';
+  static const _deepResearchHistoryKey = 'deep_research_history_v1';
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocus = FocusNode();
   final TextEditingController _filterDomainController =
@@ -44,6 +48,14 @@ class _WebSearchScreenState extends ConsumerState<WebSearchScreen> {
   bool _filterHasDate = false;
   bool _filterHasSource = false;
   bool _filterHasImage = false;
+  List<_WebSearchHistoryItem> _webSearchHistory = [];
+  List<_DeepResearchHistoryItem> _deepResearchHistory = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSearchHistory();
+  }
 
   @override
   void dispose() {
@@ -130,6 +142,10 @@ class _WebSearchScreenState extends ConsumerState<WebSearchScreen> {
 
       try {
         await ref.read(searchProvider.notifier).search(query, type: _searchType);
+        final latestState = ref.read(searchProvider);
+        if (latestState.status == SearchStatus.success) {
+          await _saveWebSearchHistory(query, _searchType);
+        }
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -205,6 +221,16 @@ class _WebSearchScreenState extends ConsumerState<WebSearchScreen> {
             _isResearching = false;
           }
         });
+        if (update.isComplete &&
+            update.result != null &&
+            update.result!.trim().isNotEmpty) {
+          _saveDeepResearchHistory(
+            query: query,
+            depth: _selectedDepth,
+            template: _selectedTemplate,
+            summary: update.result,
+          );
+        }
       },
       onError: (e) {
         if (!mounted) return;
@@ -216,6 +242,313 @@ class _WebSearchScreenState extends ConsumerState<WebSearchScreen> {
         );
       },
     );
+  }
+
+  Future<void> _loadSearchHistory() async {
+    final prefs = await SharedPreferences.getInstance();
+    final webHistoryRaw = prefs.getString(_webSearchHistoryKey);
+    final deepHistoryRaw = prefs.getString(_deepResearchHistoryKey);
+
+    List<_WebSearchHistoryItem> loadedWeb = [];
+    List<_DeepResearchHistoryItem> loadedDeep = [];
+
+    if (webHistoryRaw != null && webHistoryRaw.isNotEmpty) {
+      try {
+        final list = (jsonDecode(webHistoryRaw) as List)
+            .cast<Map<String, dynamic>>();
+        loadedWeb = list
+            .map(_WebSearchHistoryItem.fromJson)
+            .where((item) => item.query.trim().isNotEmpty)
+            .toList();
+      } catch (_) {}
+    }
+
+    if (deepHistoryRaw != null && deepHistoryRaw.isNotEmpty) {
+      try {
+        final list = (jsonDecode(deepHistoryRaw) as List)
+            .cast<Map<String, dynamic>>();
+        loadedDeep = list
+            .map(_DeepResearchHistoryItem.fromJson)
+            .where((item) => item.query.trim().isNotEmpty)
+            .toList();
+      } catch (_) {}
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _webSearchHistory = loadedWeb;
+      _deepResearchHistory = loadedDeep;
+    });
+  }
+
+  Future<void> _saveWebSearchHistory(String query, SearchType type) async {
+    final normalizedQuery = query.trim();
+    if (normalizedQuery.isEmpty) return;
+
+    final updatedHistory = [
+      _WebSearchHistoryItem(
+        query: normalizedQuery,
+        searchType: type.name,
+        timestamp: DateTime.now(),
+      ),
+      ..._webSearchHistory.where(
+        (item) =>
+            !(item.query.toLowerCase() == normalizedQuery.toLowerCase() &&
+                item.searchType == type.name),
+      ),
+    ].take(20).toList();
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _webSearchHistoryKey,
+      jsonEncode(updatedHistory.map((item) => item.toJson()).toList()),
+    );
+
+    if (!mounted) return;
+    setState(() {
+      _webSearchHistory = updatedHistory;
+    });
+  }
+
+  Future<void> _saveDeepResearchHistory({
+    required String query,
+    required ResearchDepth depth,
+    required ResearchTemplate template,
+    String? summary,
+  }) async {
+    final normalizedQuery = query.trim();
+    if (normalizedQuery.isEmpty) return;
+
+    final updatedHistory = [
+      _DeepResearchHistoryItem(
+        query: normalizedQuery,
+        depth: depth.name,
+        template: template.name,
+        summary: _cleanSummary(summary),
+        timestamp: DateTime.now(),
+      ),
+      ..._deepResearchHistory.where(
+        (item) =>
+            !(item.query.toLowerCase() == normalizedQuery.toLowerCase() &&
+                item.depth == depth.name &&
+                item.template == template.name),
+      ),
+    ].take(20).toList();
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _deepResearchHistoryKey,
+      jsonEncode(updatedHistory.map((item) => item.toJson()).toList()),
+    );
+
+    if (!mounted) return;
+    setState(() {
+      _deepResearchHistory = updatedHistory;
+    });
+  }
+
+  Future<void> _clearWebHistory() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_webSearchHistoryKey);
+    if (!mounted) return;
+    setState(() {
+      _webSearchHistory = [];
+    });
+  }
+
+  Future<void> _clearDeepHistory() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_deepResearchHistoryKey);
+    if (!mounted) return;
+    setState(() {
+      _deepResearchHistory = [];
+    });
+  }
+
+  String _cleanSummary(String? summary) {
+    if (summary == null || summary.trim().isEmpty) return '';
+    final compact = summary.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (compact.length <= 140) return compact;
+    return '${compact.substring(0, 140)}...';
+  }
+
+  String _formatHistoryTime(DateTime timestamp) {
+    final now = DateTime.now();
+    final diff = now.difference(timestamp);
+    if (diff.inMinutes < 1) return 'now';
+    if (diff.inHours < 1) return '${diff.inMinutes}m';
+    if (diff.inDays < 1) return '${diff.inHours}h';
+    if (diff.inDays < 7) return '${diff.inDays}d';
+    return '${timestamp.year}-${timestamp.month.toString().padLeft(2, '0')}-${timestamp.day.toString().padLeft(2, '0')}';
+  }
+
+  Widget _buildWebHistorySection(ColorScheme scheme, TextTheme text) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text('Search History', style: text.titleSmall),
+              const Spacer(),
+              TextButton(
+                onPressed: _clearWebHistory,
+                child: const Text('Clear'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 68,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: _webSearchHistory.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemBuilder: (context, index) {
+                final item = _webSearchHistory[index];
+                return InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () async {
+                    setState(() {
+                      _isDeepResearch = false;
+                      _searchType = SearchType.values.firstWhere(
+                        (type) => type.name == item.searchType,
+                        orElse: () => SearchType.web,
+                      );
+                      _searchController.text = item.query;
+                    });
+                    await _performSearch();
+                  },
+                  child: Container(
+                    width: 220,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: scheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          item.query,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: text.bodyMedium
+                              ?.copyWith(fontWeight: FontWeight.w600),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '${item.searchType} • ${_formatHistoryTime(item.timestamp)}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: text.bodySmall?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    ).animate().slideY(begin: 0.2, delay: 210.ms).fadeIn();
+  }
+
+  Widget _buildDeepHistorySection(ColorScheme scheme, TextTheme text) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text('Research History', style: text.titleSmall),
+              const Spacer(),
+              TextButton(
+                onPressed: _clearDeepHistory,
+                child: const Text('Clear'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 86,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: _deepResearchHistory.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemBuilder: (context, index) {
+                final item = _deepResearchHistory[index];
+                return InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () async {
+                    final depth = ResearchDepth.values.firstWhere(
+                      (value) => value.name == item.depth,
+                      orElse: () => ResearchDepth.standard,
+                    );
+                    final template = ResearchTemplate.values.firstWhere(
+                      (value) => value.name == item.template,
+                      orElse: () => ResearchTemplate.general,
+                    );
+                    setState(() {
+                      _isDeepResearch = true;
+                      _selectedDepth = depth;
+                      _selectedTemplate = template;
+                      _searchController.text = item.query;
+                    });
+                    await _performSearch();
+                  },
+                  child: Container(
+                    width: 270,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: scheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          item.query,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: text.bodyMedium
+                              ?.copyWith(fontWeight: FontWeight.w600),
+                        ),
+                        if (item.summary.isNotEmpty) ...[
+                          const SizedBox(height: 3),
+                          Text(
+                            item.summary,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: text.bodySmall?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                        const Spacer(),
+                        Text(
+                          '${item.depth}/${item.template} • ${_formatHistoryTime(item.timestamp)}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: text.bodySmall?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    ).animate().slideY(begin: 0.2, delay: 210.ms).fadeIn();
   }
 
   void _addAsSource(SerperSearchResult result) async {
@@ -592,6 +925,10 @@ $content''',
                 ],
               ),
             ).animate().slideY(begin: 0.2, delay: 180.ms).fadeIn(),
+          if (!_isDeepResearch && _webSearchHistory.isNotEmpty)
+            _buildWebHistorySection(scheme, text),
+          if (_isDeepResearch && _deepResearchHistory.isNotEmpty)
+            _buildDeepHistorySection(scheme, text),
 
           const SizedBox(height: 16),
 
@@ -1705,6 +2042,68 @@ $content''',
       return uri.pathSegments.isNotEmpty ? uri.pathSegments.first : null;
     }
     return null;
+  }
+}
+
+class _WebSearchHistoryItem {
+  final String query;
+  final String searchType;
+  final DateTime timestamp;
+
+  _WebSearchHistoryItem({
+    required this.query,
+    required this.searchType,
+    required this.timestamp,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'query': query,
+        'searchType': searchType,
+        'timestamp': timestamp.toIso8601String(),
+      };
+
+  factory _WebSearchHistoryItem.fromJson(Map<String, dynamic> json) {
+    return _WebSearchHistoryItem(
+      query: json['query']?.toString() ?? '',
+      searchType: json['searchType']?.toString() ?? SearchType.web.name,
+      timestamp: DateTime.tryParse(json['timestamp']?.toString() ?? '') ??
+          DateTime.now(),
+    );
+  }
+}
+
+class _DeepResearchHistoryItem {
+  final String query;
+  final String depth;
+  final String template;
+  final String summary;
+  final DateTime timestamp;
+
+  _DeepResearchHistoryItem({
+    required this.query,
+    required this.depth,
+    required this.template,
+    required this.summary,
+    required this.timestamp,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'query': query,
+        'depth': depth,
+        'template': template,
+        'summary': summary,
+        'timestamp': timestamp.toIso8601String(),
+      };
+
+  factory _DeepResearchHistoryItem.fromJson(Map<String, dynamic> json) {
+    return _DeepResearchHistoryItem(
+      query: json['query']?.toString() ?? '',
+      depth: json['depth']?.toString() ?? ResearchDepth.standard.name,
+      template: json['template']?.toString() ?? ResearchTemplate.general.name,
+      summary: json['summary']?.toString() ?? '',
+      timestamp: DateTime.tryParse(json['timestamp']?.toString() ?? '') ??
+          DateTime.now(),
+    );
   }
 }
 

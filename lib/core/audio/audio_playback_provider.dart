@@ -129,7 +129,7 @@ class AudioPlaybackNotifier extends StateNotifier<AudioPlaybackState> {
     return MediaItem(
       id: overview.url, // Using URL as ID for just_audio convenience
       title: overview.title,
-      artist: 'Notebook LLM',
+      artist: 'NoteClaw',
       duration: overview.duration,
       artUri: null, // Could generate a placeholder URI or use app icon
       extras: {

@@ -131,8 +131,8 @@ export async function generateWithOpenRouter(
                 headers: {
                     'Authorization': `Bearer ${apiKey}`,
                     'Content-Type': 'application/json',
-                    'HTTP-Referer': 'https://notebookllm.app',
-                    'X-Title': 'Notebook LLM'
+                    'HTTP-Referer': 'https://noteclaw.app',
+                    'X-Title': 'NoteClaw'
                 }
             }
         );
@@ -259,8 +259,8 @@ export async function* streamWithOpenRouter(
                 headers: {
                     'Authorization': `Bearer ${apiKey}`,
                     'Content-Type': 'application/json',
-                    'HTTP-Referer': 'https://notebookllm.app',
-                    'X-Title': 'Notebook LLM'
+                    'HTTP-Referer': 'https://noteclaw.app',
+                    'X-Title': 'NoteClaw'
                 }
             }
         );

@@ -5,7 +5,7 @@ const crypto = require('crypto');
 const OPENROUTER_KEY = "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";
 
 // Same secret as in the app
-const SECRET = "notebook_llm_global_secret_key_2024";
+const SECRET = "noteclaw_global_secret_key_2024";
 
 // Generate encryption key from secret (same as app)
 const keyBytes = crypto.createHash('sha256').update(SECRET).digest();

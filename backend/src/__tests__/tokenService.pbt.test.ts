@@ -100,8 +100,8 @@ describe('Token Service - Property-Based Tests', () => {
    * Property 1: Token Generation Security
    * 
    * For any generated token, the token SHALL:
-   * - Start with the prefix "nllm_"
-   * - Have a total length of 48 characters
+   * - Start with the prefix "nclaw_"
+   * - Have a total length of 49 characters
    * - Contain only URL-safe base64 characters after the prefix
    * - Be unique (no two generated tokens are identical)
    * 
@@ -304,9 +304,9 @@ describe('Token Service - Property-Based Tests', () => {
           fc.oneof(
             fc.constant(''),
             fc.constant('invalid'),
-            fc.constant('nllm_short'),
+            fc.constant('nclaw_short'),
             fc.constant('wrong_prefix_' + 'a'.repeat(43)),
-            fc.stringOf(fc.constantFrom(...'abcdef0123456789'), { minLength: 48, maxLength: 48 })
+            fc.stringOf(fc.constantFrom(...'abcdef0123456789'), { minLength: 49, maxLength: 49 })
           ),
           async (invalidToken) => {
             const result = await tokenService.validateToken(invalidToken);

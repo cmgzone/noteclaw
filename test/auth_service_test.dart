@@ -1,6 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:notebook_llm/core/auth/custom_auth_service.dart';
+import 'package:noteclaw/core/auth/custom_auth_service.dart';
 
 void main() {
   group('CustomAuthService password strength', () {

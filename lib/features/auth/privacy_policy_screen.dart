@@ -31,7 +31,7 @@ class PrivacyPolicyScreen extends StatelessWidget {
             _buildSection(
               theme,
               'Introduction',
-              'Notebook LLM ("we", "our", or "us") is committed to protecting your privacy. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you use our mobile application and services.',
+              'NoteClaw ("we", "our", or "us") is committed to protecting your privacy. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you use our mobile application and services.',
             ),
             _buildSection(
               theme,
@@ -95,7 +95,7 @@ class PrivacyPolicyScreen extends StatelessWidget {
               theme,
               'Contact Us',
               'If you have questions about this Privacy Policy, please contact us at:\n\n'
-                  'Email: privacy@notebookllm.com',
+                  'Email: privacy@noteclaw.com',
             ),
             const SizedBox(height: 32),
           ],

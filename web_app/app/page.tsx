@@ -461,7 +461,7 @@ function FeaturesSection() {
       desc: "Analyze more than just text. Ingest YouTube videos, academic PDFs, and live web pages for a truly 360-degree understanding."
     },
     {
-      icon: <className="text-orange-400" />,
+      icon: <Sparkles className="text-orange-400" />,
       title: "Custom Agent Skills",
       desc: "Teach your AI Agent specialized capabilities. Define custom prompts, workflows, and rules that persist across sessions."
     }

@@ -7,7 +7,7 @@ import '../models/branding_config.dart';
 import '../agents/ebook_orchestrator.dart';
 import 'ebook_generation_view.dart';
 import '../../notebook/notebook_provider.dart';
-import '../../../core/services/overlay_bubble_service.dart';
+
 import '../../../core/ai/ai_models_provider.dart';
 import '../../../core/ai/ai_settings_service.dart';
 import '../../subscription/services/credit_manager.dart';
@@ -610,22 +610,7 @@ class _EbookCreatorWizardState extends ConsumerState<EbookCreatorWizard> {
     );
     if (!hasCredits) return;
 
-    // Request overlay permission for background progress bubble
-    final hasPermission = await overlayBubbleService.checkPermission();
 
-    if (!hasPermission && mounted) {
-      final granted = await overlayBubbleService.requestPermission();
-      if (!granted && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Overlay permission denied. Progress will only show in notifications.',
-            ),
-            duration: Duration(seconds: 3),
-          ),
-        );
-      }
-    }
 
     final project = EbookProject(
       id: DateTime.now().millisecondsSinceEpoch.toString(),

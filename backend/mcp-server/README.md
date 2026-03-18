@@ -1,17 +1,17 @@
-# NotebookLLM MCP Server
+# NoteClaw MCP Server
 
-An MCP (Model Context Protocol) server that allows third-party coding agents to verify code and save it as sources in your NotebookLLM app.
+An MCP (Model Context Protocol) server that allows third-party coding agents to verify code and save it as sources in your NoteClaw app.
 
 ## Quick Install
 
 **Windows (PowerShell):**
 ```powershell
-irm https://raw.githubusercontent.com/cmgzone/notebookllm/HEAD/scripts/install-mcp.ps1 | iex
+irm https://raw.githubusercontent.com/cmgzone/noteclaw/HEAD/scripts/install-mcp.ps1 | iex
 ```
 
 **macOS/Linux:**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/cmgzone/notebookllm/HEAD/scripts/install-mcp.sh | bash
+curl -fsSL https://raw.githubusercontent.com/cmgzone/noteclaw/HEAD/scripts/install-mcp.sh | bash
 ```
 
 
@@ -181,8 +181,8 @@ Use the install scripts above - they automatically download the latest release a
 
 ### Option 2: Manual Install from GitHub Release
 
-1. Download the latest release from [GitHub Releases](https://github.com/cmgzone/notebookllm/releases)
-2. Extract to `~/.notebookllm-mcp`
+1. Download the latest release from [GitHub Releases](https://github.com/cmgzone/noteclaw/releases)
+2. Extract to `~/.noteclaw-mcp`
 3. Run `npm install --production`
 4. Configure your MCP client (see below)
 
@@ -196,11 +196,11 @@ npm run build
 
 ## Authentication
 
-The MCP server requires a personal API token to authenticate with your NotebookLLM account. This token links the coding agent to your user account, allowing it to save verified code as sources.
+The MCP server requires a personal API token to authenticate with your NoteClaw account. This token links the coding agent to your user account, allowing it to save verified code as sources.
 
 ### Generating a Personal API Token
 
-1. Open the NotebookLLM app
+1. Open the NoteClaw app
 2. Go to **Settings** → **Agent Connections**
 3. In the **API Tokens** section, click **Generate New Token**
 4. Give your token a descriptive name (e.g., "Kiro MCP Server")
@@ -211,9 +211,9 @@ The MCP server requires a personal API token to authenticate with your NotebookL
 
 ### Token Format
 
-Personal API tokens use the format: `nllm_` followed by 43 characters of random data.
+Personal API tokens use the format: `nclaw_` followed by 43 characters of random data.
 
-Example: `nllm_a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2`
+Example: `nclaw_a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2`
 
 ## Configuration
 
@@ -221,10 +221,10 @@ Create a `.env` file:
 
 ```env
 BACKEND_URL=http://localhost:3000
-CODING_AGENT_API_KEY=nllm_your-personal-api-token-here
+CODING_AGENT_API_KEY=nclaw_your-personal-api-token-here
 ```
 
-Replace `nllm_your-personal-api-token-here` with the token you generated from the app.
+Replace `nclaw_your-personal-api-token-here` with the token you generated from the app.
 
 ## Usage with MCP Clients
 
@@ -240,7 +240,7 @@ Add to `.kiro/settings/mcp.json`:
       "args": ["path/to/backend/mcp-server/dist/index.js"],
       "env": {
         "BACKEND_URL": "http://localhost:3000",
-        "CODING_AGENT_API_KEY": "nllm_your-personal-api-token-here"
+        "CODING_AGENT_API_KEY": "nclaw_your-personal-api-token-here"
       }
     }
   }
@@ -259,7 +259,7 @@ Add to `claude_desktop_config.json`:
       "args": ["/absolute/path/to/backend/mcp-server/dist/index.js"],
       "env": {
         "BACKEND_URL": "http://localhost:3000",
-        "CODING_AGENT_API_KEY": "nllm_your-personal-api-token-here"
+        "CODING_AGENT_API_KEY": "nclaw_your-personal-api-token-here"
       }
     }
   }

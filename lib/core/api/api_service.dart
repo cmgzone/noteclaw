@@ -7,7 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import '../security/global_credentials_service.dart';
+import '../security/credentials_service.dart';
 
 // Custom exception for insufficient credits
 class InsufficientCreditsException implements Exception {
@@ -593,6 +593,35 @@ class ApiService {
     await post('/coding-agent/sessions/$sessionId/disconnect', {});
   }
 
+  Future<List<Map<String, dynamic>>> getAgentMemories() async {
+    final response =
+        await get<Map<String, dynamic>>('/coding-agent/memory/sessions');
+    return List<Map<String, dynamic>>.from(response['agents'] ?? []);
+  }
+
+  Future<Map<String, dynamic>> getAgentMemory({
+    String? agentSessionId,
+    String? agentIdentifier,
+    String namespace = 'default',
+  }) async {
+    if ((agentSessionId == null || agentSessionId.isEmpty) &&
+        (agentIdentifier == null || agentIdentifier.isEmpty)) {
+      throw Exception(
+          'getAgentMemory requires agentSessionId or agentIdentifier');
+    }
+
+    final params = <String, String>{
+      'namespace': namespace,
+      if (agentSessionId != null && agentSessionId.isNotEmpty)
+        'agentSessionId': agentSessionId,
+      if (agentIdentifier != null && agentIdentifier.isNotEmpty)
+        'agentIdentifier': agentIdentifier,
+    };
+
+    final query = Uri(queryParameters: params).query;
+    return await get<Map<String, dynamic>>('/coding-agent/memory?$query');
+  }
+
   // ============ SOURCES ============
 
   Future<List<Map<String, dynamic>>> getSourcesForNotebook(
@@ -697,11 +726,14 @@ class ApiService {
     String sourceId,
     String message, {
     Map<String, dynamic>? githubContext,
+    List<Map<String, dynamic>>? imageAttachments,
   }) async {
     return await post<Map<String, dynamic>>('/coding-agent/followups/send', {
       'sourceId': sourceId,
       'message': message,
       if (githubContext != null) 'githubContext': githubContext,
+      if (imageAttachments != null && imageAttachments.isNotEmpty)
+        'imageAttachments': imageAttachments,
     });
   }
 
@@ -818,7 +850,7 @@ class ApiService {
         return 'gemini';
       })();
 
-      final creds = ref.read(globalCredentialsServiceProvider);
+      final creds = ref.read(credentialsServiceProvider);
       final key = await creds.getApiKey(service);
       final trimmed = (key ?? '').trim();
       return trimmed.isEmpty ? null : trimmed;
@@ -1019,6 +1051,7 @@ class ApiService {
     required String depth,
     required String template,
     bool? includeImages,
+    bool useNotebookContext = false,
     String? provider,
     String? model,
   }) async* {
@@ -1033,6 +1066,7 @@ class ApiService {
           'template': template,
           if (notebookId != null && notebookId.isNotEmpty) 'notebookId': notebookId,
           if (includeImages != null) 'includeImages': includeImages,
+          'useNotebookContext': useNotebookContext,
           if (provider != null && provider.isNotEmpty) 'provider': provider,
           if (model != null && model.isNotEmpty) 'model': model,
         },
@@ -1103,6 +1137,29 @@ class ApiService {
 
   Future<void> deleteAIModel(String id) async {
     await delete('/ai/models/$id');
+  }
+
+  Future<List<Map<String, dynamic>>> getPersonalAIModels() async {
+    final response = await get<Map<String, dynamic>>('/ai/models/personal');
+    return List<Map<String, dynamic>>.from(response['models'] ?? []);
+  }
+
+  Future<Map<String, dynamic>> addPersonalAIModel(
+      Map<String, dynamic> data) async {
+    final response =
+        await post<Map<String, dynamic>>('/ai/models/personal', data);
+    return Map<String, dynamic>.from(response['model'] ?? {});
+  }
+
+  Future<Map<String, dynamic>> updatePersonalAIModel(
+      String id, Map<String, dynamic> data) async {
+    final response =
+        await put<Map<String, dynamic>>('/ai/models/personal/$id', data);
+    return Map<String, dynamic>.from(response['model'] ?? {});
+  }
+
+  Future<void> deletePersonalAIModel(String id) async {
+    await delete('/ai/models/personal/$id');
   }
 
   // ============ SEARCH PROXY ============
@@ -1551,7 +1608,7 @@ class ApiService {
     required String projectId,
     required List<Map<String, dynamic>> chapters,
   }) async {
-    await post('/ebooks/$projectId/chapters/sync', {'chapters': chapters});
+    await post('/ebooks/$projectId/chapters/batch', {'chapters': chapters});
   }
 
   Future<void> deleteEbookProject(String projectId) async {

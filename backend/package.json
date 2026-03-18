@@ -1,5 +1,5 @@
 {
-  "name": "notebook-llm-backend",
+  "name": "noteclaw-backend",
   "version": "2.0.0",
   "type": "module",
   "main": "dist/index.js",
@@ -24,7 +24,7 @@
   ],
   "author": "",
   "license": "ISC",
-  "description": "Complete backend API for Notebook LLM Flutter app with all features",
+  "description": "Complete backend API for NoteClaw Flutter app with all features",
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
     "@modelcontextprotocol/sdk": "^1.0.1",

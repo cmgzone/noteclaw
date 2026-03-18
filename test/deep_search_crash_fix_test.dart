@@ -1,5 +1,5 @@
 ﻿import 'package:flutter_test/flutter_test.dart';
-import 'package:notebook_llm/core/ai/deep_research_service.dart';
+import 'package:noteclaw/core/ai/deep_research_service.dart';
 
 void main() {
   group('Deep Research Service - Crash Fix Tests', () {

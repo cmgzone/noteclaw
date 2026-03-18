@@ -1,4 +1,0 @@
-[submodule "notebookllmmcp"]
-	path = notebookllmmcp
-	url = https://github.com/cmgzone/notebookllmmcp.git
-	branch = main

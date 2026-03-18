@@ -827,7 +827,7 @@ function SettingsTab({ settings, aiModels, onRefresh }: { settings: McpUserSetti
             {/* Info Card */}
             <div className="rounded-xl border border-white/5 bg-neutral-900/50 p-6">
                 <h4 className="font-medium mb-3 flex items-center gap-2">
-                    <size={16} className="text-purple-400" />
+                    <Sparkles size={16} className="text-purple-400" />
                     About Code Analysis
                 </h4>
                 <div className="text-sm text-neutral-400 space-y-2">

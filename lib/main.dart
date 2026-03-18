@@ -14,7 +14,7 @@ import 'core/audio/audio_handler.dart';
 import 'core/audio/audio_playback_provider.dart';
 // import 'core/backend/neon_database_service.dart'; // REMOVED: Using API service now
 import 'core/services/background_ai_service.dart';
-import 'core/services/overlay_bubble_widget.dart';
+
 import 'features/onboarding/onboarding_provider.dart';
 import 'theme/app_theme.dart';
 import 'core/theme/theme_provider.dart';
@@ -41,17 +41,7 @@ void main() {
   runApp(const _BootstrapApp());
 }
 
-/// Entry point for overlay bubble - called when overlay is shown
-@pragma("vm:entry-point")
-void overlayMain() {
-  WidgetsFlutterBinding.ensureInitialized();
-  runApp(
-    const MaterialApp(
-      debugShowCheckedModeBanner: false,
-      home: OverlayBubbleWidget(),
-    ),
-  );
-}
+
 
 class _InitResult {
   final bool hasSeenOnboarding;
@@ -152,7 +142,7 @@ class _BootstrapAppState extends State<_BootstrapApp> {
         // Loading state
         if (!snapshot.hasData) {
           return MaterialApp(
-            title: 'Notebook LLM',
+            title: 'NoteClaw',
             themeMode: ThemeMode.system,
             theme: AppTheme.light,
             darkTheme: AppTheme.dark,
@@ -167,7 +157,7 @@ class _BootstrapAppState extends State<_BootstrapApp> {
           overrides: [
             audioHandlerProvider.overrideWithValue(result.handler),
           ],
-          child: NotebookLlmApp(
+          child: NoteClawApp(
             hasSeenOnboarding: result.hasSeenOnboarding,
           ),
         );
@@ -176,19 +166,19 @@ class _BootstrapAppState extends State<_BootstrapApp> {
   }
 }
 
-class NotebookLlmApp extends ConsumerStatefulWidget {
+class NoteClawApp extends ConsumerStatefulWidget {
   final bool hasSeenOnboarding;
 
-  const NotebookLlmApp({
+  const NoteClawApp({
     super.key,
     required this.hasSeenOnboarding,
   });
 
   @override
-  ConsumerState<NotebookLlmApp> createState() => _NotebookLlmAppState();
+  ConsumerState<NoteClawApp> createState() => _NoteClawAppState();
 }
 
-class _NotebookLlmAppState extends ConsumerState<NotebookLlmApp> {
+class _NoteClawAppState extends ConsumerState<NoteClawApp> {
   GoRouter? _router;
   bool _initialized = false;
 
@@ -225,7 +215,7 @@ class _NotebookLlmAppState extends ConsumerState<NotebookLlmApp> {
     }
 
     return MaterialApp.router(
-      title: 'Notebook LLM',
+      title: 'NoteClaw',
       themeMode: themeMode,
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,

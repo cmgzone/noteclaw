@@ -299,7 +299,7 @@ class _CustomLoginScreenState extends ConsumerState<CustomLoginScreen>
         ),
         const SizedBox(height: 24),
         Text(
-          'Notebook LLM',
+          'NoteClaw',
           style: theme.textTheme.headlineMedium?.copyWith(
             fontWeight: FontWeight.bold,
             letterSpacing: -0.5,

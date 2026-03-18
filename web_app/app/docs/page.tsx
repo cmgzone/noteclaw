@@ -276,14 +276,14 @@ function AuthenticationSection() {
           </p>
           <CodeBlock
             language="text"
-            code={`nllm_[43 characters of random data]
+            code={`nclaw_[43 characters of random data]
 
-Example: nllm_a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2`}
+Example: nclaw_a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2`}
           />
           <ul className="mt-4 space-y-2 text-sm text-neutral-300">
-            <li>• <strong>Prefix:</strong> <code className="text-blue-400">nllm_</code> (5 characters)</li>
+            <li>• <strong>Prefix:</strong> <code className="text-blue-400">nclaw_</code> (6 characters)</li>
             <li>• <strong>Random part:</strong> 43 characters (32 bytes base64url encoded)</li>
-            <li>• <strong>Total length:</strong> 48 characters</li>
+            <li>• <strong>Total length:</strong> 49 characters</li>
           </ul>
         </div>
 
@@ -296,7 +296,7 @@ Example: nllm_a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2`}
             language="bash"
             code={`curl -X POST http://localhost:3000/api/coding-agent/verify-and-save \\
   -H "Content-Type: application/json" \\
-  -H "Authorization: Bearer nllm_your-token-here" \\
+  -H "Authorization: Bearer nclaw_your-token-here" \\
   -d '{
     "code": "function add(a, b) { return a + b; }",
     "language": "javascript",
@@ -878,7 +878,7 @@ function ConfigurationSection() {
       "args": ["C:/Users/YourName/.notebookllm-mcp/index.js"],
       "env": {
         "BACKEND_URL": "http://localhost:3000",
-        "CODING_AGENT_API_KEY": "nllm_your-personal-api-token-here"
+        "CODING_AGENT_API_KEY": "nclaw_your-personal-api-token-here"
       }
     }
   }
@@ -900,7 +900,7 @@ function ConfigurationSection() {
       "args": ["~/.notebookllm-mcp/index.js"],
       "env": {
         "BACKEND_URL": "http://localhost:3000",
-        "CODING_AGENT_API_KEY": "nllm_your-personal-api-token-here"
+        "CODING_AGENT_API_KEY": "nclaw_your-personal-api-token-here"
       }
     }
   }
@@ -1032,7 +1032,7 @@ function ArchitectureSection() {
 │            /api/coding-agent/*                              │
 │                                                              │
 │  Authentication:                                             │
-│  • Personal API tokens (nllm_xxx format)                    │
+│  • Personal API tokens (nclaw_xxx format)                   │
 │  • SHA-256 hashed storage                                   │
 │  • Usage logging & rate limiting                            │
 └─────────────────────┬───────────────────────────────────────┘
@@ -1178,7 +1178,7 @@ function Footer() {
       <div className="container mx-auto px-6">
         <div className="flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
-            <className="text-blue-400" size={20} />
+            <BookOpen className="text-blue-400" size={20} />
             <span className="font-bold">NoteClaw</span>
           </div>
           <div className="flex items-center gap-6 text-sm text-neutral-500">
