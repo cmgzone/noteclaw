@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/images/app_logo.png" alt="NoteClaw Logo" width="140" />
+  <img src="assets/images/logo.png" alt="NoteClaw Logo" width="140" />
 </p>
 
 # NoteClow
