@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/images/app_logo.png" alt="NoteClaw Logo" width="140" />
+</p>
+
 # NoteClow
 
 NoteClow is an AI-powered knowledge workspace with:
