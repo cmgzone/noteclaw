@@ -36,6 +36,9 @@ admin_panel/.env
 
 # Temporary files
 tmp/
+flutter_*.log
+remove_done.txt
+ersAdminDocumentsfinish productnoteclaw*
 
 # Local export artifacts
 NOTBOOK_LLM_Project.zip
