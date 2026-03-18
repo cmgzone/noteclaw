@@ -1,10 +1,10 @@
-# NoteClaw
+# NoteClow
 
-NoteClaw is an AI-powered knowledge workspace with:
+NoteClow is an AI-powered knowledge workspace with:
 
 - Flutter app for notebooks, sources, chat, planning, and social learning
 - Node/TypeScript backend API for auth, notebooks, AI workflows, and integrations
-- MCP server so coding agents can connect to your NoteClaw account and tools
+- MCP server so coding agents can connect to your NoteClow account and tools
 
 This repository contains the app, backend, and MCP in one place.
 
