@@ -2,6 +2,8 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../../core/utils/image_data_uri.dart';
+
 class AppNetworkImage extends StatelessWidget {
   const AppNetworkImage({
     super.key,
@@ -22,6 +24,27 @@ class AppNetworkImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (isImageDataUri(imageUrl)) {
+      if (isSvgImageDataUri(imageUrl)) {
+        return errorWidget?.call(context) ?? const SizedBox();
+      }
+
+      final bytes = decodeImageDataUriBytes(imageUrl);
+      if (bytes != null) {
+        return Image.memory(
+          bytes,
+          fit: fit,
+          width: width,
+          height: height,
+          errorBuilder: (context, error, stackTrace) {
+            return errorWidget?.call(context) ?? const SizedBox();
+          },
+        );
+      }
+
+      return errorWidget?.call(context) ?? const SizedBox();
+    }
+
     if (kIsWeb) {
       return Image.network(
         imageUrl,
@@ -52,6 +75,13 @@ class AppNetworkImage extends StatelessWidget {
 }
 
 ImageProvider appNetworkImageProvider(String url) {
+  if (isImageDataUri(url) && !isSvgImageDataUri(url)) {
+    final bytes = decodeImageDataUriBytes(url);
+    if (bytes != null) {
+      return MemoryImage(bytes);
+    }
+  }
+
   if (kIsWeb) {
     return NetworkImage(url, webHtmlElementStrategy: WebHtmlElementStrategy.prefer);
   }

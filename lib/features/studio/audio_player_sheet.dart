@@ -10,7 +10,6 @@ import 'package:share_plus/share_plus.dart';
 import 'package:path/path.dart' as p;
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:permission_handler/permission_handler.dart';
 
 import 'audio_overview.dart';
 import 'audio_overview_provider.dart';
@@ -329,35 +328,12 @@ class AudioPlayerSheet extends ConsumerWidget {
     );
   }
 
-  /// Save audio file to Downloads folder
+  /// Save audio file without requiring legacy storage permission prompts
   Future<void> _saveToDownloads(
       BuildContext context, AudioOverview overview) async {
     try {
-      // Check/request storage permission on Android
-      if (Platform.isAndroid) {
-        var status = await Permission.storage.status;
-        if (!status.isGranted) {
-          status = await Permission.storage.request();
-          if (!status.isGranted) {
-            // Try manage external storage for Android 11+
-            status = await Permission.manageExternalStorage.request();
-            if (!status.isGranted) {
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                      content:
-                          Text('Storage permission required to save files')),
-                );
-              }
-              return;
-            }
-          }
-        }
-      }
-
-      // Get source file
-      final sourceFile = File(overview.url);
-      if (!await sourceFile.exists()) {
+      final sourceFile = await _resolveSourceFile(overview.url);
+      if (sourceFile == null) {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Audio file not found')),
@@ -366,35 +342,33 @@ class AudioPlayerSheet extends ConsumerWidget {
         return;
       }
 
-      // Get Downloads directory
-      Directory? downloadsDir;
-      if (Platform.isAndroid) {
-        downloadsDir = Directory('/storage/emulated/0/Download');
-        if (!await downloadsDir.exists()) {
-          downloadsDir = await getExternalStorageDirectory();
-        }
-      } else {
-        downloadsDir = await getDownloadsDirectory();
-      }
-
-      if (downloadsDir == null) {
+      final saveDir = await _resolveSaveDirectory();
+      if (saveDir == null) {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Could not access Downloads folder')),
+            const SnackBar(content: Text('Could not access a save location')),
           );
         }
         return;
       }
+      await saveDir.create(recursive: true);
 
       // Create safe filename
       final safeTitle = overview.title
           .replaceAll(RegExp(r'[^a-zA-Z0-9_\- ]'), '')
           .replaceAll(' ', '_');
-      final extension = p.extension(overview.url).isNotEmpty
-          ? p.extension(overview.url)
+      final extension = p.extension(sourceFile.path).isNotEmpty
+          ? p.extension(sourceFile.path)
           : '.mp3';
-      final fileName = '${safeTitle}_${overview.id}$extension';
-      final destPath = p.join(downloadsDir.path, fileName);
+      final baseName = '${safeTitle}_${overview.id}';
+      var fileName = '$baseName$extension';
+      var destPath = p.join(saveDir.path, fileName);
+      var suffix = 1;
+      while (await File(destPath).exists()) {
+        fileName = '${baseName}_$suffix$extension';
+        destPath = p.join(saveDir.path, fileName);
+        suffix++;
+      }
 
       // Copy file
       await sourceFile.copy(destPath);
@@ -402,11 +376,12 @@ class AudioPlayerSheet extends ConsumerWidget {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Saved to Downloads: $fileName'),
+            content: Text(
+              'Saved to ${_saveLocationLabel(saveDir)}: $fileName',
+            ),
             action: SnackBarAction(
-              label: 'Open',
+              label: 'Share',
               onPressed: () {
-                // Open file manager or share intent to view the file
                 Share.shareXFiles([XFile(destPath)], text: 'Open audio file');
               },
             ),
@@ -421,6 +396,53 @@ class AudioPlayerSheet extends ConsumerWidget {
         );
       }
     }
+  }
+
+  Future<File?> _resolveSourceFile(String sourceUrl) async {
+    final uri = Uri.tryParse(sourceUrl);
+    final resolvedPath =
+        uri != null && uri.scheme == 'file'
+            ? uri.toFilePath(windows: Platform.isWindows)
+            : sourceUrl;
+    final file = File(resolvedPath);
+    return await file.exists() ? file : null;
+  }
+
+  Future<Directory?> _resolveSaveDirectory() async {
+    if (Platform.isAndroid) {
+      final externalDownloads =
+          await getExternalStorageDirectories(type: StorageDirectory.downloads);
+      if (externalDownloads != null && externalDownloads.isNotEmpty) {
+        return Directory(p.join(externalDownloads.first.path, 'NoteClaw'));
+      }
+
+      final externalMusic =
+          await getExternalStorageDirectories(type: StorageDirectory.music);
+      if (externalMusic != null && externalMusic.isNotEmpty) {
+        return Directory(p.join(externalMusic.first.path, 'NoteClaw'));
+      }
+
+      final externalDir = await getExternalStorageDirectory();
+      if (externalDir != null) {
+        return Directory(p.join(externalDir.path, 'NoteClaw'));
+      }
+    }
+
+    final downloadsDir = await getDownloadsDirectory();
+    if (downloadsDir != null) {
+      return Directory(p.join(downloadsDir.path, 'NoteClaw'));
+    }
+
+    final docsDir = await getApplicationDocumentsDirectory();
+    return Directory(p.join(docsDir.path, 'NoteClaw'));
+  }
+
+  String _saveLocationLabel(Directory directory) {
+    final normalizedPath = directory.path.toLowerCase();
+    if (normalizedPath.contains('download')) {
+      return 'Downloads';
+    }
+    return 'NoteClaw storage';
   }
 }
 

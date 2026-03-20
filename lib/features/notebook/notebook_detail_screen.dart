@@ -4,6 +4,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 import 'package:share_plus/share_plus.dart';
 import 'dart:convert';
+import 'dart:typed_data';
 import '../sources/source_provider.dart';
 import '../sources/add_source_sheet.dart';
 import '../../ui/widgets/source_card.dart';
@@ -116,41 +117,7 @@ class NotebookDetailScreen extends ConsumerWidget {
                 ),
               ),
               centerTitle: true,
-              background: Stack(
-                fit: StackFit.expand,
-                children: [
-                  Container(
-                    decoration: const BoxDecoration(
-                      gradient: AppTheme.premiumGradient,
-                    ),
-                  ),
-                  // Abstract shapes
-                  Positioned(
-                    top: -60,
-                    right: -20,
-                    child: Container(
-                      width: 200,
-                      height: 200,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.white.withValues(alpha: 0.1),
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    bottom: -40,
-                    left: 20,
-                    child: Container(
-                      width: 160,
-                      height: 160,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.white.withValues(alpha: 0.08),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+              background: _buildNotebookHeaderBackground(notebook),
             ),
             actions: [
               // Share button
@@ -174,64 +141,66 @@ class NotebookDetailScreen extends ConsumerWidget {
 
           // Quick Actions (Horizontal Stories Style)
           SliverToBoxAdapter(
-            child: Container(
-              height: 110,
+            child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 16),
-              child: ListView(
+              child: SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.symmetric(horizontal: 16),
-                children: [
-                  _QuickActionItem(
-                    icon: Icons.chat_bubble_outline,
-                    label: 'Chat',
-                    color: const Color(0xFF8B5CF6),
-                    onTap: () => context.push('/notebook/$notebookId/chat'),
-                  ),
-                  const SizedBox(width: 16),
-                  _QuickActionItem(
-                    icon: Icons.search,
-                    label: 'Research',
-                    color: const Color(0xFF0EA5E9),
-                    onTap: () => context.push('/notebook/$notebookId/research'),
-                  ),
-                  const SizedBox(width: 16),
-                  _QuickActionItem(
-                    icon: Icons.mic,
-                    label: 'Audio',
-                    color: const Color(0xFFEC4899),
-                    onTap: () => context.push('/notebook/$notebookId/studio'),
-                  ),
-                  const SizedBox(width: 16),
-                  _QuickActionItem(
-                    icon: Icons.style_outlined,
-                    label: 'Flashcards',
-                    color: Colors.orange,
-                    onTap: () =>
-                        context.push('/notebook/$notebookId/flashcards'),
-                  ),
-                  const SizedBox(width: 16),
-                  _QuickActionItem(
-                    icon: Icons.quiz_outlined,
-                    label: 'Quizzes',
-                    color: Colors.teal,
-                    onTap: () => context.push('/notebook/$notebookId/quizzes'),
-                  ),
-                  const SizedBox(width: 16),
-                  _QuickActionItem(
-                    icon: Icons.account_tree_outlined,
-                    label: 'Mind Map',
-                    color: Colors.amber,
-                    onTap: () => _showMindMapsSheet(context),
-                  ),
-                  const SizedBox(width: 16),
-                  _QuickActionItem(
-                    icon: Icons.school_outlined,
-                    label: 'Tutor',
-                    color: const Color(0xFF10B981), // Green
-                    onTap: () =>
-                        context.push('/notebook/$notebookId/tutor-sessions'),
-                  ),
-                ],
+                child: Row(
+                  children: [
+                    _QuickActionItem(
+                      icon: Icons.chat_bubble_outline,
+                      label: 'Chat',
+                      color: const Color(0xFF8B5CF6),
+                      onTap: () => context.push('/notebook/$notebookId/chat'),
+                    ),
+                    const SizedBox(width: 16),
+                    _QuickActionItem(
+                      icon: Icons.search,
+                      label: 'Research',
+                      color: const Color(0xFF0EA5E9),
+                      onTap: () =>
+                          context.push('/notebook/$notebookId/research'),
+                    ),
+                    const SizedBox(width: 16),
+                    _QuickActionItem(
+                      icon: Icons.mic,
+                      label: 'Audio',
+                      color: const Color(0xFFEC4899),
+                      onTap: () => context.push('/notebook/$notebookId/studio'),
+                    ),
+                    const SizedBox(width: 16),
+                    _QuickActionItem(
+                      icon: Icons.style_outlined,
+                      label: 'Flashcards',
+                      color: Colors.orange,
+                      onTap: () =>
+                          context.push('/notebook/$notebookId/flashcards'),
+                    ),
+                    const SizedBox(width: 16),
+                    _QuickActionItem(
+                      icon: Icons.quiz_outlined,
+                      label: 'Quizzes',
+                      color: Colors.teal,
+                      onTap: () => context.push('/notebook/$notebookId/quizzes'),
+                    ),
+                    const SizedBox(width: 16),
+                    _QuickActionItem(
+                      icon: Icons.account_tree_outlined,
+                      label: 'Mind Map',
+                      color: Colors.amber,
+                      onTap: () => _showMindMapsSheet(context),
+                    ),
+                    const SizedBox(width: 16),
+                    _QuickActionItem(
+                      icon: Icons.school_outlined,
+                      label: 'Tutor',
+                      color: const Color(0xFF10B981),
+                      onTap: () =>
+                          context.push('/notebook/$notebookId/tutor-sessions'),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -345,6 +314,113 @@ class NotebookDetailScreen extends ConsumerWidget {
         label: const Text('Add Source'),
       ),
     );
+  }
+
+  Widget _buildNotebookHeaderBackground(
+    Notebook notebook,
+  ) {
+    final coverImage = notebook.coverImage?.trim();
+
+    if (coverImage == null || coverImage.isEmpty) {
+      return _buildNotebookHeaderFallback();
+    }
+
+    final imageWidget = _buildNotebookCoverImage(coverImage);
+    if (imageWidget == null) {
+      return _buildNotebookHeaderFallback();
+    }
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        imageWidget,
+        DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Colors.black.withValues(alpha: 0.10),
+                Colors.black.withValues(alpha: 0.45),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildNotebookHeaderFallback() {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Container(
+          decoration: const BoxDecoration(
+            gradient: AppTheme.premiumGradient,
+          ),
+        ),
+        Positioned(
+          top: -60,
+          right: -20,
+          child: Container(
+            width: 200,
+            height: 200,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.white.withValues(alpha: 0.1),
+            ),
+          ),
+        ),
+        Positioned(
+          bottom: -40,
+          left: 20,
+          child: Container(
+            width: 160,
+            height: 160,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.white.withValues(alpha: 0.08),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget? _buildNotebookCoverImage(String coverImage) {
+    if (coverImage.startsWith('data:image/svg+xml')) {
+      return _buildNotebookHeaderFallback();
+    }
+
+    final decodedBytes = _decodeCoverImageBytes(coverImage);
+    if (decodedBytes != null) {
+      return Image.memory(
+        decodedBytes,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => _buildNotebookHeaderFallback(),
+      );
+    }
+
+    if (coverImage.startsWith('http://') || coverImage.startsWith('https://')) {
+      return Image.network(
+        coverImage,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => _buildNotebookHeaderFallback(),
+      );
+    }
+
+    return null;
+  }
+
+  Uint8List? _decodeCoverImageBytes(String coverImage) {
+    try {
+      final payload = coverImage.startsWith('data:')
+          ? coverImage.split(',').last
+          : coverImage;
+      return base64Decode(payload);
+    } catch (_) {
+      return null;
+    }
   }
 
   Widget _buildEmptyState(
@@ -843,37 +919,45 @@ class _QuickActionItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: onTap,
-            borderRadius: BorderRadius.circular(20),
-            child: Container(
-              width: 56,
-              height: 56,
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color: color.withValues(alpha: 0.2),
-                  width: 1,
+    return SizedBox(
+      width: 72,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: onTap,
+              borderRadius: BorderRadius.circular(20),
+              child: Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: color.withValues(alpha: 0.2),
+                    width: 1,
+                  ),
                 ),
+                child: Icon(icon, color: color, size: 28),
               ),
-              child: Icon(icon, color: color, size: 28),
             ),
           ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          label,
-          style: const TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
+          const SizedBox(height: 8),
+          Text(
+            label,
+            maxLines: 1,
+            textAlign: TextAlign.center,
+            softWrap: false,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+            overflow: TextOverflow.ellipsis,
           ),
-        ),
-      ],
+        ],
+      ),
     ).animate().scale(duration: 400.ms, curve: Curves.easeOutBack);
   }
 }

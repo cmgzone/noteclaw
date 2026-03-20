@@ -38,7 +38,7 @@ class ApiToken {
       name: json['name'] as String? ?? 'Unnamed Token',
       tokenPrefix: json['token_prefix'] as String? ??
           json['tokenPrefix'] as String? ??
-          'nllm_***',
+          'nclaw_***',
       tokenSuffix: json['token_suffix'] as String? ??
           json['tokenSuffix'] as String? ??
           '****',
@@ -109,6 +109,148 @@ class ApiTokensState {
   bool get canCreateMore => activeCount < 10;
 }
 
+int _parseIntValue(dynamic value) {
+  if (value is int) {
+    return value;
+  }
+  return int.tryParse(value?.toString() ?? '') ?? 0;
+}
+
+class McpStats {
+  final int totalTokens;
+  final int activeTokens;
+  final int totalUsage;
+  final int recentUsage;
+  final int verifiedSources;
+  final int agentSessions;
+
+  const McpStats({
+    required this.totalTokens,
+    required this.activeTokens,
+    required this.totalUsage,
+    required this.recentUsage,
+    required this.verifiedSources,
+    required this.agentSessions,
+  });
+
+  factory McpStats.fromJson(Map<String, dynamic> json) {
+    return McpStats(
+      totalTokens: _parseIntValue(json['totalTokens']),
+      activeTokens: _parseIntValue(json['activeTokens']),
+      totalUsage: _parseIntValue(json['totalUsage']),
+      recentUsage: _parseIntValue(json['recentUsage']),
+      verifiedSources: _parseIntValue(json['verifiedSources']),
+      agentSessions: _parseIntValue(json['agentSessions']),
+    );
+  }
+}
+
+class McpUsageEntry {
+  final String id;
+  final String endpoint;
+  final String tokenName;
+  final String tokenPrefix;
+  final DateTime createdAt;
+  final String? ipAddress;
+  final String? userAgent;
+
+  const McpUsageEntry({
+    required this.id,
+    required this.endpoint,
+    required this.tokenName,
+    required this.tokenPrefix,
+    required this.createdAt,
+    this.ipAddress,
+    this.userAgent,
+  });
+
+  factory McpUsageEntry.fromJson(Map<String, dynamic> json) {
+    return McpUsageEntry(
+      id: json['id'] as String? ?? '',
+      endpoint: json['endpoint'] as String? ?? 'Unknown endpoint',
+      tokenName: json['tokenName'] as String? ?? 'Unnamed token',
+      tokenPrefix: json['tokenPrefix'] as String? ?? 'nclaw_***',
+      createdAt: json['createdAt'] != null
+          ? DateTime.tryParse(json['createdAt'] as String) ?? DateTime.now()
+          : DateTime.now(),
+      ipAddress: json['ipAddress'] as String?,
+      userAgent: json['userAgent'] as String?,
+    );
+  }
+}
+
+class McpInsightsState {
+  final McpStats? stats;
+  final List<McpUsageEntry> usage;
+  final bool isLoading;
+  final String? error;
+
+  const McpInsightsState({
+    this.stats,
+    this.usage = const [],
+    this.isLoading = false,
+    this.error,
+  });
+
+  McpInsightsState copyWith({
+    McpStats? stats,
+    List<McpUsageEntry>? usage,
+    bool? isLoading,
+    String? error,
+  }) {
+    return McpInsightsState(
+      stats: stats ?? this.stats,
+      usage: usage ?? this.usage,
+      isLoading: isLoading ?? this.isLoading,
+      error: error,
+    );
+  }
+}
+
+class McpInsightsNotifier extends StateNotifier<McpInsightsState> {
+  final Ref ref;
+
+  McpInsightsNotifier(this.ref) : super(const McpInsightsState()) {
+    loadInsights();
+  }
+
+  Future<void> loadInsights() async {
+    state = state.copyWith(isLoading: true, error: null);
+
+    try {
+      final apiService = ref.read(apiServiceProvider);
+      final statsResponse = await apiService.getMcpStats();
+      final usageResponse = await apiService.getMcpUsage(limit: 12);
+
+      final statsJson = statsResponse['stats'] is Map<String, dynamic>
+          ? statsResponse['stats'] as Map<String, dynamic>
+          : statsResponse['stats'] is Map
+              ? Map<String, dynamic>.from(statsResponse['stats'] as Map)
+              : <String, dynamic>{};
+
+      state = state.copyWith(
+        stats: McpStats.fromJson(statsJson),
+        usage: usageResponse.map(McpUsageEntry.fromJson).toList(),
+        isLoading: false,
+      );
+    } catch (e) {
+      state = state.copyWith(
+        isLoading: false,
+        error: e.toString(),
+      );
+    }
+  }
+
+  Future<void> refresh() async {
+    await loadInsights();
+  }
+}
+
+final mcpInsightsProvider =
+    StateNotifierProvider<McpInsightsNotifier, McpInsightsState>(
+  (ref) => McpInsightsNotifier(ref),
+);
+
 /// Provider for managing API tokens
 /// Requirements: 1.1, 2.1, 2.2
 class ApiTokensNotifier extends StateNotifier<ApiTokensState> {
@@ -155,6 +297,7 @@ class ApiTokensNotifier extends StateNotifier<ApiTokensState> {
 
       // Reload tokens list
       await loadTokens();
+      await ref.read(mcpInsightsProvider.notifier).refresh();
 
       // Return the full token (only shown once!)
       return result['token'] as String?;
@@ -174,6 +317,7 @@ class ApiTokensNotifier extends StateNotifier<ApiTokensState> {
       // Remove from local state
       final updatedTokens = state.tokens.where((t) => t.id != tokenId).toList();
       state = state.copyWith(tokens: updatedTokens);
+      await ref.read(mcpInsightsProvider.notifier).refresh();
 
       return true;
     } catch (e) {
@@ -284,20 +428,36 @@ class ApiTokensSection extends ConsumerWidget {
             ),
           ),
           // Content
-          if (state.isLoading)
-            const Padding(
-              padding: EdgeInsets.all(32),
-              child: Center(child: CircularProgressIndicator()),
-            )
-          else if (state.error != null)
-            _buildErrorState(context, ref, state.error!)
-          else if (state.tokens.isEmpty)
-            _buildEmptyState(context, scheme)
-          else
-            _buildTokensList(context, ref, state, scheme),
+          _buildTokenStateContent(context, ref, state, scheme),
+          const McpUsageDashboard(),
+          const McpConfigInstructions(),
         ],
       ),
     ).animate().fadeIn(duration: 400.ms);
+  }
+
+  Widget _buildTokenStateContent(
+    BuildContext context,
+    WidgetRef ref,
+    ApiTokensState state,
+    ColorScheme scheme,
+  ) {
+    if (state.isLoading) {
+      return const Padding(
+        padding: EdgeInsets.all(32),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (state.error != null) {
+      return _buildErrorState(context, ref, state.error!);
+    }
+
+    if (state.tokens.isEmpty) {
+      return _buildEmptyState(context, scheme);
+    }
+
+    return _buildTokensList(context, ref, state, scheme);
   }
 
   Widget _buildErrorState(BuildContext context, WidgetRef ref, String error) {
@@ -350,6 +510,26 @@ class ApiTokensSection extends ConsumerWidget {
             style: TextStyle(fontSize: 12, color: scheme.secondaryText),
             textAlign: TextAlign.center,
           ),
+          const SizedBox(height: 12),
+          const Wrap(
+            alignment: WrapAlignment.center,
+            spacing: 8,
+            runSpacing: 8,
+            children: const [
+              _McpTagChip(
+                icon: LucideIcons.download,
+                label: 'GitHub Install',
+              ),
+              _McpTagChip(
+                icon: LucideIcons.terminal,
+                label: 'Node 20+',
+              ),
+              _McpTagChip(
+                icon: Icons.analytics_outlined,
+                label: 'Usage Dashboard',
+              ),
+            ],
+          ),
         ],
       ),
     );
@@ -371,8 +551,6 @@ class ApiTokensSection extends ConsumerWidget {
             onRevoke: () => _showRevokeDialog(context, ref, token),
           ).animate().fadeIn(delay: Duration(milliseconds: index * 50));
         }),
-        // MCP Configuration Instructions
-        const McpConfigInstructions(),
       ],
     );
   }
@@ -989,6 +1167,529 @@ class _RevokeTokenDialogState extends State<RevokeTokenDialog> {
   }
 }
 
+class McpUsageDashboard extends ConsumerWidget {
+  const McpUsageDashboard({super.key});
+
+  String _formatCompactNumber(int value) {
+    return NumberFormat.compact().format(value);
+  }
+
+  String _formatRelativeTime(DateTime dateTime) {
+    final now = DateTime.now();
+    final difference = now.difference(dateTime);
+
+    if (difference.inDays > 0) {
+      return '${difference.inDays}d ago';
+    }
+    if (difference.inHours > 0) {
+      return '${difference.inHours}h ago';
+    }
+    if (difference.inMinutes > 0) {
+      return '${difference.inMinutes}m ago';
+    }
+    return 'Just now';
+  }
+
+  String _formatEndpointLabel(String endpoint) {
+    final trimmed = endpoint.trim();
+    if (trimmed.isEmpty) {
+      return 'Unknown endpoint';
+    }
+
+    final segments = trimmed.split('/').where((segment) => segment.isNotEmpty);
+    final lastSegment = segments.isEmpty ? trimmed : segments.last;
+    return lastSegment.replaceAll('_', ' ').replaceAll('-', ' ');
+  }
+
+  List<MapEntry<String, int>> _topEndpoints(List<McpUsageEntry> usage) {
+    final counts = <String, int>{};
+    for (final entry in usage) {
+      final label = _formatEndpointLabel(entry.endpoint);
+      counts[label] = (counts[label] ?? 0) + 1;
+    }
+
+    final sorted = counts.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    return sorted.take(3).toList();
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final scheme = Theme.of(context).colorScheme;
+    final state = ref.watch(mcpInsightsProvider);
+    final stats = state.stats;
+    final topEndpoints = _topEndpoints(state.usage);
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.18),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: scheme.outline.withValues(alpha: 0.14),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: scheme.primary.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(
+                  Icons.analytics_outlined,
+                  size: 18,
+                  color: scheme.primary,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'MCP Usage Dashboard',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Track tokens, calls, and recent agent activity.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: scheme.secondaryText,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                onPressed: state.isLoading
+                    ? null
+                    : () => ref.read(mcpInsightsProvider.notifier).refresh(),
+                icon: state.isLoading
+                    ? SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: scheme.primary,
+                        ),
+                      )
+                    : Icon(
+                        LucideIcons.refreshCw,
+                        size: 18,
+                        color: scheme.primary,
+                      ),
+                tooltip: 'Refresh usage',
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          if (state.isLoading && stats == null && state.usage.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (state.error != null && stats == null && state.usage.isEmpty)
+            _McpDashboardMessage(
+              icon: LucideIcons.alertCircle,
+              title: 'Unable to load MCP analytics',
+              message: state.error!,
+              actionLabel: 'Retry',
+              onAction: () => ref.read(mcpInsightsProvider.notifier).refresh(),
+              accentColor: scheme.error,
+            )
+          else ...[
+            if (stats != null)
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: [
+                  _McpStatCard(
+                    icon: LucideIcons.keyRound,
+                    label: 'Active Tokens',
+                    value: _formatCompactNumber(stats.activeTokens),
+                    tone: scheme.primary,
+                  ),
+                  _McpStatCard(
+                    icon: LucideIcons.sparkles,
+                    label: 'Total MCP Calls',
+                    value: _formatCompactNumber(stats.totalUsage),
+                    tone: const Color(0xFF8B5CF6),
+                  ),
+                  _McpStatCard(
+                    icon: LucideIcons.clock3,
+                    label: 'Last 24 Hours',
+                    value: _formatCompactNumber(stats.recentUsage),
+                    tone: const Color(0xFFF59E0B),
+                  ),
+                  _McpStatCard(
+                    icon: Icons.verified_rounded,
+                    label: 'Verified Sources',
+                    value: _formatCompactNumber(stats.verifiedSources),
+                    tone: const Color(0xFF10B981),
+                  ),
+                  _McpStatCard(
+                    icon: LucideIcons.bot,
+                    label: 'Agent Sessions',
+                    value: _formatCompactNumber(stats.agentSessions),
+                    tone: const Color(0xFF06B6D4),
+                  ),
+                ],
+              ),
+            if (topEndpoints.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              Text(
+                'Top MCP activity',
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: topEndpoints
+                    .map(
+                      (entry) => _McpTagChip(
+                        icon: LucideIcons.activity,
+                        label:
+                            '${entry.key} (${_formatCompactNumber(entry.value)})',
+                      ),
+                    )
+                    .toList(),
+              ),
+            ],
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Recent MCP Activity',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
+                ),
+                Text(
+                  '${state.usage.length} recent calls',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: scheme.secondaryText,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            if (state.usage.isEmpty)
+              _McpDashboardMessage(
+                icon: Icons.timeline_outlined,
+                title: 'No MCP usage yet',
+                message:
+                    'Once your agent starts using NoteClaw tools, every call will appear here.',
+                accentColor: scheme.primary,
+              )
+            else
+              Column(
+                children: state.usage
+                    .take(6)
+                    .map(
+                      (entry) => Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: _McpActivityTile(
+                          title: _formatEndpointLabel(entry.endpoint),
+                          subtitle:
+                              '${entry.tokenName} - ${_formatRelativeTime(entry.createdAt)}',
+                          rawEndpoint: entry.endpoint,
+                          tokenPrefix: entry.tokenPrefix,
+                        ),
+                      ),
+                    )
+                    .toList(),
+              ),
+            if (state.error != null) ...[
+              const SizedBox(height: 4),
+              _McpDashboardMessage(
+                icon: LucideIcons.alertTriangle,
+                title: 'Showing last synced analytics',
+                message: state.error!,
+                accentColor: const Color(0xFFF59E0B),
+                actionLabel: 'Retry',
+                onAction: () => ref.read(mcpInsightsProvider.notifier).refresh(),
+              ),
+            ],
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _McpStatCard extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color tone;
+
+  const _McpStatCard({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.tone,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minWidth: 136, maxWidth: 168),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: tone.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: tone.withValues(alpha: 0.18),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, size: 16, color: tone),
+            const SizedBox(height: 10),
+            Text(
+              value,
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: scheme.onSurface,
+                  ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 11,
+                color: scheme.secondaryText,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _McpActivityTile extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final String rawEndpoint;
+  final String tokenPrefix;
+
+  const _McpActivityTile({
+    required this.title,
+    required this.subtitle,
+    required this.rawEndpoint,
+    required this.tokenPrefix,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: scheme.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: scheme.outline.withValues(alpha: 0.12),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: scheme.primary.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(
+              Icons.route_outlined,
+              size: 16,
+              color: scheme.primary,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: scheme.secondaryText,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  rawEndpoint,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: scheme.hintText,
+                    fontFamily: 'monospace',
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+            decoration: BoxDecoration(
+              color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Text(
+              tokenPrefix,
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _McpDashboardMessage extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String message;
+  final Color accentColor;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+
+  const _McpDashboardMessage({
+    required this.icon,
+    required this.title,
+    required this.message,
+    required this.accentColor,
+    this.actionLabel,
+    this.onAction,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: accentColor.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: accentColor.withValues(alpha: 0.16),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 18, color: accentColor),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  message,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: scheme.secondaryText,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (actionLabel != null && onAction != null)
+            TextButton(
+              onPressed: onAction,
+              child: Text(actionLabel!),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _McpTagChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+
+  const _McpTagChip({
+    required this.icon,
+    required this.label,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: scheme.primary.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: scheme.primary.withValues(alpha: 0.15),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: scheme.primary),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: scheme.primary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// Widget displaying MCP configuration instructions
 /// Requirements: 5.4
 class McpConfigInstructions extends StatefulWidget {
@@ -1001,25 +1702,129 @@ class McpConfigInstructions extends StatefulWidget {
 class _McpConfigInstructionsState extends State<McpConfigInstructions> {
   bool _isExpanded = false;
 
+  static const String _windowsInstallCommand =
+      'irm https://raw.githubusercontent.com/cmgzone/noteclaw/HEAD/scripts/install-mcp.ps1 | iex';
+
+  static const String _macLinuxInstallCommand =
+      'curl -fsSL https://raw.githubusercontent.com/cmgzone/noteclaw/HEAD/scripts/install-mcp.sh | bash';
+
   static const String _mcpConfigExample = '''{
   "mcpServers": {
     "noteclaw": {
-      "command": "npx",
-      "args": ["-y", "@noteclaw/mcp-server"],
+      "command": "node",
+      "args": ["C:\\\\Users\\\\YOUR_NAME\\\\.noteclaw-mcp\\\\index.js"],
       "env": {
         "BACKEND_URL": "https://noteclaw.onrender.com",
-        "CODING_AGENT_API_KEY": "nclaw_your_token_here"
-      }
+        "CODING_AGENT_API_KEY": "nclaw_your_personal_api_token_here"
+      },
+      "disabled": false,
+      "autoApprove": [
+        "verify_code",
+        "analyze_code",
+        "get_followup_messages"
+      ]
     }
   }
 }''';
 
-  void _copyConfig() {
-    Clipboard.setData(const ClipboardData(text: _mcpConfigExample));
+  void _copyText(String value, String label) {
+    Clipboard.setData(ClipboardData(text: value));
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Configuration copied to clipboard'),
+      SnackBar(
+        content: Text('$label copied to clipboard'),
         backgroundColor: Colors.green,
+      ),
+    );
+  }
+
+  Widget _buildSnippetCard({
+    required BuildContext context,
+    required String title,
+    required String code,
+    required String description,
+    required String copyLabel,
+    required IconData icon,
+    required String badge,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.38),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: scheme.outline.withValues(alpha: 0.14),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 16, color: scheme.primary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  title,
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+              ),
+              _McpTagChip(
+                icon: Icons.label_outline,
+                label: badge,
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            description,
+            style: TextStyle(
+              fontSize: 12,
+              color: scheme.secondaryText,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: scheme.surface,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: scheme.outline.withValues(alpha: 0.12),
+              ),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: SelectableText(
+                    code,
+                    style: TextStyle(
+                      fontFamily: 'monospace',
+                      fontSize: 11,
+                      color: scheme.onSurface,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  onPressed: () => _copyText(code, copyLabel),
+                  icon: Icon(
+                    LucideIcons.copy,
+                    size: 16,
+                    color: scheme.primary,
+                  ),
+                  tooltip: 'Copy $copyLabel',
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1085,53 +1890,64 @@ class _McpConfigInstructionsState extends State<McpConfigInstructions> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  const Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: const [
+                      _McpTagChip(
+                        icon: Icons.cloud_download_outlined,
+                        label: 'GitHub Release',
+                      ),
+                      _McpTagChip(
+                        icon: Icons.code_rounded,
+                        label: 'Node 20+',
+                      ),
+                      _McpTagChip(
+                        icon: Icons.copy_all_rounded,
+                        label: 'Copy Install',
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
                   Text(
-                    'Add this to your MCP configuration file:',
+                    'Install the latest tagged MCP release from GitHub, then paste the config into your agent connection file.',
                     style: TextStyle(
                       fontSize: 12,
                       color: scheme.secondaryText,
                     ),
                   ),
                   const SizedBox(height: 8),
-                  // Code block
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color:
-                          scheme.surfaceContainerHighest.withValues(alpha: 0.5),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Stack(
-                      children: [
-                        SelectableText(
-                          _mcpConfigExample,
-                          style: TextStyle(
-                            fontFamily: 'monospace',
-                            fontSize: 11,
-                            color: scheme.onSurface,
-                          ),
-                        ),
-                        Positioned(
-                          top: 0,
-                          right: 0,
-                          child: IconButton(
-                            onPressed: _copyConfig,
-                            icon: Icon(
-                              LucideIcons.copy,
-                              size: 14,
-                              color: scheme.primary,
-                            ),
-                            tooltip: 'Copy configuration',
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(
-                              minWidth: 24,
-                              minHeight: 24,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
+                  _buildSnippetCard(
+                    context: context,
+                    title: 'Windows PowerShell',
+                    code: _windowsInstallCommand,
+                    description:
+                        'Downloads the latest NoteClaw MCP GitHub Release into %USERPROFILE%\\.noteclaw-mcp.',
+                    copyLabel: 'Windows install command',
+                    icon: Icons.desktop_windows_rounded,
+                    badge: 'PowerShell',
+                  ),
+                  const SizedBox(height: 12),
+                  _buildSnippetCard(
+                    context: context,
+                    title: 'macOS / Linux',
+                    code: _macLinuxInstallCommand,
+                    description:
+                        'Downloads the same tagged release into ~/.noteclaw-mcp for shell-based MCP clients.',
+                    copyLabel: 'macOS/Linux install command',
+                    icon: Icons.code_rounded,
+                    badge: 'bash',
+                  ),
+                  const SizedBox(height: 12),
+                  _buildSnippetCard(
+                    context: context,
+                    title: 'MCP Config Example',
+                    code: _mcpConfigExample,
+                    description:
+                        'After install, point your agent to the local NoteClaw MCP server and replace the API token placeholder.',
+                    copyLabel: 'MCP config',
+                    icon: Icons.settings_outlined,
+                    badge: 'JSON',
                   ),
                   const SizedBox(height: 12),
                   Container(
@@ -1149,7 +1965,7 @@ class _McpConfigInstructionsState extends State<McpConfigInstructions> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Common Errors',
+                          'Install Notes',
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
@@ -1158,31 +1974,31 @@ class _McpConfigInstructionsState extends State<McpConfigInstructions> {
                         ),
                         const SizedBox(height: 6),
                         Text(
-                          '401: Invalid or expired API key. Generate a new token in Settings -> Agent Connections.',
+                          'Windows install path: %USERPROFILE%\\.noteclaw-mcp\\index.js',
                           style:
                               TextStyle(fontSize: 11, color: scheme.onSurface),
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          '403: MCP disabled or insufficient permissions. Check MCP is enabled and your token permissions.',
+                          'macOS/Linux install path: ~/.noteclaw-mcp/index.js',
                           style:
                               TextStyle(fontSize: 11, color: scheme.onSurface),
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          '429: Rate limit exceeded. Call get_quota and retry later.',
+                          'The scripts install from GitHub Releases only. Users do not need npm or npx, but they still need Node.js 20+ to run index.js.',
                           style:
                               TextStyle(fontSize: 11, color: scheme.onSurface),
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          '503: Service unavailable. Wait briefly and retry.',
+                          'Use the MCP Usage Dashboard above to monitor active tokens, recent MCP calls, and follow-up activity after you connect.',
                           style:
                               TextStyle(fontSize: 11, color: scheme.onSurface),
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          'Network: Verify BACKEND_URL and CODING_AGENT_API_KEY in your .env.',
+                          'If a connection fails, verify BACKEND_URL and make sure your copied CODING_AGENT_API_KEY has not expired.',
                           style:
                               TextStyle(fontSize: 11, color: scheme.onSurface),
                         ),
@@ -1197,15 +2013,18 @@ class _McpConfigInstructionsState extends State<McpConfigInstructions> {
                   ),
                   const _InstructionStep(
                     number: '2',
-                    text: 'Replace "nclaw_your_token_here" with your token',
+                    text:
+                        'Copy the install script for the user operating system and run it once',
                   ),
                   const _InstructionStep(
                     number: '3',
-                    text: 'Add to your Claude/Kiro/Cursor MCP config',
+                    text:
+                        'Replace "nclaw_your_personal_api_token_here" in the config block with the generated token',
                   ),
                   const _InstructionStep(
                     number: '4',
-                    text: 'Restart your coding agent to connect',
+                    text:
+                        'Paste the config into Claude/Kiro/Cursor, restart the client, then watch usage in the dashboard above',
                   ),
                 ],
               ),

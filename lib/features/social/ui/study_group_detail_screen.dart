@@ -133,6 +133,8 @@ class _StudyGroupDetailScreenState
   }
 
   Widget _buildHeader(ThemeData theme) {
+    final scheme = theme.colorScheme;
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -150,10 +152,27 @@ class _StudyGroupDetailScreenState
               ),
             ),
             const SizedBox(height: 12),
-            Text(_group!.name, style: theme.textTheme.headlineSmall),
+            Text(
+              _group!.name,
+              style: theme.textTheme.headlineSmall?.copyWith(
+                    color: scheme.onSurface,
+                    fontWeight: FontWeight.w700,
+                  ) ??
+                  TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.w700,
+                    color: scheme.onSurface,
+                  ),
+            ),
             if (_group!.description != null) ...[
               const SizedBox(height: 8),
-              Text(_group!.description!, textAlign: TextAlign.center),
+              Text(
+                _group!.description!,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
             ],
             const SizedBox(height: 12),
             Row(
@@ -173,6 +192,8 @@ class _StudyGroupDetailScreenState
   }
 
   Widget _buildSessionsSection(ThemeData theme) {
+    final scheme = theme.colorScheme;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -194,10 +215,18 @@ class _StudyGroupDetailScreenState
               child: Center(
                 child: Column(
                   children: [
-                    Icon(Icons.event_busy, size: 48, color: Colors.grey[400]),
+                    Icon(
+                      Icons.event_busy,
+                      size: 48,
+                      color: scheme.onSurfaceVariant,
+                    ),
                     const SizedBox(height: 8),
-                    Text('No upcoming sessions',
-                        style: TextStyle(color: Colors.grey[600])),
+                    Text(
+                      'No upcoming sessions',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -212,6 +241,8 @@ class _StudyGroupDetailScreenState
   }
 
   Widget _buildMembersSection(ThemeData theme, String? currentUserId) {
+    final scheme = theme.colorScheme;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -245,7 +276,12 @@ class _StudyGroupDetailScreenState
                       : null,
                 ),
                 title: Text(member.username),
-                subtitle: Text(_formatRoleLabel(member.role)),
+                subtitle: Text(
+                  _formatRoleLabel(member.role),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
                 trailing: member.isOwner
                     ? _buildOwnerBadge(theme)
                     : canShowActions
@@ -1004,18 +1040,31 @@ class _StatChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: Colors.grey[200],
+        color: scheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(16),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 16),
+          Icon(icon, size: 16, color: scheme.onSurface),
           const SizedBox(width: 4),
-          Text(label, style: const TextStyle(fontSize: 12)),
+          Text(
+            label,
+            style: theme.textTheme.labelMedium?.copyWith(
+                  fontSize: 12,
+                  color: scheme.onSurface,
+                ) ??
+                TextStyle(
+                  fontSize: 12,
+                  color: scheme.onSurface,
+                ),
+          ),
         ],
       ),
     );

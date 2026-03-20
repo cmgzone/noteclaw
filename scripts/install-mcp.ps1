@@ -1,61 +1,57 @@
-# NotebookLLM MCP Server Installer for Windows
-# Usage: irm https://raw.githubusercontent.com/cmgzone/notebookllm/master/scripts/install-mcp.ps1 | iex
+# NoteClaw MCP Server Installer for Windows
+# Usage: irm https://raw.githubusercontent.com/cmgzone/noteclaw/HEAD/scripts/install-mcp.ps1 | iex
 
 $ErrorActionPreference = "Stop"
 
-Write-Host "📦 Installing NotebookLLM MCP Server..." -ForegroundColor Cyan
+$GitHubRepo = "cmgzone/noteclaw"
+$BackendUrl = "https://noteclaw.onrender.com"
+$McpDir = "$env:USERPROFILE\.noteclaw-mcp"
+$TempZip = Join-Path $env:TEMP "noteclaw-mcp-server.zip"
+$AssetPattern = "noteclaw-mcp-server-*.zip"
 
-# Configuration - UPDATE THESE VALUES
-$GITHUB_REPO = "cmgzone/notebookllm"
-$BACKEND_URL = "https://noteclaw.onrender.com"
+Write-Host "Installing NoteClaw MCP Server from GitHub Releases..." -ForegroundColor Cyan
 
-# Get latest release
-Write-Host "🔍 Finding latest release..." -ForegroundColor Yellow
-try {
-    $releases = Invoke-RestMethod -Uri "https://api.github.com/repos/$GITHUB_REPO/releases/latest"
-    $version = $releases.tag_name -replace "mcp-v", ""
-    $downloadUrl = $releases.assets | Where-Object { $_.name -like "*.zip" } | Select-Object -First 1 -ExpandProperty browser_download_url
-} catch {
-    Write-Host "⚠️  Could not fetch latest release, using fallback..." -ForegroundColor Yellow
-    $version = "1.0.0"
-    $downloadUrl = "https://github.com/$GITHUB_REPO/releases/latest/download/notebookllm-mcp-$version.zip"
+if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+    throw "Node.js is required to run the NoteClaw MCP Server. Install Node.js 20+ and try again."
 }
 
-Write-Host "📥 Downloading version $version..." -ForegroundColor Yellow
+Write-Host "Finding latest release..." -ForegroundColor Yellow
+$release = Invoke-RestMethod -Uri "https://api.github.com/repos/$GitHubRepo/releases/latest"
+$asset = $release.assets | Where-Object { $_.name -like $AssetPattern } | Select-Object -First 1
 
-# Create directory
-$MCP_DIR = "$env:USERPROFILE\.notebookllm-mcp"
-if (Test-Path $MCP_DIR) {
-    Remove-Item -Recurse -Force $MCP_DIR
+if (-not $asset) {
+    throw "Could not find a release asset matching '$AssetPattern' in $GitHubRepo."
 }
-New-Item -ItemType Directory -Force -Path $MCP_DIR | Out-Null
 
-# Download and extract
-$zipPath = "$env:TEMP\notebookllm-mcp.zip"
-Invoke-WebRequest -Uri $downloadUrl -OutFile $zipPath
-Expand-Archive -Path $zipPath -DestinationPath $MCP_DIR -Force
-Remove-Item $zipPath
+$version = ($release.tag_name -replace "^mcp-v", "")
+$downloadUrl = $asset.browser_download_url
 
-# Install dependencies
-Write-Host "📥 Installing dependencies..." -ForegroundColor Yellow
-Push-Location $MCP_DIR
-npm install --production --silent 2>$null
-Pop-Location
+Write-Host "Downloading NoteClaw MCP Server v$version..." -ForegroundColor Yellow
+
+if (Test-Path $McpDir) {
+    Remove-Item -Recurse -Force $McpDir
+}
+New-Item -ItemType Directory -Force -Path $McpDir | Out-Null
+
+Invoke-WebRequest -Uri $downloadUrl -OutFile $TempZip
+Expand-Archive -Path $TempZip -DestinationPath $McpDir -Force
+Remove-Item $TempZip -Force
 
 Write-Host ""
-Write-Host "✅ NotebookLLM MCP Server v$version installed to $MCP_DIR" -ForegroundColor Green
+Write-Host "NoteClaw MCP Server v$version installed to $McpDir" -ForegroundColor Green
 Write-Host ""
-Write-Host "📝 Add this to your MCP config (e.g., ~/.kiro/settings/mcp.json):" -ForegroundColor Cyan
+Write-Host "Add this to your MCP config (for example, .kiro/settings/mcp.json):" -ForegroundColor Cyan
 Write-Host ""
 
+$escapedPath = $McpDir -replace '\\', '\\'
 $config = @"
 {
   "mcpServers": {
-    "notebookllm": {
+    "noteclaw": {
       "command": "node",
-      "args": ["$($MCP_DIR -replace '\\', '\\')\\index.js"],
+      "args": ["$escapedPath\\index.js"],
       "env": {
-        "BACKEND_URL": "$BACKEND_URL",
+        "BACKEND_URL": "$BackendUrl",
         "CODING_AGENT_API_KEY": "YOUR_API_TOKEN_HERE"
       }
     }
@@ -65,5 +61,4 @@ $config = @"
 
 Write-Host $config -ForegroundColor White
 Write-Host ""
-Write-Host "🔑 Get your API token from Settings → Agent Connections in the app" -ForegroundColor Yellow
-Write-Host ""
+Write-Host "Get your API token from Settings -> Agent Connections in the NoteClaw app." -ForegroundColor Yellow

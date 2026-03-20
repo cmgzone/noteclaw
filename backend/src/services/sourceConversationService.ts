@@ -7,6 +7,7 @@
 
 import { v4 as uuidv4 } from 'uuid';
 import pool from '../config/database.js';
+import { sourceConversationWebSocketService } from './sourceConversationWebSocketService.js';
 
 // ==================== INTERFACES ====================
 
@@ -70,7 +71,9 @@ class SourceConversationService {
       [messageId, conversation.id, role, content, JSON.stringify(metadata), role === 'agent']
     );
 
-    return this.mapRowToMessage(result.rows[0], sourceId);
+    const message = this.mapRowToMessage(result.rows[0], sourceId);
+    sourceConversationWebSocketService.broadcastMessage(message);
+    return message;
   }
 
   /**

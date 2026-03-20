@@ -1,4 +1,4 @@
-name: Publish MCP Server
+name: Publish NoteClaw MCP Server
 
 on:
   push:
@@ -34,6 +34,10 @@ jobs:
         working-directory: backend/mcp-server
         run: npm run build
 
+      - name: Prune dev dependencies
+        working-directory: backend/mcp-server
+        run: npm prune --omit=dev
+
       - name: Get version
         id: version
         run: |
@@ -43,42 +47,67 @@ jobs:
             echo "version=${GITHUB_REF#refs/tags/mcp-v}" >> $GITHUB_OUTPUT
           fi
 
+      - name: Determine default branch
+        id: repo
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch || 'main' }}
+        run: echo "default_branch=$DEFAULT_BRANCH" >> $GITHUB_OUTPUT
+
       - name: Create release package
         working-directory: backend/mcp-server
         run: |
           mkdir -p release
-          cp dist/index.js release/
+          cp dist/index.js release/index.js
           cp package.json release/
+          cp package-lock.json release/
           cp README.md release/
           cp .env.example release/
-          cd release && zip -r ../notebookllm-mcp-${{ steps.version.outputs.version }}.zip .
+          cp mcp-config-example.json release/
+          cp -R node_modules release/node_modules
+          cd release && zip -r ../noteclaw-mcp-server-${{ steps.version.outputs.version }}.zip .
+
+      - name: Generate checksum
+        working-directory: backend/mcp-server
+        run: |
+          sha256sum noteclaw-mcp-server-${{ steps.version.outputs.version }}.zip \
+            > noteclaw-mcp-server-${{ steps.version.outputs.version }}.zip.sha256
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: mcp-v${{ steps.version.outputs.version }}
-          name: NotebookLLM MCP Server v${{ steps.version.outputs.version }}
+          name: NoteClaw MCP Server v${{ steps.version.outputs.version }}
           body: |
-            ## NotebookLLM MCP Server v${{ steps.version.outputs.version }}
+            ## NoteClaw MCP Server v${{ steps.version.outputs.version }}
             
+            Download from GitHub Releases only. No npm or npx package install is required.
+
+            ### Requirements
+
+            - Node.js 20+
+            - A personal NoteClaw API token from Settings -> Agent Connections
+
             ### Quick Install
-            
+
             **Windows (PowerShell):**
             ```powershell
-            irm https://raw.githubusercontent.com/${{ github.repository }}/master/scripts/install-mcp.ps1 | iex
+            irm https://raw.githubusercontent.com/${{ github.repository }}/refs/heads/${{ steps.repo.outputs.default_branch }}/scripts/install-mcp.ps1 | iex
             ```
             
             **macOS/Linux:**
             ```bash
-            curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/master/scripts/install-mcp.sh | bash
+            curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/refs/heads/${{ steps.repo.outputs.default_branch }}/scripts/install-mcp.sh | bash
             ```
             
             ### Manual Setup
-            1. Download `notebookllm-mcp-${{ steps.version.outputs.version }}.zip`
-            2. Extract to `~/.notebookllm-mcp`
-            3. Run `npm install --production`
-            4. Add to your MCP config (see README)
+            1. Download `noteclaw-mcp-server-${{ steps.version.outputs.version }}.zip`
+            2. Extract it to `~/.noteclaw-mcp` on macOS/Linux or `%USERPROFILE%\.noteclaw-mcp` on Windows
+            3. Add your MCP config pointing to `index.js`
+            4. Set `BACKEND_URL` and `CODING_AGENT_API_KEY`
+
+            The zip already includes runtime dependencies.
           files: |
-            backend/mcp-server/notebookllm-mcp-${{ steps.version.outputs.version }}.zip
+            backend/mcp-server/noteclaw-mcp-server-${{ steps.version.outputs.version }}.zip
+            backend/mcp-server/noteclaw-mcp-server-${{ steps.version.outputs.version }}.zip.sha256
           draft: false
           prerelease: false

@@ -46,6 +46,7 @@ import codeVerificationService from './services/codeVerificationService.js';
 import codeAnalysisService from './services/codeAnalysisService.js';
 import { agentWebSocketService } from './services/agentWebSocketService.js';
 import { planningWebSocketService } from './services/planningWebSocketService.js';
+import { sourceConversationWebSocketService } from './services/sourceConversationWebSocketService.js';
 import { connectRedis, disconnectRedis } from './config/redis.js';
 
 // Load environment variables
@@ -176,6 +177,9 @@ agentWebSocketService.initialize(server);
 
 // Initialize WebSocket service for real-time planning updates
 planningWebSocketService.initialize(server);
+
+// Initialize WebSocket service for live source conversation updates
+sourceConversationWebSocketService.initialize(server);
 
 let activePort = requestedPort;
 let portAttempts = 0;

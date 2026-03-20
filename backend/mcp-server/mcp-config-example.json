@@ -4,7 +4,7 @@
       "command": "node",
       "args": ["~/.noteclaw-mcp/index.js"],
       "env": {
-        "BACKEND_URL": "https://noteclaw-backend.onrender.com",
+        "BACKEND_URL": "https://noteclaw.onrender.com",
         "CODING_AGENT_API_KEY": "nclaw_your-personal-api-token-here"
       },
       "disabled": false,

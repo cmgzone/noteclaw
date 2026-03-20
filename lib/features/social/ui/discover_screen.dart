@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -514,17 +512,12 @@ class _EbookCard extends ConsumerWidget {
                 child: SizedBox(
                   height: 180,
                   width: double.infinity,
-                  child: ebook.coverImage!.startsWith('data:image')
-                      ? Image.memory(
-                          base64Decode(ebook.coverImage!.split(',').last),
-                          fit: BoxFit.cover,
-                        )
-                      : AppNetworkImage(
-                          imageUrl: ebook.coverImage!,
-                          fit: BoxFit.cover,
-                          errorWidget: (_) =>
-                              _EbookCoverFallback(title: ebook.title),
-                        ),
+                  child: AppNetworkImage(
+                    imageUrl: ebook.coverImage!,
+                    fit: BoxFit.cover,
+                    errorWidget: (_) =>
+                        _EbookCoverFallback(title: ebook.title),
+                  ),
                 ),
               )
             else

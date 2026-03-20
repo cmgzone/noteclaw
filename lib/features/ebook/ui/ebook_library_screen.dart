@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -6,6 +5,7 @@ import 'package:lucide_icons/lucide_icons.dart';
 import '../ebook_provider.dart';
 import '../models/ebook_project.dart';
 import 'ebook_reader_screen.dart';
+import '../../../ui/widgets/app_network_image.dart';
 
 class EbookLibraryScreen extends ConsumerStatefulWidget {
   const EbookLibraryScreen({super.key});
@@ -168,6 +168,7 @@ class _EbookCard extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
     final brandColor = Color(ebook.branding.primaryColorValue);
+    final coverImageUrl = ebook.coverImageUrl;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -182,20 +183,17 @@ class _EbookCard extends StatelessWidget {
               height: 110,
               decoration: BoxDecoration(
                 color: brandColor.withValues(alpha: 0.2),
-                image: ebook.coverImageUrl != null
-                    ? DecorationImage(
-                        image: ebook.coverImageUrl!.startsWith('data:image')
-                            ? MemoryImage(base64Decode(
-                                ebook.coverImageUrl!.split(',').last))
-                            : NetworkImage(ebook.coverImageUrl!)
-                                as ImageProvider,
-                        fit: BoxFit.cover,
-                      )
-                    : null,
               ),
-              child: ebook.coverImageUrl == null
+              child: coverImageUrl == null || coverImageUrl.isEmpty
                   ? Icon(LucideIcons.book, color: brandColor, size: 32)
-                  : null,
+                  : AppNetworkImage(
+                      imageUrl: coverImageUrl,
+                      fit: BoxFit.cover,
+                      width: double.infinity,
+                      height: double.infinity,
+                      errorWidget: (_) =>
+                          Icon(LucideIcons.book, color: brandColor, size: 32),
+                    ),
             ),
             // Info
             Expanded(

@@ -266,6 +266,14 @@ final agentConnectionsProvider =
 class AgentConnectionsScreen extends ConsumerWidget {
   const AgentConnectionsScreen({super.key});
 
+  Future<void> _refreshAll(WidgetRef ref) async {
+    await Future.wait([
+      ref.read(agentConnectionsProvider.notifier).refresh(),
+      ref.read(apiTokensProvider.notifier).refresh(),
+      ref.read(mcpInsightsProvider.notifier).refresh(),
+    ]);
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
@@ -285,15 +293,14 @@ class AgentConnectionsScreen extends ConsumerWidget {
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
           IconButton(
-            onPressed: () =>
-                ref.read(agentConnectionsProvider.notifier).refresh(),
+            onPressed: () => _refreshAll(ref),
             icon: const Icon(Icons.refresh),
             tooltip: 'Refresh',
           ),
         ],
       ),
       body: RefreshIndicator(
-        onRefresh: () => ref.read(agentConnectionsProvider.notifier).refresh(),
+        onRefresh: () => _refreshAll(ref),
         child: ListView(
           padding: EdgeInsets.zero,
           children: [
@@ -343,8 +350,7 @@ class AgentConnectionsScreen extends ConsumerWidget {
             ),
             const SizedBox(height: 24),
             FilledButton.icon(
-              onPressed: () =>
-                  ref.read(agentConnectionsProvider.notifier).refresh(),
+              onPressed: () => _refreshAll(ref),
               icon: const Icon(Icons.refresh),
               label: const Text('Retry'),
             ),

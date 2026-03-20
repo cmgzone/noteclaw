@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -414,13 +412,6 @@ class _PublicEbookScreenState extends ConsumerState<PublicEbookScreen> {
     final coverImageUrl = ebook.coverImageUrl;
     if (coverImageUrl == null || coverImageUrl.isEmpty) {
       return Container(color: primaryColor);
-    }
-
-    if (coverImageUrl.startsWith('data:image')) {
-      return Image.memory(
-        base64Decode(coverImageUrl.split(',').last),
-        fit: BoxFit.cover,
-      );
     }
 
     return AppNetworkImage(

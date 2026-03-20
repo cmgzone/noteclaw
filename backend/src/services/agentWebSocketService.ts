@@ -11,6 +11,7 @@ import { parse } from 'url';
 import pool from '../config/database.js';
 import { tokenService } from './tokenService.js';
 import { ImageAttachmentPayload } from './webhookService.js';
+import { sourceConversationService } from './sourceConversationService.js';
 
 // ==================== INTERFACES ====================
 
@@ -199,28 +200,32 @@ class AgentWebSocketService {
     }
 
     try {
-      // Store the agent's response in the conversation
-      const result = await pool.query(
-        `INSERT INTO conversation_messages (id, conversation_id, role, content, metadata, created_at)
-         SELECT 
-           gen_random_uuid(),
-           cm.conversation_id,
-           'agent',
-           $1,
-           $2,
-           NOW()
-         FROM conversation_messages cm
-         WHERE cm.id = $3
-         RETURNING *`,
-        [
-          payload.response,
-          JSON.stringify({
+      const sourceResult = await pool.query(
+        `SELECT sc.source_id
+         FROM source_conversations sc
+         JOIN conversation_messages cm ON cm.conversation_id = sc.id
+         WHERE cm.id = $1
+         LIMIT 1`,
+        [messageId]
+      );
+
+      if (sourceResult.rows.length === 0) {
+        console.warn(`[Agent WS] Could not resolve source for message ${messageId}`);
+        return;
+      }
+
+      await sourceConversationService.addMessage(
+        sourceResult.rows[0].source_id,
+        'agent',
+        payload.response,
+        {
+          agentSessionId: sessionId,
+          metadata: {
             inReplyTo: messageId,
             codeUpdate: payload.codeUpdate,
             deliveredViaWebSocket: true,
-          }),
-          messageId,
-        ]
+          },
+        }
       );
 
       // Mark the original message as read
@@ -231,34 +236,25 @@ class AgentWebSocketService {
 
       // If there's a code update, update the source
       if (payload.codeUpdate?.code) {
-        const sourceResult = await pool.query(
-          `SELECT sc.source_id FROM source_conversations sc
-           JOIN conversation_messages cm ON cm.conversation_id = sc.id
-           WHERE cm.id = $1`,
-          [messageId]
+        await pool.query(
+          `UPDATE sources
+           SET content = $1,
+               metadata = jsonb_set(
+                 COALESCE(metadata, '{}')::jsonb,
+                 '{lastCodeUpdate}',
+                 $2::jsonb
+               ),
+               updated_at = NOW()
+           WHERE id = $3`,
+          [
+            payload.codeUpdate.code,
+            JSON.stringify({
+              description: payload.codeUpdate.description,
+              updatedAt: new Date().toISOString(),
+            }),
+            sourceResult.rows[0].source_id,
+          ]
         );
-
-        if (sourceResult.rows.length > 0) {
-          await pool.query(
-            `UPDATE sources 
-             SET content = $1, 
-                 metadata = jsonb_set(
-                   COALESCE(metadata, '{}')::jsonb, 
-                   '{lastCodeUpdate}', 
-                   $2::jsonb
-                 ),
-                 updated_at = NOW()
-             WHERE id = $3`,
-            [
-              payload.codeUpdate.code,
-              JSON.stringify({
-                description: payload.codeUpdate.description,
-                updatedAt: new Date().toISOString(),
-              }),
-              sourceResult.rows[0].source_id,
-            ]
-          );
-        }
       }
 
       console.log(`✅ Agent response stored for message ${messageId}`);

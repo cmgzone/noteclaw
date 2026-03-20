@@ -1,48 +1,57 @@
-# NotebookLLM MCP Server Installer for Windows
-# Usage: irm https://raw.githubusercontent.com/cmgzone/notebookllmmcp/main/install.ps1 | iex
+# NoteClaw MCP Server Installer for Windows
+# Legacy alias for install-mcp.ps1
 
 $ErrorActionPreference = "Stop"
 
-Write-Host "[*] Installing NotebookLLM MCP Server..." -ForegroundColor Cyan
+$GitHubRepo = "cmgzone/noteclaw"
+$BackendUrl = "https://noteclaw.onrender.com"
+$McpDir = "$env:USERPROFILE\.noteclaw-mcp"
+$TempZip = Join-Path $env:TEMP "noteclaw-mcp-server.zip"
+$AssetPattern = "noteclaw-mcp-server-*.zip"
 
-$GITHUB_REPO = "cmgzone/notebookllmmcp"
-$BACKEND_URL = "https://noteclaw.onrender.com"
+Write-Host "Installing NoteClaw MCP Server from GitHub Releases..." -ForegroundColor Cyan
 
-Write-Host "[*] Finding latest release..." -ForegroundColor Yellow
-$version = "1.0.0"
-$downloadUrl = "https://raw.githubusercontent.com/$GITHUB_REPO/main/dist/index.js"
-$packageUrl = "https://raw.githubusercontent.com/$GITHUB_REPO/main/package.json"
-
-Write-Host "[*] Downloading MCP server..." -ForegroundColor Yellow
-
-$MCP_DIR = "$env:USERPROFILE\.notebookllm-mcp"
-if (Test-Path $MCP_DIR) {
-    Remove-Item -Recurse -Force $MCP_DIR
+if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+    throw "Node.js is required to run the NoteClaw MCP Server. Install Node.js 20+ and try again."
 }
-New-Item -ItemType Directory -Force -Path $MCP_DIR | Out-Null
 
-Invoke-WebRequest -Uri $downloadUrl -OutFile "$MCP_DIR\index.js"
-Invoke-WebRequest -Uri $packageUrl -OutFile "$MCP_DIR\package.json"
+Write-Host "Finding latest release..." -ForegroundColor Yellow
+$release = Invoke-RestMethod -Uri "https://api.github.com/repos/$GitHubRepo/releases/latest"
+$asset = $release.assets | Where-Object { $_.name -like $AssetPattern } | Select-Object -First 1
 
-Write-Host "[*] Installing dependencies..." -ForegroundColor Yellow
-Push-Location $MCP_DIR
-npm install --production --silent 2>$null
-Pop-Location
+if (-not $asset) {
+    throw "Could not find a release asset matching '$AssetPattern' in $GitHubRepo."
+}
+
+$version = ($release.tag_name -replace "^mcp-v", "")
+$downloadUrl = $asset.browser_download_url
+
+Write-Host "Downloading NoteClaw MCP Server v$version..." -ForegroundColor Yellow
+
+if (Test-Path $McpDir) {
+    Remove-Item -Recurse -Force $McpDir
+}
+New-Item -ItemType Directory -Force -Path $McpDir | Out-Null
+
+Invoke-WebRequest -Uri $downloadUrl -OutFile $TempZip
+Expand-Archive -Path $TempZip -DestinationPath $McpDir -Force
+Remove-Item $TempZip -Force
 
 Write-Host ""
-Write-Host "[OK] NotebookLLM MCP Server installed to $MCP_DIR" -ForegroundColor Green
+Write-Host "NoteClaw MCP Server v$version installed to $McpDir" -ForegroundColor Green
 Write-Host ""
 Write-Host "Add this to your MCP config:" -ForegroundColor Cyan
 Write-Host ""
 
-$configJson = @"
+$escapedPath = $McpDir -replace '\\', '\\'
+$config = @"
 {
   "mcpServers": {
-    "notebookllm": {
+    "noteclaw": {
       "command": "node",
-      "args": ["$($MCP_DIR -replace '\\', '/')//index.js"],
+      "args": ["$escapedPath\\index.js"],
       "env": {
-        "BACKEND_URL": "$BACKEND_URL",
+        "BACKEND_URL": "$BackendUrl",
         "CODING_AGENT_API_KEY": "YOUR_API_TOKEN_HERE"
       }
     }
@@ -50,6 +59,6 @@ $configJson = @"
 }
 "@
 
-Write-Host $configJson
+Write-Host $config -ForegroundColor White
 Write-Host ""
-Write-Host "Get your API token from Settings -> Agent Connections in the app" -ForegroundColor Yellow
+Write-Host "Get your API token from Settings -> Agent Connections in the NoteClaw app." -ForegroundColor Yellow

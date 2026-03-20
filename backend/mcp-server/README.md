@@ -4,6 +4,10 @@ An MCP (Model Context Protocol) server that allows third-party coding agents to 
 
 ## Quick Install
 
+GitHub Releases are the distribution source for this MCP package. No npm or npx package install is required for end users.
+
+Prerequisite: install Node.js 20+ before using the MCP server.
+
 **Windows (PowerShell):**
 ```powershell
 irm https://raw.githubusercontent.com/cmgzone/noteclaw/HEAD/scripts/install-mcp.ps1 | iex
@@ -237,14 +241,16 @@ Complete a task with an optional summary.
 
 ### Option 1: Quick Install (Recommended)
 
-Use the install scripts above - they automatically download the latest release and set everything up.
+Use the install scripts above. They download the latest GitHub Release, extract it to `~/.noteclaw-mcp` or `%USERPROFILE%\.noteclaw-mcp`, and print a ready-to-paste MCP config.
 
 ### Option 2: Manual Install from GitHub Release
 
 1. Download the latest release from [GitHub Releases](https://github.com/cmgzone/noteclaw/releases)
-2. Extract to `~/.noteclaw-mcp`
-3. Run `npm install --production`
+2. Extract it to `~/.noteclaw-mcp` on macOS/Linux or `%USERPROFILE%\.noteclaw-mcp` on Windows
+3. Confirm `index.js` exists in that folder
 4. Configure your MCP client (see below)
+
+The GitHub release zip already includes the runtime dependencies needed to run the MCP server.
 
 ### Option 3: Build from Source
 
@@ -295,11 +301,11 @@ Add to `.kiro/settings/mcp.json`:
 ```json
 {
   "mcpServers": {
-    "coding-agent": {
+    "noteclaw": {
       "command": "node",
-      "args": ["path/to/backend/mcp-server/dist/index.js"],
+      "args": ["~/.noteclaw-mcp/index.js"],
       "env": {
-        "BACKEND_URL": "http://localhost:3000",
+        "BACKEND_URL": "https://noteclaw.onrender.com",
         "CODING_AGENT_API_KEY": "nclaw_your-personal-api-token-here"
       }
     }
@@ -314,11 +320,11 @@ Add to `claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
-    "coding-agent": {
+    "noteclaw": {
       "command": "node",
-      "args": ["/absolute/path/to/backend/mcp-server/dist/index.js"],
+      "args": ["/absolute/path/to/.noteclaw-mcp/index.js"],
       "env": {
-        "BACKEND_URL": "http://localhost:3000",
+        "BACKEND_URL": "https://noteclaw.onrender.com",
         "CODING_AGENT_API_KEY": "nclaw_your-personal-api-token-here"
       }
     }
@@ -381,6 +387,6 @@ npm run dev
 # Build for production
 npm run build
 
-# Run production build
-npm start
+# Run production build locally
+node dist/index.js
 ```

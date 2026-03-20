@@ -536,6 +536,18 @@ class ApiService {
     await delete('/auth/tokens/$tokenId');
   }
 
+  Future<Map<String, dynamic>> getMcpStats() async {
+    return await get<Map<String, dynamic>>('/auth/mcp/stats');
+  }
+
+  Future<List<Map<String, dynamic>>> getMcpUsage({int limit = 20}) async {
+    final response = await get<Map<String, dynamic>>(
+      '/auth/mcp/usage',
+      queryParameters: {'limit': limit},
+    );
+    return List<Map<String, dynamic>>.from(response['usage'] ?? []);
+  }
+
   // ============ NOTEBOOKS ============
 
   Future<List<Map<String, dynamic>>> getNotebooks() async {

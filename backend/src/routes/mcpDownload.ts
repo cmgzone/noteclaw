@@ -12,6 +12,12 @@ const router = Router();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const GITHUB_REPO = process.env.MCP_GITHUB_REPO || 'cmgzone/noteclaw';
+const GITHUB_RELEASES_URL = `https://github.com/${GITHUB_REPO}/releases`;
+const RAW_INSTALL_PS1_URL =
+  `https://raw.githubusercontent.com/${GITHUB_REPO}/HEAD/scripts/install-mcp.ps1`;
+const RAW_INSTALL_SH_URL =
+  `https://raw.githubusercontent.com/${GITHUB_REPO}/HEAD/scripts/install-mcp.sh`;
 
 // Get the project root - works both in dev (src/routes) and prod (dist/routes)
 const getProjectRoot = () => {
@@ -26,21 +32,19 @@ const getProjectRoot = () => {
  */
 router.get('/package.tgz', async (req: Request, res: Response) => {
   try {
-    const packagePath = path.join(getProjectRoot(), 'mcp-server/dist');
-    
-    // Check if dist exists
+    const packagePath = path.join(getProjectRoot(), 'mcp-server/dist/index.js');
+
     if (!fs.existsSync(packagePath)) {
       return res.status(404).json({ error: 'MCP package not found' });
     }
 
-    // Create a simple install script response
-    res.setHeader('Content-Type', 'application/gzip');
-    res.setHeader('Content-Disposition', 'attachment; filename="noteclaw-mcp.tgz"');
-    
-    // For now, redirect to the raw files approach
     res.status(200).json({
-      message: 'Use the install script instead',
-      installUrl: `${req.protocol}://${req.get('host')}/api/mcp/install.sh`,
+      message: 'The MCP package is distributed through GitHub Releases.',
+      releasesUrl: GITHUB_RELEASES_URL,
+      installScripts: {
+        windows: RAW_INSTALL_PS1_URL,
+        macLinux: RAW_INSTALL_SH_URL,
+      },
     });
   } catch (error: any) {
     console.error('MCP package download error:', error);
@@ -99,26 +103,40 @@ router.get('/install.sh', async (req: Request, res: Response) => {
 # NoteClaw MCP Server Installer
 # Usage: curl -fsSL ${backendUrl}/api/mcp/install.sh | bash
 
-set -e
+set -euo pipefail
 
-echo "Installing NoteClaw MCP Server..."
-
-# Create directory
+GITHUB_REPO="${GITHUB_REPO}"
+BACKEND_URL="${backendUrl}"
 MCP_DIR="$HOME/.noteclaw-mcp"
+TEMP_ZIP="/tmp/noteclaw-mcp-server.zip"
+ASSET_PATTERN='noteclaw-mcp-server-.*\\.zip'
+
+echo "Installing NoteClaw MCP Server from GitHub Releases..."
+
+if ! command -v node >/dev/null 2>&1; then
+    echo "Node.js is required to run the NoteClaw MCP Server. Install Node.js 20+ and try again." >&2
+    exit 1
+fi
+
+echo "Finding latest release..."
+RELEASE_INFO="$(curl -fsSL "https://api.github.com/repos/$GITHUB_REPO/releases/latest")"
+VERSION="$(printf '%s' "$RELEASE_INFO" | grep -o '"tag_name": *"[^"]*"' | head -1 | sed 's/.*"mcp-v\\([^"]*\\)".*/\\1/')"
+DOWNLOAD_URL="$(printf '%s' "$RELEASE_INFO" | grep -o '"browser_download_url": *"[^"]*"' | grep -E "$ASSET_PATTERN" | head -1 | sed 's/.*"\\(https:[^"]*\\)".*/\\1/')"
+
+if [ -z "$DOWNLOAD_URL" ]; then
+    echo "Could not find a GitHub release asset matching noteclaw-mcp-server-*.zip." >&2
+    exit 1
+fi
+
+echo "Downloading NoteClaw MCP Server v$VERSION..."
+rm -rf "$MCP_DIR"
 mkdir -p "$MCP_DIR"
-
-# Download the server
-echo "Downloading MCP server..."
-curl -fsSL "${backendUrl}/api/mcp/index.js" -o "$MCP_DIR/index.js"
-curl -fsSL "${backendUrl}/api/mcp/package.json" -o "$MCP_DIR/package.json"
-
-# Install dependencies
-echo "Installing dependencies..."
-cd "$MCP_DIR"
-npm install --production
+curl -fsSL "$DOWNLOAD_URL" -o "$TEMP_ZIP"
+unzip -q "$TEMP_ZIP" -d "$MCP_DIR"
+rm -f "$TEMP_ZIP"
 
 echo ""
-echo "NoteClaw MCP Server installed to $MCP_DIR"
+echo "NoteClaw MCP Server v$VERSION installed to $MCP_DIR"
 echo ""
 echo "Add this to your MCP config:"
 echo ""
@@ -152,25 +170,40 @@ router.get('/install.ps1', async (req: Request, res: Response) => {
   const script = `# NoteClaw MCP Server Installer for Windows
 # Usage: irm ${backendUrl}/api/mcp/install.ps1 | iex
 
-Write-Host "Installing NoteClaw MCP Server..." -ForegroundColor Cyan
-
-# Create directory
+$GitHubRepo = "${GITHUB_REPO}"
+$BackendUrl = "${backendUrl}"
 $MCP_DIR = "$env:USERPROFILE\\.noteclaw-mcp"
+$TempZip = Join-Path $env:TEMP "noteclaw-mcp-server.zip"
+$AssetPattern = "noteclaw-mcp-server-*.zip"
+
+Write-Host "Installing NoteClaw MCP Server from GitHub Releases..." -ForegroundColor Cyan
+
+if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+    throw "Node.js is required to run the NoteClaw MCP Server. Install Node.js 20+ and try again."
+}
+
+Write-Host "Finding latest release..." -ForegroundColor Yellow
+$release = Invoke-RestMethod -Uri "https://api.github.com/repos/$GitHubRepo/releases/latest"
+$asset = $release.assets | Where-Object { $_.name -like $AssetPattern } | Select-Object -First 1
+
+if (-not $asset) {
+    throw "Could not find a release asset matching '$AssetPattern' in $GitHubRepo."
+}
+
+$version = ($release.tag_name -replace "^mcp-v", "")
+$downloadUrl = $asset.browser_download_url
+
+Write-Host "Downloading NoteClaw MCP Server v$version..." -ForegroundColor Yellow
+if (Test-Path $MCP_DIR) {
+    Remove-Item -Recurse -Force $MCP_DIR
+}
 New-Item -ItemType Directory -Force -Path $MCP_DIR | Out-Null
-
-# Download the server
-Write-Host "Downloading MCP server..." -ForegroundColor Yellow
-Invoke-WebRequest -Uri "${backendUrl}/api/mcp/index.js" -OutFile "$MCP_DIR\\index.js"
-Invoke-WebRequest -Uri "${backendUrl}/api/mcp/package.json" -OutFile "$MCP_DIR\\package.json"
-
-# Install dependencies
-Write-Host "Installing dependencies..." -ForegroundColor Yellow
-Push-Location $MCP_DIR
-npm install --production
-Pop-Location
+Invoke-WebRequest -Uri $downloadUrl -OutFile $TempZip
+Expand-Archive -Path $TempZip -DestinationPath $MCP_DIR -Force
+Remove-Item $TempZip -Force
 
 Write-Host ""
-Write-Host "NoteClaw MCP Server installed to $MCP_DIR" -ForegroundColor Green
+Write-Host "NoteClaw MCP Server v$version installed to $MCP_DIR" -ForegroundColor Green
 Write-Host ""
 Write-Host "Add this to your MCP config:" -ForegroundColor Cyan
 Write-Host ""
@@ -202,15 +235,24 @@ Write-Host "Get your API token from Settings -> Agent Connections in the app" -F
  */
 router.get('/config', async (req: Request, res: Response) => {
   const backendUrl = process.env.BACKEND_URL || `${req.protocol}://${req.get('host')}`;
-  const mcpDir = process.platform === 'win32' 
-    ? '%USERPROFILE%\\.noteclaw-mcp'
-    : '$HOME/.noteclaw-mcp';
-  
-  const config = {
+  const windowsConfig = {
     mcpServers: {
       noteclaw: {
         command: 'node',
-        args: [`${mcpDir}/index.js`],
+        args: ['%USERPROFILE%\\.noteclaw-mcp\\index.js'],
+        env: {
+          BACKEND_URL: backendUrl,
+          CODING_AGENT_API_KEY: 'YOUR_API_TOKEN_HERE',
+        },
+      },
+    },
+  };
+
+  const unixConfig = {
+    mcpServers: {
+      noteclaw: {
+        command: 'node',
+        args: ['$HOME/.noteclaw-mcp/index.js'],
         env: {
           BACKEND_URL: backendUrl,
           CODING_AGENT_API_KEY: 'YOUR_API_TOKEN_HERE',
@@ -220,11 +262,14 @@ router.get('/config', async (req: Request, res: Response) => {
   };
 
   res.json({
-    config,
+    config: {
+      windows: windowsConfig,
+      macLinux: unixConfig,
+    },
     instructions: {
-      windows: `irm ${backendUrl}/api/mcp/install.ps1 | iex`,
-      macLinux: `curl -fsSL ${backendUrl}/api/mcp/install.sh | bash`,
-      manual: `Download index.js from ${backendUrl}/api/mcp/index.js`,
+      windows: `irm ${RAW_INSTALL_PS1_URL} | iex`,
+      macLinux: `curl -fsSL ${RAW_INSTALL_SH_URL} | bash`,
+      manual: `Download the latest package from ${GITHUB_RELEASES_URL}`,
     },
   });
 });
