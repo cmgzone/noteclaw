@@ -89,6 +89,14 @@ class AppNotification {
   /// Get the suggested action type from notification data
   String? get suggestedActionType => data?['actionType'];
 
+  bool get isAdminNotification => data?['adminNotification'] == true;
+
+  bool get shouldShowPopup => data?['showPopup'] == true;
+
+  String get popupStyle => (data?['popupStyle'] as String?) ?? 'dialog';
+
+  String? get popupActionLabel => data?['actionLabel'] as String?;
+
   /// Get notification category for grouping
   String get category {
     if (isProactive) return 'ai_assistant';

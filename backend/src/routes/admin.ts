@@ -2,10 +2,21 @@ import express, { type Response } from 'express';
 import pool from '../config/database.js';
 import { authenticateToken, requireAdmin, type AuthRequest } from '../middleware/auth.js';
 import { mcpLimitsService } from '../services/mcpLimitsService.js';
-import { notificationService } from '../services/notificationService.js';
+import { notificationService, type NotificationType } from '../services/notificationService.js';
 import { encryptSecret } from '../services/secretEncryptionService.js';
 
 const router = express.Router();
+const SUPPORTED_ADMIN_NOTIFICATION_TYPES = new Set<NotificationType>(['system']);
+
+function normalizeAdminNotificationType(rawType: unknown): NotificationType {
+    if (typeof rawType !== 'string') {
+        return 'system';
+    }
+
+    return SUPPORTED_ADMIN_NOTIFICATION_TYPES.has(rawType as NotificationType)
+        ? (rawType as NotificationType)
+        : 'system';
+}
 
 // All admin routes require authentication AND admin role
 router.use(authenticateToken);
@@ -958,39 +969,51 @@ router.get('/mcp-stats', async (req: AuthRequest, res: Response) => {
 // Send notification to all users
 router.post('/notifications/broadcast', async (req: AuthRequest, res: Response) => {
     try {
-        const { title, body, type = 'system', actionUrl } = req.body;
+        const {
+            title,
+            body,
+            actionUrl,
+            showPopup = false,
+            popupStyle = 'dialog',
+            actionLabel,
+        } = req.body;
+        const type = normalizeAdminNotificationType(req.body.type);
 
         if (!title) {
             return res.status(400).json({ error: 'Title is required' });
         }
 
-        // Get all user IDs
-        const users = await pool.query('SELECT id FROM users WHERE is_active = true');
-        
-        let successCount = 0;
-        let failureCount = 0;
+        const notificationData = {
+            adminNotification: true,
+            sentAt: new Date().toISOString(),
+            sentByUserId: req.userId,
+            ...(showPopup
+                ? {
+                      showPopup: true,
+                      popupStyle,
+                      ...(typeof actionLabel === 'string' && actionLabel.trim().length > 0
+                          ? { actionLabel: actionLabel.trim() }
+                          : {}),
+                  }
+                : {}),
+        };
 
-        // Send notification to each user
-        for (const user of users.rows) {
-            try {
-                await notificationService.create({
-                    userId: user.id,
-                    type,
-                    title,
-                    body,
-                    actionUrl,
-                });
-                successCount++;
-            } catch (error) {
-                console.error(`Failed to send notification to user ${user.id}:`, error);
-                failureCount++;
-            }
-        }
+        const result = await notificationService.sendBroadcastNotification(
+            title,
+            body,
+            actionUrl,
+            notificationData,
+            type
+        );
 
         res.json({
             success: true,
-            message: `Notification sent to ${successCount} users`,
-            stats: { successCount, failureCount, totalUsers: users.rows.length }
+            message: `Notification sent to ${result.sent} users`,
+            stats: {
+                successCount: result.sent,
+                failureCount: result.failed,
+                totalUsers: result.sent + result.failed,
+            }
         });
     } catch (error) {
         console.error('Error broadcasting notification:', error);
@@ -1001,7 +1024,16 @@ router.post('/notifications/broadcast', async (req: AuthRequest, res: Response) 
 // Send notification to specific users
 router.post('/notifications/send', async (req: AuthRequest, res: Response) => {
     try {
-        const { userIds, title, body, type = 'system', actionUrl } = req.body;
+        const {
+            userIds,
+            title,
+            body,
+            actionUrl,
+            showPopup = false,
+            popupStyle = 'dialog',
+            actionLabel,
+        } = req.body;
+        const type = normalizeAdminNotificationType(req.body.type);
 
         if (!title) {
             return res.status(400).json({ error: 'Title is required' });
@@ -1010,30 +1042,38 @@ router.post('/notifications/send', async (req: AuthRequest, res: Response) => {
             return res.status(400).json({ error: 'User IDs array is required' });
         }
 
-        let successCount = 0;
-        let failureCount = 0;
+        const notificationData = {
+            adminNotification: true,
+            sentAt: new Date().toISOString(),
+            sentByUserId: req.userId,
+            ...(showPopup
+                ? {
+                      showPopup: true,
+                      popupStyle,
+                      ...(typeof actionLabel === 'string' && actionLabel.trim().length > 0
+                          ? { actionLabel: actionLabel.trim() }
+                          : {}),
+                  }
+                : {}),
+        };
 
-        // Send notification to each specified user
-        for (const userId of userIds) {
-            try {
-                await notificationService.create({
-                    userId,
-                    type,
-                    title,
-                    body,
-                    actionUrl,
-                });
-                successCount++;
-            } catch (error) {
-                console.error(`Failed to send notification to user ${userId}:`, error);
-                failureCount++;
-            }
-        }
+        const result = await notificationService.sendSystemNotification(
+            userIds,
+            title,
+            body,
+            actionUrl,
+            notificationData,
+            type
+        );
 
         res.json({
             success: true,
-            message: `Notification sent to ${successCount} users`,
-            stats: { successCount, failureCount, totalUsers: userIds.length }
+            message: `Notification sent to ${result.sent} users`,
+            stats: {
+                successCount: result.sent,
+                failureCount: result.failed,
+                totalUsers: userIds.length,
+            }
         });
     } catch (error) {
         console.error('Error sending notifications:', error);

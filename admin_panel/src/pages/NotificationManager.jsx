@@ -2,6 +2,15 @@ import { useState, useEffect } from 'react';
 import api from '../lib/api';
 import { Bell, Send, Users, MessageSquare, AlertCircle, CheckCircle, TrendingUp } from 'lucide-react';
 
+const createDefaultNotification = () => ({
+    title: '',
+    body: '',
+    type: 'system',
+    actionUrl: '',
+    showPopup: true,
+    actionLabel: ''
+});
+
 export default function NotificationManager() {
     const [stats, setStats] = useState({
         total_notifications: 0,
@@ -13,12 +22,7 @@ export default function NotificationManager() {
     });
     const [users, setUsers] = useState([]);
     const [selectedUsers, setSelectedUsers] = useState([]);
-    const [notification, setNotification] = useState({
-        title: '',
-        body: '',
-        type: 'system',
-        actionUrl: ''
-    });
+    const [notification, setNotification] = useState(createDefaultNotification);
     const [loading, setLoading] = useState(true);
     const [sending, setSending] = useState(false);
     const [message, setMessage] = useState({ type: '', text: '' });
@@ -55,21 +59,25 @@ export default function NotificationManager() {
             return;
         }
 
+        const payload = {
+            title: notification.title.trim(),
+            body: notification.body.trim() || undefined,
+            type: 'system',
+            actionUrl: notification.actionUrl.trim() || undefined,
+            showPopup: notification.showPopup,
+            actionLabel: notification.actionLabel.trim() || undefined
+        };
+
         try {
             setSending(true);
-            const response = await api.sendBroadcastNotification(
-                notification.title,
-                notification.body,
-                notification.type,
-                notification.actionUrl || undefined
-            );
+            const response = await api.sendBroadcastNotification(payload);
 
             if (response.success) {
                 setMessage({ 
                     type: 'success', 
                     text: `Notification sent to ${response.stats.successCount} users` 
                 });
-                setNotification({ title: '', body: '', type: 'system', actionUrl: '' });
+                setNotification(createDefaultNotification());
                 loadData(); // Refresh stats
             }
         } catch (error) {
@@ -90,22 +98,26 @@ export default function NotificationManager() {
             return;
         }
 
+        const payload = {
+            userIds: selectedUsers,
+            title: notification.title.trim(),
+            body: notification.body.trim() || undefined,
+            type: 'system',
+            actionUrl: notification.actionUrl.trim() || undefined,
+            showPopup: notification.showPopup,
+            actionLabel: notification.actionLabel.trim() || undefined
+        };
+
         try {
             setSending(true);
-            const response = await api.sendNotificationToUsers(
-                selectedUsers,
-                notification.title,
-                notification.body,
-                notification.type,
-                notification.actionUrl || undefined
-            );
+            const response = await api.sendNotificationToUsers(payload);
 
             if (response.success) {
                 setMessage({ 
                     type: 'success', 
                     text: `Notification sent to ${response.stats.successCount} users` 
                 });
-                setNotification({ title: '', body: '', type: 'system', actionUrl: '' });
+                setNotification(createDefaultNotification());
                 setSelectedUsers([]);
                 loadData(); // Refresh stats
             }
@@ -242,11 +254,10 @@ export default function NotificationManager() {
                                 className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
                             >
                                 <option value="system">System</option>
-                                <option value="announcement">Announcement</option>
-                                <option value="update">Update</option>
-                                <option value="warning">Warning</option>
-                                <option value="promotion">Promotion</option>
                             </select>
+                            <p className="mt-2 text-xs text-muted-foreground">
+                                Admin in-app notifications currently use the supported <strong>system</strong> type.
+                            </p>
                         </div>
 
                         <div>
@@ -258,6 +269,40 @@ export default function NotificationManager() {
                                 className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
                                 placeholder="https://example.com/action"
                             />
+                        </div>
+
+                        <div className="rounded-lg border border-border p-4 bg-muted/30">
+                            <label className="flex items-start gap-3 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={notification.showPopup}
+                                    onChange={(e) => setNotification(prev => ({ ...prev, showPopup: e.target.checked }))}
+                                    className="mt-1 rounded"
+                                />
+                                <div>
+                                    <div className="text-sm font-medium">Show popup in app</div>
+                                    <p className="mt-1 text-xs text-muted-foreground">
+                                        Displays an in-app dialog in Flutter when the app is open and the next notification poll runs. This is not a device push notification.
+                                    </p>
+                                </div>
+                            </label>
+
+                            {notification.showPopup && (
+                                <div className="mt-4">
+                                    <label className="block text-sm font-medium mb-2">Popup action label (optional)</label>
+                                    <input
+                                        type="text"
+                                        value={notification.actionLabel}
+                                        onChange={(e) => setNotification(prev => ({ ...prev, actionLabel: e.target.value }))}
+                                        className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50"
+                                        placeholder="Open"
+                                        maxLength={40}
+                                    />
+                                    <p className="mt-2 text-xs text-muted-foreground">
+                                        Used for the popup button when an action URL is provided.
+                                    </p>
+                                </div>
+                            )}
                         </div>
 
                         <div className="flex gap-3">

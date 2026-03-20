@@ -320,12 +320,12 @@ class ApiService {
     }
 
     // ============ ADMIN - NOTIFICATIONS ============
-    async sendBroadcastNotification(title, body, type = 'system', actionUrl) {
-        return this.post('/admin/notifications/broadcast', { title, body, type, actionUrl });
+    async sendBroadcastNotification(notification) {
+        return this.post('/admin/notifications/broadcast', notification);
     }
 
-    async sendNotificationToUsers(userIds, title, body, type = 'system', actionUrl) {
-        return this.post('/admin/notifications/send', { userIds, title, body, type, actionUrl });
+    async sendNotificationToUsers(notification) {
+        return this.post('/admin/notifications/send', notification);
     }
 
     async getNotificationStats() {

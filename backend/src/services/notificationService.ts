@@ -290,7 +290,8 @@ class NotificationService {
     title: string, 
     body?: string, 
     actionUrl?: string,
-    data?: Record<string, any>
+    data?: Record<string, any>,
+    type: NotificationType = 'system'
   ): Promise<{ sent: number; failed: number }> {
     let sent = 0;
     let failed = 0;
@@ -299,7 +300,7 @@ class NotificationService {
       try {
         const notification = await this.create({
           userId,
-          type: 'system',
+          type,
           title,
           body,
           actionUrl,
@@ -320,13 +321,14 @@ class NotificationService {
     title: string, 
     body?: string, 
     actionUrl?: string,
-    data?: Record<string, any>
+    data?: Record<string, any>,
+    type: NotificationType = 'system'
   ): Promise<{ sent: number; failed: number }> {
     // Get all active users
     const result = await pool.query('SELECT id FROM users WHERE is_active = TRUE');
     const userIds = result.rows.map(row => row.id);
     
-    return this.sendSystemNotification(userIds, title, body, actionUrl, data);
+    return this.sendSystemNotification(userIds, title, body, actionUrl, data, type);
   }
 
   async getNotificationStats(): Promise<{

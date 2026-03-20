@@ -16,6 +16,7 @@ import 'core/audio/audio_playback_provider.dart';
 import 'core/services/background_ai_service.dart';
 
 import 'features/onboarding/onboarding_provider.dart';
+import 'features/notifications/app_notification_overlay.dart';
 import 'theme/app_theme.dart';
 import 'core/theme/theme_provider.dart';
 
@@ -222,7 +223,7 @@ class _NoteClawAppState extends ConsumerState<NoteClawApp> {
       routerConfig: _router!,
       debugShowCheckedModeBanner: false,
       builder: (context, child) => ResponsiveBreakpoints.builder(
-        child: child!,
+        child: AppNotificationOverlay(child: child!),
         breakpoints: [
           const Breakpoint(start: 0, end: 450, name: MOBILE),
           const Breakpoint(start: 451, end: 800, name: TABLET),
