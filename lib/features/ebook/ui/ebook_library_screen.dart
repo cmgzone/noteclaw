@@ -7,17 +7,33 @@ import '../ebook_provider.dart';
 import '../models/ebook_project.dart';
 import 'ebook_reader_screen.dart';
 
-class EbookLibraryScreen extends ConsumerWidget {
+class EbookLibraryScreen extends ConsumerStatefulWidget {
   const EbookLibraryScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<EbookLibraryScreen> createState() => _EbookLibraryScreenState();
+}
+
+class _EbookLibraryScreenState extends ConsumerState<EbookLibraryScreen> {
+  @override
+  void initState() {
+    super.initState();
+    Future.microtask(() => ref.read(ebookProvider.notifier).loadEbooks());
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final ebooks = ref.watch(ebookProvider);
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('My Ebooks'),
         actions: [
+          IconButton(
+            icon: const Icon(LucideIcons.refreshCw),
+            onPressed: () => ref.read(ebookProvider.notifier).refresh(),
+            tooltip: 'Refresh Library',
+          ),
           IconButton(
             icon: const Icon(LucideIcons.plus),
             onPressed: () => context.push('/ebook-creator'),

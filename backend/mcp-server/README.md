@@ -21,6 +21,7 @@ curl -fsSL https://raw.githubusercontent.com/cmgzone/noteclaw/HEAD/scripts/insta
 - **Code Verification**: Validate code for syntax, security, and best practices
 - **AI-Powered Analysis**: Deep code analysis using Gemini AI
 - **Source Management**: Save verified code as sources in your app
+- **Ebook Access**: Read existing ebooks, create them directly, or generate them with AI through MCP
 - **Batch Processing**: Verify multiple code snippets at once
 - **Multi-Language Support**: JavaScript, TypeScript, Python, Dart, JSON, and more
 - **Planning Mode**: Create and manage implementation plans with tasks
@@ -87,9 +88,68 @@ Retrieve previously saved verified code sources.
 }
 ```
 
+### `list_ebooks`
+List all ebook projects owned by the authenticated user.
+
+```json
+{}
+```
+
+### `get_ebook`
+Get a specific ebook and its chapters.
+
+```json
+{
+  "ebookId": "ebook-uuid-here",
+  "includeChapters": true
+}
+```
+
+### `create_ebook`
+Create a new ebook or update an existing one, with optional chapters and images.
+
+```json
+{
+  "title": "API Integration Guide",
+  "topic": "Building integrations with MCP",
+  "targetAudience": "Developers",
+  "status": "draft",
+  "chapters": [
+    {
+      "title": "Introduction",
+      "content": "# Welcome\nThis ebook explains the basics.",
+      "chapterOrder": 1,
+      "images": [
+        {
+          "url": "https://example.com/cover.jpg",
+          "caption": "Opening illustration",
+          "type": "web"
+        }
+      ]
+    }
+  ]
+}
+```
+
+### `generate_ebook`
+Start backend AI generation for an ebook. The call returns quickly with a project ID; then poll with `get_ebook` until the status is `completed` or `error`. The backend always tries to add a cover image, and it can optionally add chapter illustrations too.
+
+```json
+{
+  "title": "MCP Agent Playbook",
+  "topic": "How coding agents collaborate with notebooks and ebooks",
+  "targetAudience": "Developers building agent workflows",
+  "chapterCount": 6,
+  "chapterInstructions": "Keep it practical and include implementation examples.",
+  "generateChapterImages": true,
+  "imageSource": "auto",
+  "imageModel": "google/gemini-2.5-flash-image-preview"
+}
+```
+
 ## Planning Mode Tools
 
-The MCP server also provides tools for managing plans and tasks, enabling coding agents to work on structured implementation plans.
+The MCP server also provides tools for managing plans and tasks, enabling agents to work on structured plans for coding, research, writing, operations, and other general workflows.
 
 ### `list_plans`
 List all plans accessible to the authenticated user.

@@ -10,6 +10,7 @@ import 'dart:ui';
 import 'dart:async';
 import '../sources/source_provider.dart';
 import '../../core/ai/ai_provider.dart';
+import '../../core/ai/ai_settings_service.dart';
 import '../../core/ai/web_browsing_service.dart';
 import '../../core/ai/deep_research_service.dart';
 import 'notebook_provider.dart';
@@ -19,9 +20,8 @@ import '../chat/context_usage_widget.dart';
 import '../subscription/services/credit_manager.dart';
 import '../chat/github_action_detector.dart';
 import '../github/github_issue_dialog.dart';
-import '../chat/github_chat_context_builder.dart';
-import '../sources/source.dart';
 import '../../core/audio/voice_service.dart';
+import 'notebook_chat_context_builder.dart';
 
 class NotebookChatScreen extends ConsumerStatefulWidget {
   final String notebookId;
@@ -332,16 +332,16 @@ class _NotebookChatScreenState extends ConsumerState<NotebookChatScreen> {
       final deepResearchService = ref.read(deepResearchServiceProvider);
 
       await for (final update in deepResearchService.research(
-          query: message, 
-          notebookId: widget.notebookId, 
-          depth: ResearchDepth.standard, 
+          query: message,
+          notebookId: widget.notebookId,
+          depth: ResearchDepth.standard,
           template: ResearchTemplate.general,
           useNotebookContext: true)) {
         if (!mounted) return;
 
         setState(() {
           _webBrowsingStatus = update.status;
-          
+
           if (update.sources != null) {
             final newSources = update.sources!.map((s) => s.url).toList();
             for (final url in newSources) {
@@ -350,7 +350,7 @@ class _NotebookChatScreenState extends ConsumerState<NotebookChatScreen> {
               }
             }
           }
-          
+
           if (update.images != null) {
             for (final url in update.images!) {
               if (!_webBrowsingScreenshots.contains(url)) {
@@ -394,12 +394,13 @@ class _NotebookChatScreenState extends ConsumerState<NotebookChatScreen> {
       }
     } catch (e) {
       debugPrint('Error in deep research: $e');
-      
+
       if (mounted) {
         setState(() => _webBrowsingStatus = null);
 
         _messages.add(ChatMessage(
-          text: '⚠️ **Deep Research Error**\n\nFailed to research. Please try again or use regular chat mode.',
+          text:
+              '⚠️ **Deep Research Error**\n\nFailed to research. Please try again or use regular chat mode.',
           isUser: false,
           timestamp: DateTime.now(),
         ));
@@ -483,81 +484,15 @@ class _NotebookChatScreenState extends ConsumerState<NotebookChatScreen> {
       final allSources = ref.read(sourceProvider);
       final notebookSources =
           allSources.where((s) => s.notebookId == widget.notebookId).toList();
-
-      // Separate GitHub sources from regular sources
-      final githubSources =
-          notebookSources.where((s) => s.isGitHubSource).toList();
-      final regularSources =
-          notebookSources.where((s) => !s.isGitHubSource).toList();
-
-      // Build context with enhanced GitHub formatting
-      final contextList = <String>[];
-
-      // Add GitHub sources with enhanced context
-      for (final source in githubSources) {
-        try {
-          final githubContext =
-              GitHubChatContextBuilder.buildSourceContext(source);
-          if (githubContext.isNotEmpty) {
-            contextList.add(githubContext);
-          }
-        } catch (e) {
-          debugPrint(
-              'Error building GitHub context for source ${source.id}: $e');
-        }
-      }
-
-      // Add repository structure if we have GitHub sources
-      if (githubSources.isNotEmpty) {
-        try {
-          final repoStructure =
-              GitHubChatContextBuilder.buildRepoStructureContext(githubSources);
-          if (repoStructure.isNotEmpty) {
-            contextList.add(repoStructure);
-          }
-        } catch (e) {
-          debugPrint('Error building repo structure: $e');
-        }
-      }
-
-      // Add regular sources with global truncation
-      const int maxTotalChars = 60000; // ~15k tokens, safe buffer
-      int currentChars = 0;
-
-      // Count chars from GitHub context first (already added)
-      for (final s in contextList) {
-        currentChars += s.length;
-      }
-
-      // Add regular sources
-      for (final source in regularSources) {
-        if (currentChars >= maxTotalChars) {
-          contextList
-              .add('... [Remaining sources truncated due to size limits]');
-          break;
-        }
-
-        try {
-          final content = source.content;
-          final title = source.title;
-          final remainingChars = maxTotalChars - currentChars;
-
-          // Reserve some space for title
-          if (remainingChars < 100) break;
-
-          String addedContent;
-          if (content.length > remainingChars) {
-            addedContent = '$title: ${content.substring(0, remainingChars)}...';
-          } else {
-            addedContent = '$title: $content';
-          }
-
-          contextList.add(addedContent);
-          currentChars += addedContent.length;
-        } catch (e) {
-          debugPrint('Error processing source ${source.id}: $e');
-        }
-      }
+      final contextWindowTokens =
+          await AISettingsService.getCurrentModelContextWindow(ref.read);
+      final contextList = NotebookChatContextBuilder.build(
+        sources: notebookSources,
+        query: message,
+        maxContextChars: NotebookChatContextBuilder.estimateContextCharBudget(
+          contextWindowTokens,
+        ),
+      );
 
       // Construct history pairs safely
       final historyPairs = <AIPromptResponse>[];
@@ -1108,8 +1043,10 @@ class _NotebookChatScreenState extends ConsumerState<NotebookChatScreen> {
                         IconButton(
                           onPressed: () {
                             setState(() {
-                                _isWebBrowsingEnabled = !_isWebBrowsingEnabled;
-                                if (_isWebBrowsingEnabled) _isDeepResearchEnabled = false;
+                              _isWebBrowsingEnabled = !_isWebBrowsingEnabled;
+                              if (_isWebBrowsingEnabled) {
+                                _isDeepResearchEnabled = false;
+                              }
                             });
                           },
                           icon: Icon(
@@ -1127,8 +1064,10 @@ class _NotebookChatScreenState extends ConsumerState<NotebookChatScreen> {
                         IconButton(
                           onPressed: () {
                             setState(() {
-                                _isDeepResearchEnabled = !_isDeepResearchEnabled;
-                                if (_isDeepResearchEnabled) _isWebBrowsingEnabled = false;
+                              _isDeepResearchEnabled = !_isDeepResearchEnabled;
+                              if (_isDeepResearchEnabled) {
+                                _isWebBrowsingEnabled = false;
+                              }
                             });
                           },
                           icon: Icon(

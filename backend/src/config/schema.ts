@@ -21,6 +21,9 @@ export async function initializeFeatureTables() {
                 selected_model TEXT,
                 status TEXT DEFAULT 'draft',
                 cover_image TEXT,
+                is_public BOOLEAN DEFAULT false,
+                view_count INTEGER DEFAULT 0,
+                share_count INTEGER DEFAULT 0,
                 created_at TIMESTAMPTZ DEFAULT NOW(),
                 updated_at TIMESTAMPTZ DEFAULT NOW()
             );
@@ -31,10 +34,18 @@ export async function initializeFeatureTables() {
                 title TEXT NOT NULL,
                 content TEXT,
                 chapter_order INTEGER NOT NULL,
+                images JSONB DEFAULT '[]'::jsonb,
                 status TEXT DEFAULT 'draft',
                 created_at TIMESTAMPTZ DEFAULT NOW(),
                 updated_at TIMESTAMPTZ DEFAULT NOW()
             );
+
+            ALTER TABLE ebook_chapters
+            ADD COLUMN IF NOT EXISTS images JSONB DEFAULT '[]'::jsonb;
+
+            UPDATE ebook_chapters
+            SET images = '[]'::jsonb
+            WHERE images IS NULL;
         `);
 
         // Research tables

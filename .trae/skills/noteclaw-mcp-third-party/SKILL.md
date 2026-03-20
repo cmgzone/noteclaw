@@ -20,15 +20,16 @@ Invoke this skill when a user asks to:
 
 - Backend URL (for example: `https://your-backend.example.com`)
 - Personal API token from NoteClaw app (`nclaw_...`)
-- Absolute path to local MCP server entry file (`dist/index.js`)
+- Absolute path to local MCP server entry file (`mcp-server/dist/index.js`)
 
 ## Standard Setup Flow
 
 1. Verify prerequisites:
    - Node.js 20+
    - Access to NoteClaw account
-2. Build MCP server locally:
-   - `cd backend/mcp-server`
+2. Build MCP server locally (from backend root):
+   - `cd backend`
+   - `cd mcp-server`
    - `npm install`
    - `npm run build`
 3. Generate API token in app:
@@ -48,7 +49,7 @@ Invoke this skill when a user asks to:
   "mcpServers": {
     "coding-agent": {
       "command": "node",
-      "args": ["/absolute/path/to/noteclaw/backend/mcp-server/dist/index.js"],
+      "args": ["/absolute/path/to/backend/mcp-server/dist/index.js"],
       "env": {
         "BACKEND_URL": "https://your-backend.example.com",
         "CODING_AGENT_API_KEY": "nclaw_your_token_here"

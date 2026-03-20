@@ -79,7 +79,7 @@ class AudioPlaybackNotifier extends StateNotifier<AudioPlaybackState> {
 
   Future<void> play(AudioOverview overview,
       {List<AudioOverview>? queue}) async {
-    if (!overview.isOffline) {
+    if (!overview.isOffline && _isRemoteUrl(overview.url)) {
       // We don't await this to start playing faster
       _cache.cache(overview);
     }
@@ -98,13 +98,24 @@ class AudioPlaybackNotifier extends StateNotifier<AudioPlaybackState> {
       }
     } else {
       // Single item fallback
-      await _handler.customAction('setUrl', {'url': overview.url});
+      await _handler.customAction('setUrl', {
+        'url': overview.url,
+        'title': overview.title,
+        'id': overview.id,
+        'overview_json': jsonEncode(overview.toJson()),
+      });
       await _handler.play();
     }
 
     // State is updated via streams, but we can optimistically set it here too
     state = state.copyWith(
         isPlaying: true, currentUrl: overview.url, currentOverview: overview);
+  }
+
+  bool _isRemoteUrl(String value) {
+    final uri = Uri.tryParse(value);
+    final scheme = uri?.scheme.toLowerCase();
+    return scheme == 'http' || scheme == 'https';
   }
 
   Future<void> pause() async {

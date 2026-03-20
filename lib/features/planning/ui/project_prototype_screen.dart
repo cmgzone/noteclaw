@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,7 +11,12 @@ import 'dart:io';
 
 import '../../../core/ai/ai_provider.dart';
 import '../../subscription/services/credit_manager.dart';
+import '../models/design_artifact.dart';
+import '../models/design_document.dart';
 import '../planning_provider.dart';
+import '../services/design_html_builder.dart';
+import 'design_engine_preview.dart';
+import 'design_node_inspector.dart';
 
 /// Device frame definitions for mobile preview
 enum DeviceFrame {
@@ -29,6 +35,11 @@ enum DeviceFrame {
   final IconData icon;
 
   const DeviceFrame(this.name, this.width, this.height, this.icon);
+}
+
+enum _PrototypePreviewMode {
+  html,
+  engine,
 }
 
 /// Project Prototype Generator Screen
@@ -127,17 +138,32 @@ class _ScreenDefinition {
   }
 }
 
+class _StructuredPrototypeResponse {
+  final String html;
+  final DesignDocument? document;
+
+  const _StructuredPrototypeResponse({
+    required this.html,
+    required this.document,
+  });
+}
+
 class _ProjectPrototypeScreenState
     extends ConsumerState<ProjectPrototypeScreen> {
   final ScreenshotController _screenshotController = ScreenshotController();
 
   WebViewController? _webViewController;
   String? _fullPrototypeHtml;
+  DesignDocument? _generatedDesignDocument;
   Uint8List? _screenshot;
   bool _isGenerating = false;
   bool _isCapturing = false;
   bool _isSaving = false;
+  bool _isRegeneratingSection = false;
   bool _webViewReady = false;
+  _PrototypePreviewMode _previewMode = _PrototypePreviewMode.html;
+  String? _selectedDesignScreenId;
+  String? _selectedDesignNodeId;
   String _currentScreen = 'home';
   double _generationProgress = 0;
   String _generationStatus = '';
@@ -297,8 +323,10 @@ class _ProjectPrototypeScreenState
                   if (_fullPrototypeHtml != null) ...[
                     const SizedBox(height: 24),
                     _buildPreviewSection(scheme, text),
-                    const SizedBox(height: 16),
-                    _buildScreenNavigation(scheme, text),
+                    if (_previewMode == _PrototypePreviewMode.html) ...[
+                      const SizedBox(height: 16),
+                      _buildScreenNavigation(scheme, text),
+                    ],
                     const SizedBox(height: 16),
                     _buildActionButtons(scheme),
                   ],
@@ -1010,16 +1038,20 @@ class _ProjectPrototypeScreenState
             Icon(LucideIcons.monitor, color: scheme.primary, size: 20),
             const SizedBox(width: 8),
             Text(
-              'Interactive Prototype',
+              _generatedDesignDocument != null
+                  ? 'Interactive Prototype Preview'
+                  : 'Interactive Prototype',
               style: text.titleMedium?.copyWith(fontWeight: FontWeight.bold),
             ),
             const Spacer(),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(
-                color: _webViewReady
-                    ? Colors.green.withValues(alpha: 0.1)
-                    : Colors.orange.withValues(alpha: 0.1),
+                color: _previewMode == _PrototypePreviewMode.engine
+                    ? scheme.primary.withValues(alpha: 0.1)
+                    : _webViewReady
+                        ? Colors.green.withValues(alpha: 0.1)
+                        : Colors.orange.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Row(
@@ -1029,17 +1061,27 @@ class _ProjectPrototypeScreenState
                     width: 8,
                     height: 8,
                     decoration: BoxDecoration(
-                      color: _webViewReady ? Colors.green : Colors.orange,
+                      color: _previewMode == _PrototypePreviewMode.engine
+                          ? scheme.primary
+                          : _webViewReady
+                              ? Colors.green
+                              : Colors.orange,
                       shape: BoxShape.circle,
                     ),
                   ),
                   const SizedBox(width: 6),
                   Text(
-                    _webViewReady ? 'Live' : 'Loading...',
+                    _previewMode == _PrototypePreviewMode.engine
+                        ? 'Structured'
+                        : _webViewReady
+                            ? 'Live'
+                            : 'Loading...',
                     style: TextStyle(
-                      color: _webViewReady
-                          ? Colors.green.shade700
-                          : Colors.orange.shade700,
+                      color: _previewMode == _PrototypePreviewMode.engine
+                          ? scheme.primary
+                          : _webViewReady
+                              ? Colors.green.shade700
+                              : Colors.orange.shade700,
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
                     ),
@@ -1049,6 +1091,29 @@ class _ProjectPrototypeScreenState
             ),
           ],
         ),
+        if (_generatedDesignDocument != null) ...[
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              ChoiceChip(
+                label: const Text('HTML'),
+                selected: _previewMode == _PrototypePreviewMode.html,
+                onSelected: (_) {
+                  setState(() => _previewMode = _PrototypePreviewMode.html);
+                },
+              ),
+              ChoiceChip(
+                label: const Text('Engine'),
+                selected: _previewMode == _PrototypePreviewMode.engine,
+                onSelected: (_) {
+                  setState(() => _previewMode = _PrototypePreviewMode.engine);
+                },
+              ),
+            ],
+          ),
+        ],
         const SizedBox(height: 12),
         // Device selector
         _buildDeviceSelector(scheme, text),
@@ -1074,12 +1139,29 @@ class _ProjectPrototypeScreenState
                       ],
                     ),
                     clipBehavior: Clip.antiAlias,
-                    child: _buildWebView(),
+                    child: _buildPreviewCanvas(),
                   )
                 : _buildDeviceFrame(scheme, previewWidth, previewHeight,
                     deviceWidth, deviceHeight, scale),
           ),
         ),
+        if (_previewMode == _PrototypePreviewMode.engine &&
+            _generatedDesignDocument != null) ...[
+          const SizedBox(height: 12),
+          DesignNodeInspector(
+            screen: _selectedScreenSpec,
+            node: _selectedNodeSpec,
+            onApply: _applySelectedNodeEdits,
+            onRegenerate: _regenerateSelectedNode,
+            isRegenerating: _isRegeneratingSection,
+            onClearSelection: () {
+              setState(() {
+                _selectedDesignScreenId = null;
+                _selectedDesignNodeId = null;
+              });
+            },
+          ),
+        ],
       ],
     ).animate().fadeIn(delay: 400.ms).slideY(begin: 0.1);
   }
@@ -1132,7 +1214,7 @@ class _ProjectPrototypeScreenState
                 borderRadius: BorderRadius.circular(isPhone ? 28 : 12),
               ),
               clipBehavior: Clip.antiAlias,
-              child: _buildWebView(),
+              child: _buildPreviewCanvas(),
             ),
           ),
           // Home indicator for phones
@@ -1179,6 +1261,20 @@ class _ProjectPrototypeScreenState
           ),
       ],
     );
+  }
+
+  Widget _buildPreviewCanvas() {
+    if (_previewMode == _PrototypePreviewMode.engine &&
+        _generatedDesignDocument != null) {
+      return DesignEnginePreview(
+        document: _generatedDesignDocument!,
+        selectedScreenId: _selectedDesignScreenId,
+        selectedNodeId: _selectedDesignNodeId,
+        onScreenSelected: _handleEngineScreenSelected,
+        onNodeSelected: _handleEngineNodeSelected,
+      );
+    }
+    return _buildWebView();
   }
 
   Widget _buildScreenNavigation(ColorScheme scheme, TextTheme text) {
@@ -1311,6 +1407,166 @@ class _ProjectPrototypeScreenState
         ),
       ],
     ).animate().fadeIn(delay: 500.ms);
+  }
+
+  DesignScreenSpec? get _selectedScreenSpec {
+    final document = _generatedDesignDocument;
+    final screenId = _selectedDesignScreenId;
+    if (document == null || screenId == null) return null;
+    return document.findScreen(screenId);
+  }
+
+  DesignNodeSpec? get _selectedNodeSpec {
+    final document = _generatedDesignDocument;
+    final screenId = _selectedDesignScreenId;
+    final nodeId = _selectedDesignNodeId;
+    if (document == null || screenId == null || nodeId == null) return null;
+    return document.findNode(screenId, nodeId);
+  }
+
+  void _handleEngineScreenSelected(String screenId) {
+    final screen = _generatedDesignDocument?.findScreen(screenId);
+    setState(() {
+      _currentScreen = screenId;
+      _selectedDesignScreenId = screenId;
+      _selectedDesignNodeId = screen != null && screen.nodes.isNotEmpty
+          ? screen.nodes.first.id
+          : null;
+    });
+  }
+
+  void _handleEngineNodeSelected(String screenId, String nodeId) {
+    setState(() {
+      _selectedDesignScreenId = screenId;
+      _selectedDesignNodeId = nodeId;
+    });
+  }
+
+  void _applySelectedNodeEdits(DesignNodeSpec updatedNode) {
+    final document = _generatedDesignDocument;
+    final screenId = _selectedDesignScreenId;
+    final nodeId = _selectedDesignNodeId;
+    if (document == null || screenId == null || nodeId == null) return;
+
+    final updatedDocument = document.updateNode(
+      screenId,
+      nodeId,
+      (_) => updatedNode,
+    );
+
+    _syncPrototypeHtmlFromDocument(updatedDocument, activeScreenId: screenId);
+  }
+
+  void _seedSelectionFromDocument(DesignDocument? document) {
+    if (document == null || document.screens.isEmpty) {
+      _selectedDesignScreenId = null;
+      _selectedDesignNodeId = null;
+      return;
+    }
+
+    final firstScreen = document.screens.first;
+    _selectedDesignScreenId = firstScreen.id;
+    _selectedDesignNodeId =
+        firstScreen.nodes.isNotEmpty ? firstScreen.nodes.first.id : null;
+  }
+
+  Future<void> _regenerateSelectedNode() async {
+    final document = _generatedDesignDocument;
+    final screen = _selectedScreenSpec;
+    final node = _selectedNodeSpec;
+    final plan = ref.read(planningProvider).currentPlan;
+    if (document == null || screen == null || node == null) return;
+
+    final hasCredits = await ref.tryUseCredits(
+      context: context,
+      amount: CreditCosts.chatMessage * 2,
+      feature: 'project_prototype_section_regenerate',
+    );
+    if (!hasCredits) return;
+
+    setState(() => _isRegeneratingSection = true);
+
+    try {
+      final prompt = _buildPrototypeNodeRegenerationPrompt(
+        plan: plan,
+        document: document,
+        screen: screen,
+        node: node,
+      );
+
+      final aiNotifier = ref.read(aiProvider.notifier);
+      await aiNotifier.generateContent(prompt, style: ChatStyle.standard);
+
+      final aiState = ref.read(aiProvider);
+      if (aiState.error != null) {
+        throw Exception(aiState.error);
+      }
+
+      final regeneratedNode = _extractRegeneratedNodeFromResponse(
+        aiState.lastResponse ?? '',
+        fallbackNode: node,
+      );
+      if (regeneratedNode == null) {
+        throw Exception('Could not parse regenerated node');
+      }
+
+      final updatedDocument = document.updateNode(
+        screen.id,
+        node.id,
+        (_) => regeneratedNode,
+      );
+
+      await _syncPrototypeHtmlFromDocument(
+        updatedDocument,
+        activeScreenId: screen.id,
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Prototype section regenerated and synced to the HTML preview.',
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to regenerate section: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isRegeneratingSection = false);
+      }
+    }
+  }
+
+  Future<void> _syncPrototypeHtmlFromDocument(
+    DesignDocument document, {
+    String? activeScreenId,
+  }) async {
+    final screenId = activeScreenId ?? _currentScreen;
+    final html = DesignDocumentHtmlBuilder.build(
+      document,
+      title: document.title,
+      initialScreenId: screenId,
+      mobilePrototype: true,
+    );
+
+    if (!mounted) return;
+
+    setState(() {
+      _generatedDesignDocument = document;
+      _fullPrototypeHtml = html;
+      _currentScreen = screenId;
+      _webViewReady = false;
+    });
+
+    await _webViewController?.loadHtmlString(html);
+    await Future.delayed(const Duration(milliseconds: 150));
+    _navigateToScreen(screenId);
   }
 
   /// Analyze project requirements and determine screens to generate
@@ -1515,6 +1771,10 @@ List 5-10 screens that would make a complete prototype.''';
       _isGenerating = true;
       _generationProgress = 0;
       _generationStatus = 'Preparing prototype generation...';
+      _generatedDesignDocument = null;
+      _previewMode = _PrototypePreviewMode.html;
+      _selectedDesignScreenId = null;
+      _selectedDesignNodeId = null;
       // Reset all screens to not generated
       _screens = _screens.map((s) => s.copyWith(isGenerated: false)).toList();
     });
@@ -1541,15 +1801,20 @@ List 5-10 screens that would make a complete prototype.''';
 
       setState(() {
         _generationProgress = 0.8;
-        _generationStatus = 'Processing HTML...';
+        _generationStatus = 'Processing prototype package...';
       });
 
       final response = aiState.lastResponse ?? '';
-      final html = _extractHtmlFromResponse(response);
+      final structuredResponse = _extractStructuredPrototypeResponse(
+        response,
+        plan,
+      );
+      final html = structuredResponse.html;
 
       if (html.isNotEmpty) {
         setState(() {
           _fullPrototypeHtml = html;
+          _generatedDesignDocument = structuredResponse.document;
           _generationProgress = 0.9;
           _generationStatus = 'Loading preview...';
           // Mark all screens as generated
@@ -1557,6 +1822,10 @@ List 5-10 screens that would make a complete prototype.''';
               _screens.map((s) => s.copyWith(isGenerated: true)).toList();
           _currentScreen = _screens.first.id;
           _webViewReady = false;
+          if (structuredResponse.document != null) {
+            _previewMode = _PrototypePreviewMode.engine;
+            _seedSelectionFromDocument(structuredResponse.document);
+          }
         });
 
         await _webViewController?.loadHtmlString(html);
@@ -1667,7 +1936,7 @@ List 5-10 screens that would make a complete prototype.''';
         shadowCSS = '0 2px 12px rgba(0,0,0,0.06)';
     }
 
-    return '''Generate a PROFESSIONAL mobile app prototype with polished UI.
+    return '''Generate a PROFESSIONAL mobile app prototype package with polished UI.
 
 **Project:** ${plan?.title ?? 'Project'}
 **Description:** ${plan?.description ?? ''}
@@ -1689,7 +1958,29 @@ ${_screens.toList().asMap().entries.map((e) => '${e.key + 1}. ${e.value.id}: ${e
 4. Use the CSS classes provided
 5. Navigation: navigateTo('screenId')
 
-**COMPLETE HTML:**
+Return EXACTLY two tagged sections and nothing else:
+
+[[NOTECLAW_DESIGN_SPEC_JSON]]
+{valid JSON}
+[[/NOTECLAW_DESIGN_SPEC_JSON]]
+[[NOTECLAW_HTML]]
+<!DOCTYPE html>...full html...
+</html>
+[[/NOTECLAW_HTML]]
+
+**JSON Rules:**
+- The JSON root must contain: schemaVersion, title, summary, theme, screens
+- theme fields: style, primaryColor, secondaryColor, accentColor, backgroundColor, surfaceColor, textColor, radius
+- screens must contain exactly ${_screens.length} entries
+- preserve these screen ids and names exactly:
+${_screens.map((screen) => '- ${screen.id}: ${screen.name}').join('\n')}
+- each screen must contain: id, name, description, nodes
+- supported node types only: hero, stats_row, card_list, feature_grid, action_bar, form, timeline, quote, content, cta
+- each node may contain: id, type, title, subtitle, body, label, value, icon, variant, items
+- each item may contain: title, subtitle, label, value, meta, icon, tags
+- the structured spec should reflect the same UI/content as the HTML prototype
+
+**HTML Template:**
 
 <!DOCTYPE html>
 <html lang="en">
@@ -1840,7 +2131,7 @@ $screenDivs
 </body>
 </html>
 
-**TASK:** Replace <!-- GENERATE_CONTENT_FOR: ... --> with REAL UI content using the CSS classes. Return ONLY complete HTML.''';
+**TASK:** Replace <!-- GENERATE_CONTENT_FOR: ... --> with REAL UI content using the CSS classes and make the HTML match the JSON screen spec.''';
   }
 
   String _extractHtmlFromResponse(String response) {
@@ -1879,6 +2170,254 @@ $screenDivs
     }
 
     return html.trim();
+  }
+
+  _StructuredPrototypeResponse _extractStructuredPrototypeResponse(
+    String response,
+    dynamic plan,
+  ) {
+    final jsonBlock = _extractTaggedBlock(
+      response,
+      '[[NOTECLAW_DESIGN_SPEC_JSON]]',
+      '[[/NOTECLAW_DESIGN_SPEC_JSON]]',
+    );
+    final htmlBlock = _extractTaggedBlock(
+      response,
+      '[[NOTECLAW_HTML]]',
+      '[[/NOTECLAW_HTML]]',
+    );
+
+    DesignDocument? document;
+    if (jsonBlock != null && jsonBlock.trim().isNotEmpty) {
+      try {
+        var normalizedJson = jsonBlock.trim();
+        if (normalizedJson.startsWith('```json') &&
+            normalizedJson.endsWith('```')) {
+          normalizedJson =
+              normalizedJson.substring(7, normalizedJson.length - 3).trim();
+        } else if (normalizedJson.startsWith('```') &&
+            normalizedJson.endsWith('```')) {
+          normalizedJson =
+              normalizedJson.substring(3, normalizedJson.length - 3).trim();
+        }
+
+        final decoded = jsonDecode(normalizedJson);
+        if (decoded is Map) {
+          document =
+              DesignDocument.fromJson(Map<String, dynamic>.from(decoded));
+        }
+      } catch (_) {
+        document = null;
+      }
+    }
+
+    document ??= _buildFallbackPrototypeDocument(plan);
+
+    final html = _extractHtmlFromResponse(
+      htmlBlock != null && htmlBlock.trim().isNotEmpty ? htmlBlock : response,
+    );
+
+    return _StructuredPrototypeResponse(
+      html: html,
+      document: document,
+    );
+  }
+
+  String? _extractTaggedBlock(String text, String startTag, String endTag) {
+    final startIndex = text.indexOf(startTag);
+    final endIndex = text.indexOf(endTag);
+    if (startIndex == -1 || endIndex == -1 || endIndex <= startIndex) {
+      return null;
+    }
+    return text.substring(startIndex + startTag.length, endIndex).trim();
+  }
+
+  DesignDocument _buildFallbackPrototypeDocument(dynamic plan) {
+    final title = plan?.title?.toString() ?? 'Generated Prototype';
+    final summary = plan?.description?.toString() ?? '';
+
+    return DesignDocument(
+      schemaVersion: 1,
+      title: title,
+      summary: summary,
+      theme: _buildPrototypeTheme(),
+      screens: _screens.asMap().entries.map((entry) {
+        final index = entry.key;
+        final screen = entry.value;
+        return DesignScreenSpec(
+          id: screen.id,
+          name: screen.name,
+          description: screen.description,
+          nodes: [
+            DesignNodeSpec(
+              id: '${screen.id}_hero',
+              type: 'hero',
+              title: screen.name,
+              subtitle: screen.description,
+              body: summary.isNotEmpty
+                  ? 'Designed as part of $title.'
+                  : 'Structured fallback preview for ${screen.name}.',
+              label: index == 0 ? 'Primary Screen' : 'Prototype Screen',
+              value: '',
+              icon: '',
+              variant: '',
+              items: [
+                DesignNodeItem(
+                  title: index == 0 ? 'Open Screen' : 'View Details',
+                  subtitle: '',
+                  label: '',
+                  value: '',
+                  meta: '',
+                  icon: '',
+                  tags: const [],
+                ),
+                const DesignNodeItem(
+                  title: 'Next Step',
+                  subtitle: '',
+                  label: '',
+                  value: '',
+                  meta: '',
+                  icon: '',
+                  tags: [],
+                ),
+              ],
+              children: const [],
+              props: const {},
+            ),
+            DesignNodeSpec(
+              id: '${screen.id}_content',
+              type: index == 0 ? 'feature_grid' : 'content',
+              title: index == 0 ? 'Core Areas' : 'Screen Purpose',
+              subtitle: '',
+              body: index == 0 ? '' : screen.description,
+              label: '',
+              value: '',
+              icon: '',
+              variant: '',
+              items: index == 0
+                  ? _screens
+                      .take(4)
+                      .map(
+                        (item) => DesignNodeItem(
+                          title: item.name,
+                          subtitle: item.description,
+                          label: '',
+                          value: '',
+                          meta: '',
+                          icon: '',
+                          tags: const [],
+                        ),
+                      )
+                      .toList()
+                  : [
+                      DesignNodeItem(
+                        title: 'Goal',
+                        subtitle: screen.description,
+                        label: '',
+                        value: '',
+                        meta: '',
+                        icon: '',
+                        tags: const [],
+                      ),
+                    ],
+              children: const [],
+              props: const {},
+            ),
+          ],
+        );
+      }).toList(),
+    );
+  }
+
+  DesignThemeSpec _buildPrototypeTheme() {
+    final design = _aiDesignSystem;
+    return DesignThemeSpec(
+      style: design?.style ?? 'modern',
+      primaryColor: design?.primaryColor ?? '#6366F1',
+      secondaryColor: design?.secondaryColor ?? '#8B5CF6',
+      accentColor: design?.accentColor ?? '#F59E0B',
+      backgroundColor: design?.backgroundColor ?? '#F8FAFC',
+      surfaceColor: design?.cardColor ?? '#FFFFFF',
+      textColor: design?.textColor ?? '#1E293B',
+      radius: _parseRadiusValue(design?.borderRadius),
+    );
+  }
+
+  double _parseRadiusValue(String? value) {
+    if (value == null || value.trim().isEmpty) return 16;
+    final parsed = double.tryParse(value.replaceAll('px', '').trim());
+    return parsed ?? 16;
+  }
+
+  String _buildPrototypeNodeRegenerationPrompt({
+    required dynamic plan,
+    required DesignDocument document,
+    required DesignScreenSpec screen,
+    required DesignNodeSpec node,
+  }) {
+    final projectTitle = plan?.title?.toString() ?? 'Project';
+    final projectDescription = plan?.description?.toString() ?? '';
+    final screenSummary = _screens
+        .map((item) => '- ${item.id}: ${item.name} - ${item.description}')
+        .join('\n');
+
+    return '''Rewrite one structured node for a mobile app prototype.
+
+**Project:** $projectTitle
+**Description:** $projectDescription
+
+**Theme JSON:**
+${jsonEncode(document.theme.toJson())}
+
+**Prototype Screens:**
+$screenSummary
+
+**Selected Screen JSON:**
+${jsonEncode(screen.toJson())}
+
+**Current Node JSON:**
+${jsonEncode(node.toJson())}
+
+**Task:**
+- Rewrite ONLY the selected node to feel more realistic, polished, and product-ready
+- Preserve the same node `id`
+- Preserve the same node `type`
+- Keep the content aligned with the selected screen and overall project
+- You may improve: title, subtitle, body, label, value, icon, variant, items, props
+- If the node uses items, return realistic items that fit the prototype context
+
+Return ONLY one valid JSON object for the rewritten node.
+Do not include markdown, explanations, or code fences.''';
+  }
+
+  DesignNodeSpec? _extractRegeneratedNodeFromResponse(
+    String response, {
+    required DesignNodeSpec fallbackNode,
+  }) {
+    var normalized = response.trim();
+    if (normalized.startsWith('```json') && normalized.endsWith('```')) {
+      normalized = normalized.substring(7, normalized.length - 3).trim();
+    } else if (normalized.startsWith('```') && normalized.endsWith('```')) {
+      normalized = normalized.substring(3, normalized.length - 3).trim();
+    }
+
+    final firstBrace = normalized.indexOf('{');
+    final lastBrace = normalized.lastIndexOf('}');
+    if (firstBrace >= 0 && lastBrace > firstBrace) {
+      normalized = normalized.substring(firstBrace, lastBrace + 1);
+    }
+
+    try {
+      final decoded = jsonDecode(normalized);
+      if (decoded is! Map) return null;
+      final mergedJson = Map<String, dynamic>.from(fallbackNode.toJson())
+        ..addAll(Map<String, dynamic>.from(decoded))
+        ..['id'] = fallbackNode.id
+        ..['type'] = fallbackNode.type;
+      return DesignNodeSpec.fromJson(mergedJson);
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> _captureScreenshot() async {
@@ -2005,20 +2544,79 @@ $codeBlockEnd
 *This is a fully interactive prototype. Open the HTML file in a browser to navigate between screens.*
 ''';
 
-      // Save as design note
-      await ref.read(planningProvider.notifier).createDesignNote(
+      final planning = ref.read(planningProvider.notifier);
+      final generatedAt = DateTime.now().toIso8601String();
+      final designDocumentJson = _generatedDesignDocument?.toJson();
+
+      final designNote = await planning.createDesignNote(
         content: designContent,
         requirementIds: [],
       );
+      final designArtifact = await planning.createDesignArtifact(
+        name: 'Interactive Prototype',
+        artifactType: DesignArtifactType.prototype,
+        status: DesignArtifactStatus.ready,
+        source: DesignArtifactSource.aiGenerated,
+        schemaVersion: designDocumentJson != null ? 2 : 1,
+        rootData: {
+          'format': designDocumentJson != null ? 'structured_html' : 'html',
+          'html': _fullPrototypeHtml,
+          if (designDocumentJson != null) 'document': designDocumentJson,
+          'screens': _screens
+              .map(
+                (screen) => {
+                  'id': screen.id,
+                  'name': screen.name,
+                  'description': screen.description,
+                  'isGenerated': screen.isGenerated,
+                  if (screen.html != null) 'html': screen.html,
+                },
+              )
+              .toList(),
+          'designSystem': {
+            'style': _aiDesignSystem?.style,
+            'primaryColor': _aiDesignSystem?.primaryColor,
+            'secondaryColor': _aiDesignSystem?.secondaryColor,
+            'accentColor': _aiDesignSystem?.accentColor,
+            'backgroundColor': _aiDesignSystem?.backgroundColor,
+            'textColor': _aiDesignSystem?.textColor,
+            'cardColor': _aiDesignSystem?.cardColor,
+            'fontFamily': _aiDesignSystem?.fontFamily,
+            'borderRadius': _aiDesignSystem?.borderRadius,
+            'shadowStyle': _aiDesignSystem?.shadowStyle,
+            'reasoning': _aiDesignSystem?.reasoning,
+          },
+        },
+        metadata: {
+          'generatedAt': generatedAt,
+          'screenCount': _screens.length,
+          'screenshotPath': screenshotPath,
+          'hasStructuredPreview': designDocumentJson != null,
+        },
+        changeSummary: designDocumentJson != null
+            ? 'Initial AI-generated interactive prototype with structured screen spec'
+            : 'Initial AI-generated interactive prototype',
+      );
+
+      if (designNote == null && designArtifact == null) {
+        throw Exception('Failed to save prototype outputs');
+      }
 
       if (mounted) {
+        final savedBoth = designNote != null && designArtifact != null;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Row(
               children: [
                 const Icon(LucideIcons.check, color: Colors.white, size: 18),
                 const SizedBox(width: 8),
-                Text('Prototype saved with ${_screens.length} screens!'),
+                Expanded(
+                  child: Text(
+                    savedBoth
+                        ? 'Prototype saved with ${_screens.length} screens.'
+                        : 'Prototype saved partially. Check plan outputs.',
+                  ),
+                ),
               ],
             ),
             backgroundColor: Colors.green,

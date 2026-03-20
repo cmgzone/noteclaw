@@ -14,6 +14,8 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'youtube_player_dialog.dart';
 import '../subscription/services/credit_manager.dart';
 import '../../ui/widgets/app_network_image.dart';
+import '../home/create_notebook_dialog.dart';
+import '../notebook/notebook_provider.dart';
 
 class WebSearchScreen extends ConsumerStatefulWidget {
   const WebSearchScreen({super.key});
@@ -27,8 +29,7 @@ class _WebSearchScreenState extends ConsumerState<WebSearchScreen> {
   static const _deepResearchHistoryKey = 'deep_research_history_v1';
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocus = FocusNode();
-  final TextEditingController _filterDomainController =
-      TextEditingController();
+  final TextEditingController _filterDomainController = TextEditingController();
   bool _isDeepResearch = false;
   bool _isResearching = false;
   List<ResearchUpdate> _researchUpdates = [];
@@ -38,6 +39,7 @@ class _WebSearchScreenState extends ConsumerState<WebSearchScreen> {
   // New feature states
   ResearchDepth _selectedDepth = ResearchDepth.standard;
   ResearchTemplate _selectedTemplate = ResearchTemplate.general;
+  String? _selectedResearchNotebookId;
 
   // Streaming state for live site icons (matching deep_research_screen)
   final List<String> _searchedSites = [];
@@ -141,7 +143,9 @@ class _WebSearchScreenState extends ConsumerState<WebSearchScreen> {
       if (!hasCredits) return;
 
       try {
-        await ref.read(searchProvider.notifier).search(query, type: _searchType);
+        await ref
+            .read(searchProvider.notifier)
+            .search(query, type: _searchType);
         final latestState = ref.read(searchProvider);
         if (latestState.status == SearchStatus.success) {
           await _saveWebSearchHistory(query, _searchType);
@@ -149,7 +153,9 @@ class _WebSearchScreenState extends ConsumerState<WebSearchScreen> {
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Search failed: ${_getFriendlyErrorMessage(e.toString())}')),
+            SnackBar(
+                content: Text(
+                    'Search failed: ${_getFriendlyErrorMessage(e.toString())}')),
           );
         }
       }
@@ -181,7 +187,7 @@ class _WebSearchScreenState extends ConsumerState<WebSearchScreen> {
         .read(deepResearchServiceProvider)
         .research(
           query: query,
-          notebookId: '',
+          notebookId: _selectedResearchNotebookId ?? '',
           depth: _selectedDepth,
           template: _selectedTemplate,
         )
@@ -254,8 +260,8 @@ class _WebSearchScreenState extends ConsumerState<WebSearchScreen> {
 
     if (webHistoryRaw != null && webHistoryRaw.isNotEmpty) {
       try {
-        final list = (jsonDecode(webHistoryRaw) as List)
-            .cast<Map<String, dynamic>>();
+        final list =
+            (jsonDecode(webHistoryRaw) as List).cast<Map<String, dynamic>>();
         loadedWeb = list
             .map(_WebSearchHistoryItem.fromJson)
             .where((item) => item.query.trim().isNotEmpty)
@@ -265,8 +271,8 @@ class _WebSearchScreenState extends ConsumerState<WebSearchScreen> {
 
     if (deepHistoryRaw != null && deepHistoryRaw.isNotEmpty) {
       try {
-        final list = (jsonDecode(deepHistoryRaw) as List)
-            .cast<Map<String, dynamic>>();
+        final list =
+            (jsonDecode(deepHistoryRaw) as List).cast<Map<String, dynamic>>();
         loadedDeep = list
             .map(_DeepResearchHistoryItem.fromJson)
             .where((item) => item.query.trim().isNotEmpty)
@@ -292,9 +298,8 @@ class _WebSearchScreenState extends ConsumerState<WebSearchScreen> {
         timestamp: DateTime.now(),
       ),
       ..._webSearchHistory.where(
-        (item) =>
-            !(item.query.toLowerCase() == normalizedQuery.toLowerCase() &&
-                item.searchType == type.name),
+        (item) => !(item.query.toLowerCase() == normalizedQuery.toLowerCase() &&
+            item.searchType == type.name),
       ),
     ].take(20).toList();
 
@@ -328,10 +333,9 @@ class _WebSearchScreenState extends ConsumerState<WebSearchScreen> {
         timestamp: DateTime.now(),
       ),
       ..._deepResearchHistory.where(
-        (item) =>
-            !(item.query.toLowerCase() == normalizedQuery.toLowerCase() &&
-                item.depth == depth.name &&
-                item.template == template.name),
+        (item) => !(item.query.toLowerCase() == normalizedQuery.toLowerCase() &&
+            item.depth == depth.name &&
+            item.template == template.name),
       ),
     ].take(20).toList();
 
@@ -602,11 +606,254 @@ $content''',
     return error.replaceAll('Exception:', '').trim();
   }
 
+  List<ResearchSource> _currentResearchSources() {
+    if (_finalResult?.sources != null && _finalResult!.sources!.isNotEmpty) {
+      return _finalResult!.sources!;
+    }
+
+    for (final update in _researchUpdates.reversed) {
+      if (update.sources != null && update.sources!.isNotEmpty) {
+        return update.sources!;
+      }
+    }
+
+    return const [];
+  }
+
+  String _notebookTitleFor(String notebookId) {
+    final notebooks = ref.read(notebookProvider);
+    for (final notebook in notebooks) {
+      if (notebook.id == notebookId) {
+        return notebook.title;
+      }
+    }
+    return 'selected notebook';
+  }
+
+  Future<void> _showCreateNotebookDialog() async {
+    await showDialog<void>(
+      context: context,
+      builder: (_) => const CreateNotebookDialog(initialCategory: 'Research'),
+    );
+  }
+
+  Future<String?> _showNotebookPicker() async {
+    final notebooks = ref.read(notebookProvider);
+
+    if (notebooks.isEmpty) {
+      if (!mounted) return null;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(
+            'Create a notebook first to save deep research as sources.',
+          ),
+          action: SnackBarAction(
+            label: 'Create',
+            onPressed: _showCreateNotebookDialog,
+          ),
+        ),
+      );
+      return null;
+    }
+
+    return showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) {
+        final scheme = Theme.of(context).colorScheme;
+        final text = Theme.of(context).textTheme;
+
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Choose notebook', style: text.titleLarge),
+                const SizedBox(height: 8),
+                Text(
+                  'Pick where you want to save this research.',
+                  style: text.bodyMedium?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Flexible(
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: notebooks.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 8),
+                    itemBuilder: (context, index) {
+                      final notebook = notebooks[index];
+                      final isSelected =
+                          notebook.id == _selectedResearchNotebookId;
+
+                      return Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(16),
+                          onTap: () => Navigator.pop(context, notebook.id),
+                          child: Container(
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: isSelected
+                                  ? scheme.primaryContainer
+                                  : scheme.surfaceContainerHighest,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: isSelected
+                                    ? scheme.primary
+                                    : scheme.outline.withValues(alpha: 0.15),
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.book_outlined,
+                                  color: isSelected
+                                      ? scheme.primary
+                                      : scheme.onSurfaceVariant,
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        notebook.title,
+                                        style: text.titleMedium?.copyWith(
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        '${notebook.sourceCount} sources',
+                                        style: text.bodySmall?.copyWith(
+                                          color: scheme.onSurfaceVariant,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                if (isSelected)
+                                  Icon(Icons.check_circle,
+                                      color: scheme.primary),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      _showCreateNotebookDialog();
+                    },
+                    icon: const Icon(Icons.add),
+                    label: const Text('Create Notebook'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<String?> _ensureResearchNotebookSelected() async {
+    if (_selectedResearchNotebookId != null &&
+        _selectedResearchNotebookId!.isNotEmpty) {
+      return _selectedResearchNotebookId;
+    }
+
+    final notebookId = await _showNotebookPicker();
+    if (notebookId != null && mounted) {
+      setState(() {
+        _selectedResearchNotebookId = notebookId;
+      });
+    }
+    return notebookId;
+  }
+
+  Future<void> _addResearchSourcesAsSources() async {
+    final notebookId = await _ensureResearchNotebookSelected();
+    if (notebookId == null) return;
+
+    final sources = _currentResearchSources();
+    if (sources.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No research sources available to save.')),
+      );
+      return;
+    }
+
+    int savedCount = 0;
+
+    for (final source in sources) {
+      try {
+        final sourceTitle = source.title.trim().isEmpty
+            ? (Uri.tryParse(source.url)?.host ?? 'Research source')
+            : source.title.trim();
+
+        final sourceContent = [
+          'Title: $sourceTitle',
+          'URL: ${source.url}',
+          if ((source.snippet ?? '').trim().isNotEmpty) ...[
+            '',
+            'Snippet:',
+            source.snippet!.trim(),
+          ],
+          if (source.content.trim().isNotEmpty) ...[
+            '',
+            'Content:',
+            source.content.trim(),
+          ],
+        ].join('\n');
+
+        await ref.read(sourceProvider.notifier).addSource(
+              title: sourceTitle,
+              type: 'web',
+              content: sourceContent,
+              url: source.url,
+              notebookId: notebookId,
+            );
+        savedCount++;
+      } catch (_) {
+        continue;
+      }
+    }
+
+    if (!mounted) return;
+
+    final notebookTitle = _notebookTitleFor(notebookId);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Saved $savedCount of ${sources.length} research sources to "$notebookTitle".',
+        ),
+        action: SnackBarAction(
+          label: 'Open',
+          onPressed: () => context.push('/notebook/$notebookId'),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
     final searchState = ref.watch(searchProvider);
+    final notebooks = ref.watch(notebookProvider);
     final filteredResults = _applyFilters(searchState.results);
 
     return Scaffold(
@@ -793,6 +1040,67 @@ $content''',
                       ],
                     ),
                   ),
+                  const SizedBox(height: 12),
+                  if (notebooks.isEmpty)
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton.icon(
+                        onPressed: _showCreateNotebookDialog,
+                        icon: const Icon(Icons.add),
+                        label: const Text('Create notebook to save research'),
+                      ),
+                    )
+                  else
+                    DropdownButtonFormField<String?>(
+                      initialValue: _selectedResearchNotebookId,
+                      decoration: const InputDecoration(
+                        labelText: 'Save research to notebook',
+                        hintText: 'Choose a notebook now or when saving',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.book_outlined),
+                      ),
+                      style: TextStyle(color: scheme.onSurface),
+                      dropdownColor: scheme.surfaceContainer,
+                      items: [
+                        DropdownMenuItem(
+                          value: null,
+                          child: Text(
+                            'Ask me when saving',
+                            style: TextStyle(color: scheme.onSurface),
+                          ),
+                        ),
+                        ...notebooks.map(
+                          (notebook) => DropdownMenuItem(
+                            value: notebook.id,
+                            child: Text(
+                              notebook.title,
+                              style: TextStyle(color: scheme.onSurface),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ),
+                      ],
+                      onChanged: (value) {
+                        setState(() {
+                          _selectedResearchNotebookId = value;
+                        });
+                      },
+                      selectedItemBuilder: (context) {
+                        return [
+                          Text(
+                            'Ask me when saving',
+                            style: TextStyle(color: scheme.onSurface),
+                          ),
+                          ...notebooks.map(
+                            (notebook) => Text(
+                              notebook.title,
+                              style: TextStyle(color: scheme.onSurface),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ];
+                      },
+                    ),
                 ],
               ),
             ).animate().slideY(begin: 0.2, delay: 120.ms).fadeIn(),
@@ -1034,8 +1342,7 @@ $content''',
                 ),
               ),
             )
-          else if (searchState.results.isNotEmpty &&
-              filteredResults.isEmpty)
+          else if (searchState.results.isNotEmpty && filteredResults.isEmpty)
             Expanded(
               child: Center(
                 child: Column(
@@ -1585,10 +1892,25 @@ $content''',
             const SizedBox(height: 16),
             if (_finalResult!.result != null &&
                 _finalResult!.result!.isNotEmpty)
-              ElevatedButton.icon(
-                onPressed: () => _addReportAsSource(_finalResult!),
-                icon: const Icon(Icons.add),
-                label: const Text('Add Report to Notebook'),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  ElevatedButton.icon(
+                    onPressed: () => _addReportAsSource(_finalResult!),
+                    icon: const Icon(Icons.save_outlined),
+                    label: const Text('Save Report to Notebook'),
+                  ),
+                  if (_currentResearchSources().isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    OutlinedButton.icon(
+                      onPressed: _addResearchSourcesAsSources,
+                      icon: const Icon(Icons.library_add_outlined),
+                      label: Text(
+                        'Save ${_currentResearchSources().length} Sources to Notebook',
+                      ),
+                    ),
+                  ],
+                ],
               ),
             const SizedBox(height: 24),
             if (((_finalResult?.images ?? _researchUpdates.last.images) ?? [])
@@ -1598,10 +1920,10 @@ $content''',
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
-                children: ((_finalResult?.images ??
-                            _researchUpdates.last.images) ??
-                        [])
-                    .map((url) {
+                children:
+                    ((_finalResult?.images ?? _researchUpdates.last.images) ??
+                            [])
+                        .map((url) {
                   return InkWell(
                     onTap: () => _showDeepResearchImagePreview(context, url),
                     child: ClipRRect(
@@ -1780,17 +2102,27 @@ $content''',
   }
 
   void _addReportAsSource(ResearchUpdate result) async {
+    final notebookId = await _ensureResearchNotebookSelected();
+    if (notebookId == null) return;
+
     await ref.read(sourceProvider.notifier).addSource(
           title: 'Research: ${_searchController.text}',
           type: 'report',
           content: result.result!,
+          notebookId: notebookId,
         );
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Report added to notebook')),
-      );
-      context.go('/sources');
-    }
+    if (!mounted) return;
+
+    final notebookTitle = _notebookTitleFor(notebookId);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Report saved to "$notebookTitle".'),
+        action: SnackBarAction(
+          label: 'Open',
+          onPressed: () => context.push('/notebook/$notebookId'),
+        ),
+      ),
+    );
   }
 
   void _showImagePreview(BuildContext context, SerperSearchResult result) {

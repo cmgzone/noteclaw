@@ -5,7 +5,7 @@ import { activityFeedService } from './activityFeedService.js';
 export interface SharedContent {
   id: string;
   userId: string;
-  contentType: 'notebook' | 'plan';
+  contentType: 'notebook' | 'plan' | 'ebook';
   contentId: string;
   caption?: string;
   isPublic: boolean;
@@ -59,13 +59,31 @@ export interface DiscoverablePlan {
   userLiked?: boolean;
 }
 
+export interface DiscoverableEbook {
+  id: string;
+  userId: string;
+  title: string;
+  topic?: string;
+  targetAudience?: string;
+  coverImage?: string;
+  chapterCount: number;
+  viewCount: number;
+  shareCount: number;
+  isPublic: boolean;
+  createdAt: Date;
+  username?: string;
+  avatarUrl?: string;
+  likeCount?: number;
+  userLiked?: boolean;
+}
+
 export const socialSharingService = {
   // =====================================================
   // Share Content to Social Feed
   // =====================================================
   async shareContent(data: {
     userId: string;
-    contentType: 'notebook' | 'plan';
+    contentType: 'notebook' | 'plan' | 'ebook';
     contentId: string;
     caption?: string;
     isPublic?: boolean;
@@ -74,8 +92,21 @@ export const socialSharingService = {
 
     // Verify ownership
     const ownershipCheck = contentType === 'notebook'
-      ? await pool.query('SELECT id, title FROM notebooks WHERE id = $1 AND user_id = $2', [contentId, userId])
-      : await pool.query('SELECT id, title FROM plans WHERE id = $1 AND user_id = $2', [contentId, userId]);
+      ? await pool.query(
+          'SELECT id, title FROM notebooks WHERE id = $1 AND user_id = $2',
+          [contentId, userId]
+        )
+      : contentType === 'plan'
+          ? await pool.query(
+              'SELECT id, title FROM plans WHERE id = $1 AND user_id = $2',
+              [contentId, userId]
+            )
+          : await pool.query(
+              `SELECT id, title
+               FROM ebook_projects
+               WHERE id::text = $1 AND user_id = $2 AND status = 'completed'`,
+              [contentId, userId]
+            );
 
     if (ownershipCheck.rows.length === 0) {
       throw new Error(`${contentType} not found or not owned by user`);
@@ -98,9 +129,14 @@ export const socialSharingService = {
         'UPDATE notebooks SET share_count = share_count + 1, is_public = $2, updated_at = NOW() WHERE id = $1',
         [contentId, isPublic]
       );
-    } else {
+    } else if (contentType === 'plan') {
       await pool.query(
         'UPDATE plans SET share_count = share_count + 1, is_public = $2, updated_at = NOW() WHERE id = $1',
+        [contentId, isPublic]
+      );
+    } else {
+      await pool.query(
+        'UPDATE ebook_projects SET share_count = share_count + 1, is_public = $2, updated_at = NOW() WHERE id::text = $1',
         [contentId, isPublic]
       );
     }
@@ -126,7 +162,7 @@ export const socialSharingService = {
   async getSocialFeed(userId: string, options: {
     limit?: number;
     offset?: number;
-    contentType?: 'notebook' | 'plan' | 'all';
+    contentType?: 'notebook' | 'plan' | 'ebook' | 'all';
   } = {}): Promise<SharedContent[]> {
     const { limit = 20, offset = 0, contentType = 'all' } = options;
 
@@ -138,10 +174,12 @@ export const socialSharingService = {
         CASE 
           WHEN sc.content_type = 'notebook' THEN (SELECT title FROM notebooks WHERE id = sc.content_id::text)
           WHEN sc.content_type = 'plan' THEN (SELECT title FROM plans WHERE id = sc.content_id)
+          WHEN sc.content_type = 'ebook' THEN (SELECT title FROM ebook_projects WHERE id::text = sc.content_id::text)
         END as content_title,
         CASE 
           WHEN sc.content_type = 'notebook' THEN (SELECT description FROM notebooks WHERE id = sc.content_id::text)
           WHEN sc.content_type = 'plan' THEN (SELECT description FROM plans WHERE id = sc.content_id)
+          WHEN sc.content_type = 'ebook' THEN (SELECT topic FROM ebook_projects WHERE id::text = sc.content_id::text)
         END as content_description,
         (SELECT COUNT(*) FROM content_likes WHERE content_type = 'shared_content' AND content_id = sc.id) as like_count,
         (SELECT COUNT(*) FROM content_saves WHERE content_type = 'shared_content' AND content_id = sc.id) as save_count,
@@ -267,6 +305,68 @@ export const socialSharingService = {
   },
 
   // =====================================================
+  // Discover Public Ebooks
+  // =====================================================
+  async discoverEbooks(userId: string, options: {
+    limit?: number;
+    offset?: number;
+    search?: string;
+    sortBy?: 'recent' | 'popular' | 'views';
+  } = {}): Promise<DiscoverableEbook[]> {
+    const { limit = 20, offset = 0, search, sortBy = 'recent' } = options;
+
+    let orderBy = 'ep.created_at DESC';
+    if (sortBy === 'popular') orderBy = 'like_count DESC, ep.view_count DESC';
+    if (sortBy === 'views') orderBy = 'ep.view_count DESC';
+
+    const params: any[] = [userId, limit, offset];
+    let paramIndex = 4;
+    let whereClause = `WHERE ep.is_public = true AND ep.status = 'completed'`;
+
+    if (search) {
+      whereClause += ` AND (
+        ep.title ILIKE $${paramIndex}
+        OR ep.topic ILIKE $${paramIndex}
+        OR ep.target_audience ILIKE $${paramIndex}
+      )`;
+      params.push(`%${search}%`);
+      paramIndex++;
+    }
+
+    const result = await pool.query(`
+      SELECT
+        ep.id,
+        ep.user_id,
+        ep.title,
+        ep.topic,
+        ep.target_audience,
+        ep.cover_image,
+        ep.view_count,
+        ep.share_count,
+        ep.is_public,
+        ep.created_at,
+        u.display_name as username,
+        u.avatar_url,
+        (SELECT COUNT(*) FROM ebook_chapters WHERE project_id::text = ep.id::text) as chapter_count,
+        (SELECT COUNT(*) FROM content_likes WHERE content_type = 'ebook' AND content_id::text = ep.id::text) as like_count,
+        EXISTS(
+          SELECT 1
+          FROM content_likes
+          WHERE content_type = 'ebook'
+            AND content_id::text = ep.id::text
+            AND user_id = $1
+        ) as user_liked
+      FROM ebook_projects ep
+      JOIN users u ON u.id = ep.user_id
+      ${whereClause}
+      ORDER BY ${orderBy}
+      LIMIT $2 OFFSET $3
+    `, params);
+
+    return result.rows;
+  },
+
+  // =====================================================
   // Toggle Notebook Public/Private
   // =====================================================
   async setNotebookPublic(notebookId: string, userId: string, isPublic: boolean): Promise<void> {
@@ -309,11 +409,60 @@ export const socialSharingService = {
   // Record View
   // =====================================================
   async recordView(contentType: string, contentId: string, viewerId?: string, viewerIp?: string): Promise<boolean> {
-    const result = await pool.query(
-      'SELECT increment_view_count($1, $2, $3, $4) as recorded',
-      [contentType, contentId, viewerId, viewerIp]
-    );
-    return result.rows[0]?.recorded || false;
+    const normalizedViewerId = typeof viewerId === 'string' && viewerId.trim().length > 0
+      ? viewerId.trim()
+      : null;
+
+    let inserted = false;
+
+    if (normalizedViewerId) {
+      const insertResult = await pool.query(`
+        INSERT INTO content_views (content_type, content_id, viewer_id, viewer_ip)
+        VALUES ($1, $2::uuid, $3, $4)
+        ON CONFLICT DO NOTHING
+        RETURNING id
+      `, [contentType, contentId, normalizedViewerId, viewerIp ?? null]);
+
+      inserted = insertResult.rows.length > 0;
+    } else {
+      const insertResult = await pool.query(`
+        INSERT INTO content_views (content_type, content_id, viewer_id, viewer_ip)
+        VALUES ($1, $2::uuid, NULL, $3)
+        RETURNING id
+      `, [contentType, contentId, viewerIp ?? null]);
+
+      inserted = insertResult.rows.length > 0;
+    }
+
+    if (!inserted) {
+      return false;
+    }
+
+    if (contentType === 'notebook') {
+      await pool.query(
+        'UPDATE notebooks SET view_count = view_count + 1 WHERE id = $1::uuid',
+        [contentId]
+      );
+    } else if (contentType === 'plan') {
+      await pool.query(
+        'UPDATE plans SET view_count = view_count + 1 WHERE id = $1::uuid',
+        [contentId]
+      );
+    } else if (contentType === 'ebook') {
+      await pool.query(
+        'UPDATE ebook_projects SET view_count = view_count + 1 WHERE id = $1::uuid',
+        [contentId]
+      );
+    } else if (contentType === 'shared_content') {
+      await pool.query(
+        'UPDATE shared_content SET view_count = view_count + 1 WHERE id = $1::uuid',
+        [contentId]
+      );
+    } else {
+      throw new Error(`Unsupported content type for view tracking: ${contentType}`);
+    }
+
+    return true;
   },
 
   // =====================================================
@@ -400,11 +549,13 @@ export const socialSharingService = {
         CASE 
           WHEN cs.content_type = 'notebook' THEN (SELECT title FROM notebooks WHERE id = cs.content_id::text)
           WHEN cs.content_type = 'plan' THEN (SELECT title FROM plans WHERE id = cs.content_id)
+          WHEN cs.content_type = 'ebook' THEN (SELECT title FROM ebook_projects WHERE id::text = cs.content_id::text)
           WHEN cs.content_type = 'shared_content' THEN (SELECT caption FROM shared_content WHERE id = cs.content_id)
         END as content_title,
         CASE 
           WHEN cs.content_type = 'notebook' THEN (SELECT user_id FROM notebooks WHERE id = cs.content_id::text)
           WHEN cs.content_type = 'plan' THEN (SELECT user_id FROM plans WHERE id = cs.content_id)
+          WHEN cs.content_type = 'ebook' THEN (SELECT user_id FROM ebook_projects WHERE id::text = cs.content_id::text)
           WHEN cs.content_type = 'shared_content' THEN (SELECT user_id FROM shared_content WHERE id = cs.content_id)
         END as owner_id
       FROM content_saves cs
@@ -436,15 +587,20 @@ export const socialSharingService = {
         (SELECT COUNT(*) FROM plans WHERE user_id = $1) as total_plans,
         (SELECT COUNT(*) FROM plans WHERE user_id = $1 AND is_public = true) as public_plans,
         (SELECT COALESCE(SUM(view_count), 0) FROM notebooks WHERE user_id = $1) +
-        (SELECT COALESCE(SUM(view_count), 0) FROM plans WHERE user_id = $1) as total_views,
+        (SELECT COALESCE(SUM(view_count), 0) FROM plans WHERE user_id = $1) +
+        (SELECT COALESCE(SUM(view_count), 0) FROM ebook_projects WHERE user_id = $1) as total_views,
         (SELECT COUNT(*) FROM content_likes cl 
          JOIN notebooks n ON cl.content_id::text = n.id AND cl.content_type = 'notebook' 
          WHERE n.user_id = $1) +
         (SELECT COUNT(*) FROM content_likes cl 
          JOIN plans p ON cl.content_id = p.id AND cl.content_type = 'plan' 
-         WHERE p.user_id = $1) as total_likes,
+         WHERE p.user_id = $1) +
+        (SELECT COUNT(*) FROM content_likes cl 
+         JOIN ebook_projects ep ON cl.content_id::text = ep.id::text AND cl.content_type = 'ebook' 
+         WHERE ep.user_id = $1) as total_likes,
         (SELECT COALESCE(SUM(share_count), 0) FROM notebooks WHERE user_id = $1) +
-        (SELECT COALESCE(SUM(share_count), 0) FROM plans WHERE user_id = $1) as total_shares
+        (SELECT COALESCE(SUM(share_count), 0) FROM plans WHERE user_id = $1) +
+        (SELECT COALESCE(SUM(share_count), 0) FROM ebook_projects WHERE user_id = $1) as total_shares
     `, [userId]);
 
     const row = result.rows[0];
@@ -536,6 +692,51 @@ export const socialSharingService = {
     }
 
     return result.rows[0];
+  },
+
+  // =====================================================
+  // Get Public Ebook Details with Chapters
+  // =====================================================
+  async getPublicEbookDetails(ebookId: string, viewerId?: string): Promise<{
+    ebook: any;
+    chapters: any[];
+    owner: any;
+  } | null> {
+    const ebookResult = await pool.query(`
+      SELECT 
+        ep.*,
+        u.display_name as username,
+        u.avatar_url,
+        (SELECT COUNT(*) FROM ebook_chapters WHERE project_id = ep.id) as chapter_count,
+        (SELECT COUNT(*) FROM content_likes WHERE content_type = 'ebook' AND content_id::text = ep.id::text) as like_count,
+        ${viewerId ? `EXISTS(SELECT 1 FROM content_likes WHERE content_type = 'ebook' AND content_id::text = ep.id::text AND user_id = $2) as user_liked` : 'false as user_liked'}
+      FROM ebook_projects ep
+      JOIN users u ON u.id = ep.user_id
+      WHERE ep.id::text = $1 AND ep.is_public = true AND ep.status = 'completed'
+    `, viewerId ? [ebookId, viewerId] : [ebookId]);
+
+    if (ebookResult.rows.length === 0) {
+      return null;
+    }
+
+    const ebook = ebookResult.rows[0];
+
+    const chaptersResult = await pool.query(`
+      SELECT id, project_id, title, content, chapter_order, status, created_at, updated_at
+      FROM ebook_chapters
+      WHERE project_id::text = $1
+      ORDER BY chapter_order ASC
+    `, [ebookId]);
+
+    return {
+      ebook,
+      chapters: chaptersResult.rows,
+      owner: {
+        id: ebook.user_id,
+        username: ebook.username,
+        avatarUrl: ebook.avatar_url
+      }
+    };
   },
 
   // =====================================================
@@ -642,6 +843,97 @@ export const socialSharingService = {
     });
 
     return { notebook: newNotebook, sourcesCopied };
+  },
+
+  // =====================================================
+  // Fork Ebook (Copy to User's Account)
+  // =====================================================
+  async forkEbook(ebookId: string, userId: string, options: {
+    newTitle?: string;
+  } = {}): Promise<{ ebook: any; chaptersCopied: number; chapters: any[] }> {
+    const { newTitle } = options;
+
+    const originalResult = await pool.query(`
+      SELECT ep.*, u.display_name as original_owner
+      FROM ebook_projects ep
+      JOIN users u ON u.id = ep.user_id
+      WHERE ep.id::text = $1 AND ep.is_public = true AND ep.status = 'completed'
+    `, [ebookId]);
+
+    if (originalResult.rows.length === 0) {
+      throw new Error('Ebook not found or not available for forking');
+    }
+
+    const original = originalResult.rows[0];
+    const title = newTitle || `${original.title} (Fork)`;
+
+    const newEbookId = uuidv4();
+    const newEbookResult = await pool.query(`
+      INSERT INTO ebook_projects (
+        id, user_id, notebook_id, title, topic, target_audience, branding,
+        selected_model, status, cover_image, is_public
+      )
+      VALUES ($1, $2, NULL, $3, $4, $5, $6, $7, 'completed', $8, false)
+      RETURNING *
+    `, [
+      newEbookId,
+      userId,
+      title,
+      original.topic,
+      original.target_audience,
+      original.branding
+        ? (typeof original.branding === 'string'
+            ? original.branding
+            : JSON.stringify(original.branding))
+        : null,
+      original.selected_model,
+      original.cover_image
+    ]);
+
+    const chaptersResult = await pool.query(`
+      SELECT * FROM ebook_chapters
+      WHERE project_id::text = $1
+      ORDER BY chapter_order ASC
+    `, [ebookId]);
+
+    const copiedChapters: any[] = [];
+    for (const chapter of chaptersResult.rows) {
+      const newChapterId = uuidv4();
+      const insertedChapter = await pool.query(`
+        INSERT INTO ebook_chapters (id, project_id, title, content, chapter_order, status)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING *
+      `, [
+        newChapterId,
+        newEbookId,
+        chapter.title,
+        chapter.content,
+        chapter.chapter_order,
+        chapter.status || 'completed'
+      ]);
+      copiedChapters.push(insertedChapter.rows[0]);
+    }
+
+    await activityFeedService.createActivity({
+      userId,
+      activityType: 'ebook_created',
+      title: `Forked ebook: ${original.title}`,
+      description: `Created "${title}" from ${original.original_owner}'s ebook`,
+      referenceId: newEbookId,
+      referenceType: 'ebook',
+      metadata: {
+        originalEbookId: ebookId,
+        originalOwner: original.user_id,
+        chaptersCopied: copiedChapters.length
+      },
+      isPublic: false
+    });
+
+    return {
+      ebook: newEbookResult.rows[0],
+      chaptersCopied: copiedChapters.length,
+      chapters: copiedChapters
+    };
   },
 
   // =====================================================

@@ -1007,6 +1007,7 @@ class _McpConfigInstructionsState extends State<McpConfigInstructions> {
       "command": "npx",
       "args": ["-y", "@noteclaw/mcp-server"],
       "env": {
+        "BACKEND_URL": "https://noteclaw.onrender.com",
         "CODING_AGENT_API_KEY": "nclaw_your_token_here"
       }
     }
@@ -1196,7 +1197,7 @@ class _McpConfigInstructionsState extends State<McpConfigInstructions> {
                   ),
                   const _InstructionStep(
                     number: '2',
-                    text: 'Replace "nllm_your_token_here" with your token',
+                    text: 'Replace "nclaw_your_token_here" with your token',
                   ),
                   const _InstructionStep(
                     number: '3',

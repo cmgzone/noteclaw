@@ -60,6 +60,7 @@ class AppScaffold extends StatelessWidget {
     final location = GoRouterState.of(context).uri.toString();
     final index = _indexForLocation(location);
     final isDesktop = ResponsiveBreakpoints.of(context).largerThan(TABLET);
+    final hideFloatingModelSelector = location.startsWith('/planning');
     final theme = Theme.of(context);
 
     if (isDesktop) {
@@ -125,13 +126,14 @@ class AppScaffold extends StatelessWidget {
         children: [
           child,
           // Quick AI Model Selector (bottom-left, above nav bar)
-          const Positioned(
-            left: 8,
-            bottom: 80,
-            child: SafeArea(
-              child: QuickAIModelSelector(),
+          if (!hideFloatingModelSelector)
+            const Positioned(
+              left: 8,
+              bottom: 80,
+              child: SafeArea(
+                child: QuickAIModelSelector(),
+              ),
             ),
-          ),
           Positioned(
             right: 8,
             bottom: 80,

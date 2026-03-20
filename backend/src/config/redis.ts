@@ -1,4 +1,4 @@
-import { createClient } from 'redis';
+import { createClient, type RedisClientType } from 'redis';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -8,7 +8,7 @@ const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
 const usesTLS = redisUrl.startsWith('rediss://');
 
 // Create Redis client with proper TLS configuration
-const redisClient = createClient({
+const redisClient: RedisClientType = createClient({
     url: redisUrl,
     socket: usesTLS ? {
         // TLS configuration for secure connections (rediss://)
@@ -61,7 +61,7 @@ redisClient.on('end', () => {
 // Connect to Redis
 let isConnected = false;
 
-export async function connectRedis() {
+export async function connectRedis(): Promise<RedisClientType | null> {
     if (isConnected) {
         return redisClient;
     }

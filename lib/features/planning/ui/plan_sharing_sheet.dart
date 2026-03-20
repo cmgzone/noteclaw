@@ -644,7 +644,7 @@ class _EmptyAgentsCard extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            'Share this plan with coding agents below',
+            'Share this plan with agents below',
             style: text.bodySmall?.copyWith(
               color: scheme.onSurface.withValues(alpha: 0.4),
             ),
@@ -689,7 +689,7 @@ class _NoAvailableAgentsCard extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            'Connect a coding agent via MCP first',
+            'Connect an agent via MCP first',
             style: text.bodySmall?.copyWith(
               color: scheme.onSurface.withValues(alpha: 0.4),
             ),

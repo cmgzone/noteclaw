@@ -273,7 +273,7 @@ class _SocialHubScreenState extends ConsumerState<SocialHubScreen> {
                     _NavigationCard(
                       icon: Icons.explore,
                       title: 'Discover',
-                      subtitle: 'Find public notebooks and plans',
+                      subtitle: 'Find public notebooks, plans, and ebooks',
                       color: Colors.indigo,
                       onTap: () => _navigateTo(const DiscoverScreen()),
                     ),

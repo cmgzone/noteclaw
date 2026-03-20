@@ -141,6 +141,9 @@ async function migrate() {
                 selected_model TEXT,
                 status TEXT DEFAULT 'draft',
                 cover_image TEXT,
+                is_public BOOLEAN DEFAULT false,
+                view_count INTEGER DEFAULT 0,
+                share_count INTEGER DEFAULT 0,
                 created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
             );
@@ -151,6 +154,7 @@ async function migrate() {
                 title TEXT NOT NULL,
                 content TEXT,
                 chapter_order INTEGER NOT NULL,
+                images JSONB DEFAULT '[]'::jsonb,
                 status TEXT DEFAULT 'pending',
                 created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP

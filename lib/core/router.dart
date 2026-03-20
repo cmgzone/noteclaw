@@ -74,6 +74,7 @@ import '../features/social/ui/direct_chat_screen.dart';
 import '../features/social/ui/conversations_screen.dart';
 import '../features/social/ui/group_chat_screen.dart';
 import '../features/social/ui/public_notebook_screen.dart';
+import '../features/social/ui/public_ebook_screen.dart';
 import '../features/social/ui/public_plan_screen.dart';
 import '../features/social/ui/profile_screen.dart';
 import '../features/social/ui/edit_profile_screen.dart';
@@ -572,6 +573,16 @@ GoRoute(
               final planId = state.pathParameters['planId']!;
               return buildTransitionPage(
                 child: PublicPlanScreen(planId: planId),
+              );
+            },
+          ),
+          GoRoute(
+            path: '/social/ebook/:ebookId',
+            name: 'public-ebook',
+            pageBuilder: (context, state) {
+              final ebookId = state.pathParameters['ebookId']!;
+              return buildTransitionPage(
+                child: PublicEbookScreen(ebookId: ebookId),
               );
             },
           ),

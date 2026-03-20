@@ -1,8 +1,11 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../social_sharing_provider.dart';
 import 'package:timeago/timeago.dart' as timeago;
+import '../../../ui/widgets/app_network_image.dart';
 
 class DiscoverScreen extends ConsumerStatefulWidget {
   const DiscoverScreen({super.key});
@@ -20,10 +23,11 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
     Future.microtask(() {
       ref.read(discoverProvider.notifier).loadNotebooks(refresh: true);
       ref.read(discoverProvider.notifier).loadPlans(refresh: true);
+      ref.read(discoverProvider.notifier).loadEbooks(refresh: true);
     });
   }
 
@@ -48,6 +52,12 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen>
             search: query.isEmpty ? null : query,
             sortBy: _sortBy,
           );
+    } else if (_tabController.index == 2) {
+      ref.read(discoverProvider.notifier).loadEbooks(
+            refresh: true,
+            search: query.isEmpty ? null : query,
+            sortBy: _sortBy,
+          );
     }
   }
 
@@ -64,6 +74,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen>
           tabs: const [
             Tab(text: 'Notebooks', icon: Icon(Icons.book_outlined)),
             Tab(text: 'Plans', icon: Icon(Icons.assignment_outlined)),
+            Tab(text: 'Ebooks', icon: Icon(Icons.auto_stories_outlined)),
           ],
         ),
       ),
@@ -117,6 +128,8 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen>
                 _buildNotebooksList(state, theme),
                 // Plans tab
                 _buildPlansList(state, theme),
+                // Ebooks tab
+                _buildEbooksList(state, theme),
               ],
             ),
           ),
@@ -200,6 +213,46 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen>
             );
           }
           return _PlanCard(plan: state.plans[index]);
+        },
+      ),
+    );
+  }
+
+  Widget _buildEbooksList(DiscoverState state, ThemeData theme) {
+    if (state.isLoadingEbooks && state.ebooks.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (state.ebooks.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.auto_stories_outlined, size: 64, color: Colors.grey[400]),
+            const SizedBox(height: 16),
+            Text('No public ebooks found',
+                style: TextStyle(color: Colors.grey[600])),
+          ],
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: () =>
+          ref.read(discoverProvider.notifier).loadEbooks(refresh: true),
+      child: ListView.builder(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        itemCount: state.ebooks.length + (state.hasMoreEbooks ? 1 : 0),
+        itemBuilder: (context, index) {
+          if (index >= state.ebooks.length) {
+            return const Center(
+              child: Padding(
+                padding: EdgeInsets.all(16),
+                child: CircularProgressIndicator(),
+              ),
+            );
+          }
+          return _EbookCard(ebook: state.ebooks[index]);
         },
       ),
     );
@@ -431,6 +484,202 @@ class _PlanCard extends ConsumerWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _EbookCard extends ConsumerWidget {
+  final DiscoverableEbook ebook;
+
+  const _EbookCard({required this.ebook});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: InkWell(
+        onTap: () => context.push('/social/ebook/${ebook.id}'),
+        borderRadius: BorderRadius.circular(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (ebook.coverImage != null && ebook.coverImage!.isNotEmpty)
+              ClipRRect(
+                borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(12)),
+                child: SizedBox(
+                  height: 180,
+                  width: double.infinity,
+                  child: ebook.coverImage!.startsWith('data:image')
+                      ? Image.memory(
+                          base64Decode(ebook.coverImage!.split(',').last),
+                          fit: BoxFit.cover,
+                        )
+                      : AppNetworkImage(
+                          imageUrl: ebook.coverImage!,
+                          fit: BoxFit.cover,
+                          errorWidget: (_) =>
+                              _EbookCoverFallback(title: ebook.title),
+                        ),
+                ),
+              )
+            else
+              const _EbookCoverFallback(),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 20,
+                        backgroundImage: ebook.avatarUrl != null
+                            ? NetworkImage(ebook.avatarUrl!)
+                            : null,
+                        child: ebook.avatarUrl == null
+                            ? Text(ebook.username?[0].toUpperCase() ?? '?')
+                            : null,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              ebook.username ?? 'Unknown',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                            Text(
+                              timeago.format(ebook.createdAt),
+                              style: TextStyle(
+                                  fontSize: 11, color: Colors.grey[500]),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (ebook.targetAudience != null &&
+                          ebook.targetAudience!.isNotEmpty)
+                        Flexible(
+                          child: Chip(
+                            label: Text(
+                              ebook.targetAudience!,
+                              style: const TextStyle(fontSize: 11),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            padding: EdgeInsets.zero,
+                            materialTapTargetSize:
+                                MaterialTapTargetSize.shrinkWrap,
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    ebook.title,
+                    style: theme.textTheme.titleMedium
+                        ?.copyWith(fontWeight: FontWeight.bold),
+                  ),
+                  if (ebook.topic != null && ebook.topic!.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      ebook.topic!,
+                      style: TextStyle(color: Colors.grey[600]),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      _StatChip(
+                        icon: Icons.menu_book_outlined,
+                        value: ebook.chapterCount,
+                        label: 'chapters',
+                      ),
+                      const SizedBox(width: 16),
+                      _StatChip(
+                        icon: Icons.visibility,
+                        value: ebook.viewCount,
+                        label: 'views',
+                      ),
+                      const Spacer(),
+                      IconButton(
+                        icon: Icon(
+                          ebook.userLiked
+                              ? Icons.favorite
+                              : Icons.favorite_border,
+                          color: ebook.userLiked ? Colors.red : null,
+                        ),
+                        onPressed: () {
+                          ref
+                              .read(discoverProvider.notifier)
+                              .likeEbook(ebook.id);
+                        },
+                      ),
+                      Text('${ebook.likeCount}'),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _EbookCoverFallback extends StatelessWidget {
+  final String? title;
+
+  const _EbookCoverFallback({this.title});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Container(
+      height: 180,
+      width: double.infinity,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            theme.colorScheme.primary,
+            theme.colorScheme.secondary,
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            const Icon(
+              Icons.auto_stories_outlined,
+              color: Colors.white,
+              size: 40,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              title ?? 'Public Ebook',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.titleLarge?.copyWith(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
         ),
       ),
     );

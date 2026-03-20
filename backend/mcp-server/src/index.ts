@@ -13,6 +13,10 @@
  * - get_verified_sources: Retrieve saved verified sources
  * - get_quota: Get current MCP usage quota and limits
  * - list_notebooks: List all notebooks with source counts
+ * - list_ebooks: List all ebook projects
+ * - get_ebook: Get a specific ebook with chapters
+ * - create_ebook: Create or update an ebook project with chapters
+ * - generate_ebook: Start backend ebook generation and poll with get_ebook
  * - get_source: Get a specific source by ID
  * - search_sources: Search across all code sources
  * - update_source: Update existing source without quota hit
@@ -70,7 +74,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 // Configuration
-const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3000';
+const BACKEND_URL = process.env.BACKEND_URL || 'https://noteclaw.onrender.com';
 const API_KEY = process.env.CODING_AGENT_API_KEY || '';
 
 // Axios instance for backend communication
@@ -602,6 +606,222 @@ Use this to find notebooks to save code to or to browse your previous work.`,
     inputSchema: {
       type: 'object',
       properties: {},
+    },
+  },
+  {
+    name: 'list_ebooks',
+    description: `List all ebook projects owned by the authenticated user.
+
+Returns ebook metadata including:
+- id, title, topic, targetAudience
+- status, notebookId, selectedModel
+- chapterCount, createdAt, updatedAt
+
+Use this to discover existing ebooks before reading or updating them.`,
+    inputSchema: {
+      type: 'object',
+      properties: {},
+    },
+  },
+  {
+    name: 'get_ebook',
+    description: `Get a specific ebook project by ID.
+
+Returns the ebook project and, by default, all chapters in reading order.
+
+Use this when an agent needs to read ebook content before making changes or creating related work.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ebookId: {
+          type: 'string',
+          description: 'The ID of the ebook to retrieve',
+        },
+        includeChapters: {
+          type: 'boolean',
+          description: 'Include full chapter content (default: true)',
+          default: true,
+        },
+      },
+      required: ['ebookId'],
+    },
+  },
+  {
+    name: 'create_ebook',
+    description: `Create a new ebook or update an existing ebook project.
+
+Supports:
+- title, topic, targetAudience
+- notebook linking
+- branding and cover image
+- optional chapter creation/update in the same call
+
+If ebookId is provided, the existing ebook is updated. If chapters are provided, they are batch-synced after the ebook project is saved.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ebookId: {
+          type: 'string',
+          description: 'Optional existing ebook ID to update',
+        },
+        title: {
+          type: 'string',
+          description: 'Ebook title',
+        },
+        topic: {
+          type: 'string',
+          description: 'Primary topic or subject of the ebook',
+        },
+        targetAudience: {
+          type: 'string',
+          description: 'Target audience for the ebook',
+        },
+        notebookId: {
+          type: 'string',
+          description: 'Optional linked notebook ID',
+        },
+        selectedModel: {
+          type: 'string',
+          description: 'Optional model identifier used for generation metadata',
+        },
+        status: {
+          type: 'string',
+          description: 'Ebook status',
+          enum: ['draft', 'generating', 'completed', 'error'],
+          default: 'draft',
+        },
+        coverImage: {
+          type: 'string',
+          description: 'Optional cover image URL or data URI',
+        },
+        branding: {
+          type: 'object',
+          description: 'Optional branding object matching the ebook branding schema',
+        },
+        chapters: {
+          type: 'array',
+          description: 'Optional chapter list to batch sync after save',
+          items: {
+            type: 'object',
+            properties: {
+              id: {
+                type: 'string',
+                description: 'Optional existing chapter ID',
+              },
+              title: {
+                type: 'string',
+                description: 'Chapter title',
+              },
+              content: {
+                type: 'string',
+                description: 'Markdown chapter content',
+              },
+              chapterOrder: {
+                type: 'number',
+                description: '1-based chapter order',
+              },
+              images: {
+                type: 'array',
+                description: 'Optional chapter images to persist with the ebook',
+                items: {
+                  type: 'object',
+                  properties: {
+                    id: { type: 'string', description: 'Optional image ID' },
+                    prompt: { type: 'string', description: 'Prompt or sourcing note for the image' },
+                    url: { type: 'string', description: 'Image URL or data URI' },
+                    caption: { type: 'string', description: 'Optional caption' },
+                    type: { type: 'string', description: 'Image type such as generated or web' },
+                  },
+                  required: ['url'],
+                },
+              },
+              status: {
+                type: 'string',
+                description: 'Chapter status',
+                enum: ['draft', 'generating', 'completed', 'error'],
+              },
+            },
+            required: ['title'],
+          },
+        },
+      },
+      required: ['title'],
+    },
+  },
+  {
+    name: 'generate_ebook',
+    description: `Start backend AI generation for a new or existing ebook.
+
+This creates or updates the ebook project, marks it as generating, and writes the outline and chapters in the background.
+
+The backend always tries to find a cover image. If generateChapterImages is true, it can also add one chapter image per chapter using web search, AI image generation, or AI-first with web fallback.
+
+Use get_ebook after calling this tool to poll until the ebook status becomes completed or error.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ebookId: {
+          type: 'string',
+          description: 'Optional existing ebook ID to regenerate',
+        },
+        title: {
+          type: 'string',
+          description: 'Ebook title',
+        },
+        topic: {
+          type: 'string',
+          description: 'Primary topic or subject of the ebook',
+        },
+        targetAudience: {
+          type: 'string',
+          description: 'Target audience for the ebook',
+        },
+        notebookId: {
+          type: 'string',
+          description: 'Optional notebook ID to ground the ebook in notebook sources',
+        },
+        selectedModel: {
+          type: 'string',
+          description: 'Optional AI model ID to use for generation',
+        },
+        branding: {
+          type: 'object',
+          description: 'Optional branding object for the ebook cover/metadata',
+        },
+        chapterCount: {
+          type: 'number',
+          description: 'Desired number of chapters (3-12)',
+        },
+        chapterInstructions: {
+          type: 'string',
+          description: 'Optional extra authoring instructions for tone, scope, or structure',
+        },
+        generateChapterImages: {
+          type: 'boolean',
+          description: 'Whether to generate chapter illustrations while writing the ebook',
+          default: false,
+        },
+        imageSource: {
+          type: 'string',
+          description: 'Image sourcing strategy for generated images',
+          enum: ['web', 'ai', 'auto'],
+          default: 'web',
+        },
+        imageModel: {
+          type: 'string',
+          description: 'Optional image-capable model ID for AI image generation, typically an OpenRouter image model',
+        },
+        imageStyle: {
+          type: 'string',
+          description: 'Optional visual style guidance for cover and chapter illustrations',
+        },
+        createPlaceholderCover: {
+          type: 'boolean',
+          description: 'Whether to fall back to a placeholder cover image if generated/web image lookup finds nothing',
+          default: false,
+        },
+      },
+      required: ['title'],
     },
   },
   {
@@ -1310,7 +1530,7 @@ The task is created with 'not_started' status.
 
 Returns the created task with ID.
 
-Use this to add implementation tasks to a plan.`,
+Use this to add tasks to a plan for coding, research, writing, operations, or other structured work.`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -1792,6 +2012,60 @@ const GetUsageStatsSchema = z.object({
   period: z.enum(['week', 'month', 'year', 'all']).optional().default('month'),
 });
 
+const ListEbooksSchema = z.object({});
+
+const GetEbookSchema = z.object({
+  ebookId: z.string().min(1),
+  includeChapters: z.boolean().optional().default(true),
+});
+
+const EbookImageInputSchema = z.object({
+  id: z.string().optional(),
+  prompt: z.string().optional().default(''),
+  url: z.string().min(1),
+  caption: z.string().optional().default(''),
+  type: z.string().optional().default('generated'),
+});
+
+const EbookChapterInputSchema = z.object({
+  id: z.string().optional(),
+  title: z.string().min(1),
+  content: z.string().optional().default(''),
+  chapterOrder: z.number().int().positive().optional(),
+  images: z.array(EbookImageInputSchema).optional().default([]),
+  status: z.enum(['draft', 'generating', 'completed', 'error']).optional(),
+});
+
+const CreateEbookSchema = z.object({
+  ebookId: z.string().optional(),
+  title: z.string().min(1),
+  topic: z.string().optional(),
+  targetAudience: z.string().optional(),
+  notebookId: z.string().optional(),
+  selectedModel: z.string().optional(),
+  status: z.enum(['draft', 'generating', 'completed', 'error']).optional().default('draft'),
+  coverImage: z.string().optional(),
+  branding: z.record(z.string(), z.any()).optional(),
+  chapters: z.array(EbookChapterInputSchema).optional().default([]),
+});
+
+const GenerateEbookSchema = z.object({
+  ebookId: z.string().optional(),
+  title: z.string().min(1),
+  topic: z.string().optional(),
+  targetAudience: z.string().optional(),
+  notebookId: z.string().optional(),
+  selectedModel: z.string().optional(),
+  branding: z.record(z.string(), z.any()).optional(),
+  chapterCount: z.number().int().min(3).max(12).optional(),
+  chapterInstructions: z.string().optional(),
+  generateChapterImages: z.boolean().optional().default(false),
+  imageSource: z.enum(['web', 'ai', 'auto']).optional().default('web'),
+  imageModel: z.string().optional(),
+  imageStyle: z.string().optional(),
+  createPlaceholderCover: z.boolean().optional().default(false),
+});
+
 // ==================== GITHUB SCHEMAS ====================
 
 const GitHubListReposSchema = z.object({
@@ -1949,6 +2223,15 @@ const githubApi = axios.create({
 // Planning API instance
 const planningApi = axios.create({
   baseURL: `${BACKEND_URL}/api/planning`,
+  headers: {
+    'Content-Type': 'application/json',
+    ...(API_KEY && { 'Authorization': `Bearer ${API_KEY}` }),
+  },
+  timeout: 30000,
+});
+
+const ebookApi = axios.create({
+  baseURL: `${BACKEND_URL}/api/ebooks`,
   headers: {
     'Content-Type': 'application/json',
     ...(API_KEY && { 'Authorization': `Bearer ${API_KEY}` }),
@@ -2191,6 +2474,132 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
 
       case 'list_notebooks': {
         const response = await api.get('/notebooks/list');
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(response.data, null, 2),
+            },
+          ],
+        };
+      }
+
+      case 'list_ebooks': {
+        ListEbooksSchema.parse(args || {});
+        const response = await ebookApi.get('/');
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(response.data, null, 2),
+            },
+          ],
+        };
+      }
+
+      case 'get_ebook': {
+        const input = GetEbookSchema.parse(args);
+        const ebookResponse = await ebookApi.get(`/${input.ebookId}`);
+
+        let chapters: any[] = [];
+        if (input.includeChapters) {
+          const chaptersResponse = await ebookApi.get(`/${input.ebookId}/chapters`);
+          chapters = chaptersResponse.data?.chapters || [];
+        }
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                success: true,
+                ebook: ebookResponse.data?.project || ebookResponse.data,
+                chapters,
+              }, null, 2),
+            },
+          ],
+        };
+      }
+
+      case 'create_ebook': {
+        const input = CreateEbookSchema.parse(args);
+        const projectResponse = await ebookApi.post('/', {
+          id: input.ebookId,
+          notebookId: input.notebookId,
+          title: input.title,
+          topic: input.topic || input.title,
+          targetAudience: input.targetAudience,
+          branding: input.branding,
+          selectedModel: input.selectedModel || 'mcp-agent',
+          status: input.status,
+          coverImage: input.coverImage,
+        });
+
+        const project = projectResponse.data?.project || projectResponse.data;
+        const projectId = project?.id;
+
+        if (!projectId) {
+          throw new Error('Ebook save succeeded but no project ID was returned');
+        }
+
+        let chapters: any[] = [];
+        if (input.chapters.length > 0) {
+          const chaptersPayload = input.chapters.map((chapter, index) => {
+            const chapterOrder = chapter.chapterOrder ?? index + 1;
+            return {
+              id: chapter.id,
+              title: chapter.title,
+              content: chapter.content,
+              chapterOrder,
+              chapter_order: chapterOrder,
+              images: chapter.images,
+              status: chapter.status || (chapter.content ? 'completed' : 'draft'),
+            };
+          });
+
+          const chaptersResponse = await ebookApi.post(
+            `/${projectId}/chapters/batch`,
+            { chapters: chaptersPayload },
+          );
+          chapters = chaptersResponse.data?.chapters || [];
+        } else {
+          const chaptersResponse = await ebookApi.get(`/${projectId}/chapters`);
+          chapters = chaptersResponse.data?.chapters || [];
+        }
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                success: true,
+                ebook: project,
+                chapters,
+              }, null, 2),
+            },
+          ],
+        };
+      }
+
+      case 'generate_ebook': {
+        const input = GenerateEbookSchema.parse(args);
+        const response = await ebookApi.post('/generate', {
+          ebookId: input.ebookId,
+          title: input.title,
+          topic: input.topic || input.title,
+          targetAudience: input.targetAudience,
+          notebookId: input.notebookId,
+          selectedModel: input.selectedModel,
+          branding: input.branding,
+          chapterCount: input.chapterCount,
+          chapterInstructions: input.chapterInstructions,
+          generateChapterImages: input.generateChapterImages,
+          imageSource: input.imageSource,
+          imageModel: input.imageModel,
+          imageStyle: input.imageStyle,
+          createPlaceholderCover: input.createPlaceholderCover,
+        });
+
         return {
           content: [
             {

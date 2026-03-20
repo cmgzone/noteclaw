@@ -6,8 +6,7 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:convert';
-import 'dart:typed_data';
-import 'dart:ui';
+import 'dart:ui' show ImageFilter;
 
 import 'source_conversation_provider.dart';
 import 'source.dart';

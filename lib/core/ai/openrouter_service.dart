@@ -49,12 +49,23 @@ class OpenRouterService {
 
     // Truncate to the available character budget.
     final maxChars = (availableTokens * 3.5).floor();
-    final truncated = prompt.substring(0, maxChars);
+    const marker =
+        '\n\n[... middle context truncated to fit model context window ...]\n\n';
+    if (maxChars <= marker.length + 200) {
+      final tailStart = prompt.length > maxChars ? prompt.length - maxChars : 0;
+      final tailOnly = prompt.substring(tailStart);
+      return '$tailOnly\n\n[... prompt truncated to fit model context window ...]';
+    }
+
+    final headChars = (maxChars * 0.45).floor();
+    final tailChars = maxChars - headChars - marker.length;
+    final truncated =
+        '${prompt.substring(0, headChars)}$marker${prompt.substring(prompt.length - tailChars)}';
 
     debugPrint('[OpenRouterService] Prompt truncated: $estimatedTokens → '
         '~${_estimateTokens(truncated)} tokens (limit: $contextLimit)');
 
-    return '$truncated\n\n[... context truncated to fit model context window ...]';
+    return truncated;
   }
 
   Future<String> generateContent(

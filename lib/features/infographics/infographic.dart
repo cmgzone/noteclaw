@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:freezed_annotation/freezed_annotation.dart';
 
 part 'infographic.freezed.dart';
@@ -19,6 +21,33 @@ class Infographic with _$Infographic {
   }) = _Infographic;
 
   const Infographic._();
+
+  bool get hasHtmlContent =>
+      imageUrl != null && imageUrl!.startsWith('data:text/html');
+
+  String? get htmlContent {
+    final url = imageUrl;
+    if (url == null || !url.startsWith('data:text/html')) {
+      return null;
+    }
+
+    final commaIndex = url.indexOf(',');
+    if (commaIndex == -1 || commaIndex + 1 >= url.length) {
+      return null;
+    }
+
+    final metadata = url.substring(0, commaIndex);
+    final payload = url.substring(commaIndex + 1);
+
+    try {
+      if (metadata.contains(';base64')) {
+        return utf8.decode(base64Decode(payload));
+      }
+      return Uri.decodeComponent(payload);
+    } catch (_) {
+      return null;
+    }
+  }
 
   factory Infographic.fromBackendJson(Map<String, dynamic> json) => Infographic(
         id: json['id'],

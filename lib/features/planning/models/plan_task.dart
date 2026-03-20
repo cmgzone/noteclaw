@@ -46,7 +46,7 @@ class StatusChange with _$StatusChange {
       );
 }
 
-/// Represents output from a coding agent (Requirements 5.6)
+/// Represents output from an agent (Requirements 5.6)
 @freezed
 class AgentOutput with _$AgentOutput {
   const factory AgentOutput({

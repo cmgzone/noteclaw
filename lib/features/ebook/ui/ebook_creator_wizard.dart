@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons/lucide_icons.dart';
+import 'package:uuid/uuid.dart';
 import '../models/ebook_project.dart';
 import '../models/branding_config.dart';
 import '../agents/ebook_orchestrator.dart';
 import 'ebook_generation_view.dart';
 import '../../notebook/notebook_provider.dart';
+import '../ebook_provider.dart';
 
 import '../../../core/ai/ai_models_provider.dart';
 import '../../../core/ai/ai_settings_service.dart';
@@ -20,6 +22,7 @@ class EbookCreatorWizard extends ConsumerStatefulWidget {
 }
 
 class _EbookCreatorWizardState extends ConsumerState<EbookCreatorWizard> {
+  static const Uuid _uuid = Uuid();
   final _formKey = GlobalKey<FormState>();
   final _titleController = TextEditingController();
   final _topicController = TextEditingController();
@@ -602,18 +605,8 @@ class _EbookCreatorWizardState extends ConsumerState<EbookCreatorWizard> {
   }
 
   Future<void> _startGeneration() async {
-    // Check and consume credits for ebook generation
-    final hasCredits = await ref.tryUseCredits(
-      context: context,
-      amount: CreditCosts.ebookGeneration,
-      feature: 'ebook_generation',
-    );
-    if (!hasCredits) return;
-
-
-
     final project = EbookProject(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      id: _uuid.v4(),
       title: _titleController.text,
       topic: _topicController.text,
       targetAudience: _audienceController.text,
@@ -629,6 +622,25 @@ class _EbookCreatorWizardState extends ConsumerState<EbookCreatorWizard> {
       useDeepResearch: _useDeepResearch,
       imageSource: _imageSource,
     );
+
+    final savedDraft = await ref.read(ebookProvider.notifier).addEbook(project);
+    if (!savedDraft) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Unable to save your ebook draft to the library.'),
+        ),
+      );
+      return;
+    }
+
+    // Check and consume credits for ebook generation after the draft exists
+    final hasCredits = await ref.tryUseCredits(
+      context: context,
+      amount: CreditCosts.ebookGeneration,
+      feature: 'ebook_generation',
+    );
+    if (!hasCredits) return;
 
     // Initialize orchestrator
     ref.read(ebookOrchestratorProvider.notifier).setProject(project);

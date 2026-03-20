@@ -7,6 +7,7 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:share_plus/share_plus.dart';
 import '../social_sharing_provider.dart';
 import '../../../core/api/api_service.dart';
+import '../../../core/utils/public_share_link.dart';
 import '../../../theme/app_theme.dart';
 
 /// Screen to view a public plan with its requirements, tasks, and design notes
@@ -65,11 +66,6 @@ class _PublicPlanScreenState extends ConsumerState<PublicPlanScreen>
           _owner = response['owner'];
           _isLoading = false;
         });
-
-        // Record view
-        ref
-            .read(socialSharingServiceProvider)
-            .recordView('plan', widget.planId);
       } else {
         setState(() {
           _error = 'Plan not found or not public';
@@ -136,9 +132,7 @@ class _PublicPlanScreenState extends ConsumerState<PublicPlanScreen>
 
   Future<void> _sharePlan(String title) async {
     try {
-      final api = ref.read(apiServiceProvider);
-      final publicUrl =
-          '${api.baseUrl}social-sharing/public/plans/${widget.planId}';
+      final publicUrl = buildPublicShareLink('/social/plan/${widget.planId}');
       await Share.share(
         'Plan: $title\n$publicUrl',
         subject: title,

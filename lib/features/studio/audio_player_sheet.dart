@@ -181,7 +181,7 @@ class AudioPlayerSheet extends ConsumerWidget {
               ),
               const SizedBox(height: 8),
               Text(
-                'Deep Dive Podcast',
+                'Custom Podcast',
                 style: text.titleMedium?.copyWith(
                   color: scheme.primary,
                   fontWeight: FontWeight.w500,

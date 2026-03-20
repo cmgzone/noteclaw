@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:uuid/uuid.dart';
 import '../../../core/ai/ai_settings_service.dart';
 import '../../../core/api/api_service.dart';
 import '../models/ebook_project.dart';
@@ -6,6 +7,7 @@ import '../models/ebook_chapter.dart';
 
 class ContentAgent {
   final Ref ref;
+  static const Uuid _uuid = Uuid();
 
   ContentAgent(this.ref);
 
@@ -46,6 +48,8 @@ class ContentAgent {
       messages: messages,
       provider: provider,
       model: targetModel,
+      receiveTimeout: const Duration(minutes: 3),
+      sendTimeout: const Duration(minutes: 2),
     );
   }
 
@@ -81,8 +85,7 @@ Return ONLY the list in this format:
       final match = RegExp(r'^\d+\.\s*(.+?):\s*(.+)').firstMatch(line);
       if (match != null) {
         chapters.add(EbookChapter(
-          id: DateTime.now().millisecondsSinceEpoch.toString() +
-              order.toString(),
+          id: _uuid.v4(),
           title: match.group(1)!.trim(),
           content: match.group(2)!.trim(), // Initially just the description
           orderIndex: order++,

@@ -8,7 +8,7 @@ echo "📦 Installing NotebookLLM MCP Server..."
 
 # Configuration - UPDATE THESE VALUES
 GITHUB_REPO="cmgzone/notebookllm"
-BACKEND_URL="https://notebookllm-ufj7.onrender.com"
+BACKEND_URL="https://noteclaw.onrender.com"
 
 # Get latest release
 echo "🔍 Finding latest release..."

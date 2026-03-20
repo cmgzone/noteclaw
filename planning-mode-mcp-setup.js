@@ -54,14 +54,14 @@ const requirements = [
     ]
   },
   {
-    title: "THE system SHALL enable coding agents to interact with plans via MCP",
-    description: "MCP integration for agent access to planning features",
+    title: "THE system SHALL enable agents to interact with plans via MCP",
+    description: "MCP integration for agent access to general planning features",
     earsPattern: "ubiquitous",
     acceptanceCriteria: [
       "Agents can create plans via MCP tools",
       "Agents can add requirements and design notes",
       "Agents can create and update tasks",
-      "Agents can add outputs (code, comments) to tasks",
+      "Agents can add outputs (code, notes, files, comments) to tasks",
       "Agents can track task completion"
     ]
   },

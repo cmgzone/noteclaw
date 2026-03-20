@@ -45,6 +45,8 @@ class ResearchAgent {
       messages: messages,
       provider: provider,
       model: targetModel,
+      receiveTimeout: const Duration(minutes: 3),
+      sendTimeout: const Duration(minutes: 2),
     );
   }
 

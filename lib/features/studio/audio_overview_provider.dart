@@ -16,6 +16,7 @@ import '../../core/services/wakelock_service.dart';
 import '../../core/services/overlay_bubble_service.dart';
 import '../../core/api/api_service.dart';
 import '../../core/services/activity_logger_service.dart';
+import '../notebook/notebook_chat_context_builder.dart';
 import '../sources/source_provider.dart';
 
 // Timeouts and retry settings
@@ -68,13 +69,15 @@ class AudioOverviewNotifier extends StateNotifier<AudioStudioState> {
       final api = ref.read(apiServiceProvider);
       final data = await api.getAudioOverviews();
       final overviews = data.map((raw) {
+        final url = _normalizeAudioPath(raw['audio_path'] ?? '');
         return AudioOverview(
           id: raw['id'] ?? '',
           title: raw['title'] ?? '',
-          url: raw['audio_path'] ?? '',
+          url: url,
           duration: Duration(seconds: raw['duration_seconds'] ?? 0),
           createdAt:
               DateTime.tryParse(raw['created_at'] ?? '') ?? DateTime.now(),
+          isOffline: !_isRemoteUrl(url),
         );
       }).toList();
       state = state.copyWith(overviews: overviews);
@@ -83,15 +86,20 @@ class AudioOverviewNotifier extends StateNotifier<AudioStudioState> {
     }
   }
 
-  Future<void> _saveOverview(AudioOverview overview) async {
+  Future<void> _saveOverview(
+    AudioOverview overview, {
+    required String format,
+    String? notebookId,
+  }) async {
     try {
       final api = ref.read(apiServiceProvider);
       await api.saveAudioOverview({
         'id': overview.id,
+        'notebookId': notebookId,
         'title': overview.title,
         'audioPath': overview.url,
         'durationSeconds': overview.duration.inSeconds,
-        'format': overview.url.endsWith('.wav') ? 'podcast' : 'monologue',
+        'format': format,
       });
     } catch (e) {
       debugPrint('Error saving audio overview: $e');
@@ -227,6 +235,8 @@ class AudioOverviewNotifier extends StateNotifier<AudioStudioState> {
     String? topic,
     List<String> hosts = const ['Sarah', 'Adam'],
     String? contentOverride,
+    String? notebookId,
+    String podcastType = 'deep_dive',
   }) async {
     // Keep screen awake during audio generation
     await wakelockService.acquire();
@@ -241,13 +251,24 @@ class AudioOverviewNotifier extends StateNotifier<AudioStudioState> {
 
     try {
       String context;
+      final sourceContextObjective = isPodcast
+          ? 'Create a ${_podcastTypeLabel(podcastType)} podcast script${topic != null && topic.isNotEmpty ? ' focused on "$topic"' : ''}.'
+          : 'Create a concise audio summary script that covers the most important ideas clearly and accurately.';
 
       if (contentOverride != null && contentOverride.isNotEmpty) {
         context = contentOverride;
       } else {
-        final sources = ref.read(sourceProvider);
+        final allSources = ref.read(sourceProvider);
+        final sources = notebookId != null
+            ? allSources.where((s) => s.notebookId == notebookId).toList()
+            : allSources;
         if (sources.isEmpty) throw Exception('No sources available');
-        context = sources.map((s) => s.content).join('\n\n');
+        context =
+            await NotebookChatContextBuilder.buildContextTextForCurrentModel(
+          read: ref.read,
+          sources: sources,
+          objective: sourceContextObjective,
+        );
       }
 
       // 1. Generate Script using configured AI provider
@@ -271,16 +292,34 @@ class AudioOverviewNotifier extends StateNotifier<AudioStudioState> {
         final topicInstruction = topic != null && topic.isNotEmpty
             ? 'Focus specifically on this topic: "$topic".'
             : '';
-
         final host1 = hosts.isNotEmpty ? hosts[0] : 'Sarah';
         final host2 = hosts.length > 1 ? hosts[1] : 'Adam';
+        final podcastTypeLabel = _podcastTypeLabel(podcastType);
+        final podcastTypeGuidance = _podcastTypeGuidance(
+          podcastType,
+          host1: host1,
+          host2: host2,
+        );
+        final podcastLengthGuidance = _podcastLengthGuidance(podcastType);
+        final introExample = _podcastIntroExample(
+          podcastType,
+          host1: host1,
+          host2: host2,
+          title: title,
+        );
+        final replyExample = _podcastReplyExample(
+          podcastType,
+          host1: host1,
+          host2: host2,
+        );
 
         final prompt = '''
-Create an engaging "Deep Dive" podcast script based on the following content.
+Create an engaging "$podcastTypeLabel" podcast script based on the following content.
 Two hosts: "$host1" (enthusiastic, curious) and "$host2" (analytical, expert).
-They should discuss the material naturally, asking each other questions and summarizing key points.
+They should discuss the material naturally and stay fully grounded in the source material.
+$podcastTypeGuidance
 $topicInstruction
-Keep it conversational and insightful. Max length: 4 minutes (about 15-20 exchanges).
+$podcastLengthGuidance
 
 Content:
 $context
@@ -288,8 +327,8 @@ $context
 IMPORTANT: Return ONLY a valid JSON array. No markdown, no code blocks, no intro text.
 Format:
 [
-  {"speaker": "$host1", "text": "Welcome back to the Deep Dive! Today we're looking at..."},
-  {"speaker": "$host2", "text": "That's right, $host1. It's a fascinating topic because..."}
+  {"speaker": "$host1", "text": "$introExample"},
+  {"speaker": "$host2", "text": "$replyExample"}
 ]
 ''';
         final response = await _callAI(prompt);
@@ -556,6 +595,7 @@ $context
         url: file.path,
         duration: duration,
         createdAt: DateTime.now(),
+        isOffline: true,
       );
 
       // Add to list and clear generating state
@@ -568,7 +608,11 @@ $context
       );
 
       // Save to backend
-      await _saveOverview(overview);
+      await _saveOverview(
+        overview,
+        format: isPodcast ? podcastType : 'monologue',
+        notebookId: notebookId,
+      );
 
       // Log activity to social feed
       ref.read(activityLoggerProvider).logPodcastGenerated(
@@ -721,6 +765,133 @@ $context
             a.id == overview.id ? a.copyWith(isOffline: !a.isOffline) : a)
         .toList();
     state = state.copyWith(overviews: updatedList);
+  }
+
+  String _podcastTypeLabel(String podcastType) {
+    switch (podcastType) {
+      case 'quick_brief':
+        return 'Quick Brief';
+      case 'debate':
+        return 'Debate';
+      case 'storytelling':
+        return 'Storytelling';
+      case 'interview':
+        return 'Interview';
+      case 'news_roundup':
+        return 'News Roundup';
+      case 'teaching_mode':
+        return 'Teaching Mode';
+      case 'deep_dive':
+      default:
+        return 'Deep Dive';
+    }
+  }
+
+  String _podcastTypeGuidance(
+    String podcastType, {
+    required String host1,
+    required String host2,
+  }) {
+    switch (podcastType) {
+      case 'quick_brief':
+        return 'Keep the episode crisp, focused on the biggest takeaways, and easy to scan while listening. Use short exchanges and clear transitions.';
+      case 'debate':
+        return 'Have the hosts respectfully challenge each other, compare tradeoffs, and test assumptions. Let $host1 push practical concerns while $host2 adds nuance and evidence.';
+      case 'storytelling':
+        return 'Make it feel polished and narrative-driven. Use vivid examples, small story beats, and memorable comparisons while still sounding natural and factual.';
+      case 'interview':
+        return 'Structure it like a great interview. Let $host1 ask smart, curious questions while $host2 explains ideas clearly, gives examples, and answers follow-up questions naturally.';
+      case 'news_roundup':
+        return 'Make it feel like a polished roundup show. Move briskly through the most important updates, explain why each one matters, and connect them into a coherent overview.';
+      case 'teaching_mode':
+        return 'Make it feel like a teaching session. Break down concepts clearly, define tricky terms, and build understanding step by step while keeping the tone warm and conversational.';
+      case 'deep_dive':
+      default:
+        return 'Make it analytical, insightful, and layered. Have the hosts unpack why ideas matter, connect related concepts, and surface practical implications.';
+    }
+  }
+
+  String _podcastLengthGuidance(String podcastType) {
+    switch (podcastType) {
+      case 'quick_brief':
+        return 'Keep it concise. Max length: 2 minutes (about 8-10 exchanges).';
+      case 'debate':
+        return 'Keep it energetic but balanced. Max length: 4 minutes (about 14-18 exchanges).';
+      case 'storytelling':
+        return 'Keep the pacing smooth and engaging. Max length: 4 minutes (about 12-16 exchanges).';
+      case 'interview':
+        return 'Keep it focused and natural. Max length: 4 minutes (about 12-16 exchanges).';
+      case 'news_roundup':
+        return 'Keep it fast and informative. Max length: 3 minutes (about 10-12 exchanges).';
+      case 'teaching_mode':
+        return 'Keep it structured and easy to follow. Max length: 4 minutes (about 12-16 exchanges).';
+      case 'deep_dive':
+      default:
+        return 'Keep it conversational and insightful. Max length: 4 minutes (about 15-20 exchanges).';
+    }
+  }
+
+  String _podcastIntroExample(
+    String podcastType, {
+    required String host1,
+    required String host2,
+    required String title,
+  }) {
+    switch (podcastType) {
+      case 'quick_brief':
+        return 'Welcome to $title. I\'m $host1, and in the next few minutes we\'re breaking down the biggest takeaways you need to know.';
+      case 'debate':
+        return 'Welcome to $title. I\'m $host1, and today we\'re taking a closer look at the strongest arguments, tradeoffs, and open questions in this material.';
+      case 'storytelling':
+        return 'Welcome to $title. I\'m $host1, and today we\'re turning this topic into a story you can actually follow, remember, and use.';
+      case 'interview':
+        return 'Welcome to $title. I\'m $host1, and today I\'m sitting down with $host2 to unpack the key ideas, examples, and lessons inside this material.';
+      case 'news_roundup':
+        return 'Welcome to $title. I\'m $host1, and today we\'re moving through the biggest updates, what changed, and why each point deserves your attention.';
+      case 'teaching_mode':
+        return 'Welcome to $title. I\'m $host1, and today we\'re going to teach this topic clearly from the ground up so it actually sticks.';
+      case 'deep_dive':
+      default:
+        return 'Welcome to $title. I\'m $host1, and today we\'re taking a deep dive into what this material really means and why it matters.';
+    }
+  }
+
+  String _podcastReplyExample(
+    String podcastType, {
+    required String host1,
+    required String host2,
+  }) {
+    switch (podcastType) {
+      case 'quick_brief':
+        return 'Exactly. I\'m $host2, and I\'ll help pull out the core insights, the context behind them, and the one thing listeners should remember.';
+      case 'debate':
+        return 'Absolutely. I\'m $host2, and I\'m going to pressure-test those ideas a bit because some of the most interesting lessons show up in the tensions and tradeoffs.';
+      case 'storytelling':
+        return 'That\'s right, $host1. I\'m $host2, and we\'ll guide listeners through the key moments, examples, and turning points that make this topic click.';
+      case 'interview':
+        return 'Thanks, $host1. I\'m $host2, and I\'m excited to break this down with concrete examples, practical explanations, and a few important nuances along the way.';
+      case 'news_roundup':
+        return 'That\'s right, $host1. I\'m $host2, and I\'ll add the context behind each update so we can separate the signal from the noise.';
+      case 'teaching_mode':
+        return 'Exactly, $host1. I\'m $host2, and I\'ll help explain each concept in plain language so listeners can build understanding one step at a time.';
+      case 'deep_dive':
+      default:
+        return 'That\'s right, $host1. I\'m $host2, and there\'s a lot to unpack here once we start connecting the key themes and evidence.';
+    }
+  }
+
+  bool _isRemoteUrl(String value) {
+    final uri = Uri.tryParse(value);
+    final scheme = uri?.scheme.toLowerCase();
+    return scheme == 'http' || scheme == 'https';
+  }
+
+  String _normalizeAudioPath(String value) {
+    final uri = Uri.tryParse(value);
+    if (uri != null && uri.scheme == 'file') {
+      return uri.toFilePath(windows: Platform.isWindows);
+    }
+    return value;
   }
 }
 

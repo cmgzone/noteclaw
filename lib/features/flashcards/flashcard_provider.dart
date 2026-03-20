@@ -6,6 +6,7 @@ import 'package:uuid/uuid.dart';
 import 'flashcard.dart';
 import '../sources/source_provider.dart';
 import '../gamification/gamification_provider.dart';
+import '../notebook/notebook_chat_context_builder.dart';
 import '../../core/api/api_service.dart';
 import '../../core/ai/ai_settings_service.dart';
 
@@ -138,7 +139,12 @@ class FlashcardNotifier extends StateNotifier<List<FlashcardDeck>> {
     }
 
     final sourceContent =
-        relevantSources.map((s) => '## ${s.title}\n${s.content}').join('\n\n');
+        await NotebookChatContextBuilder.buildContextTextForCurrentModel(
+      read: ref.read,
+      sources: relevantSources,
+      objective:
+          'Generate $cardCount flashcards that cover key concepts, definitions, relationships, and important facts.',
+    );
 
     // Build prompt for AI
     final prompt = '''

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,8 +12,28 @@ import 'dart:io';
 import '../../../theme/app_theme.dart';
 import '../../../core/ai/ai_provider.dart';
 import '../../subscription/services/credit_manager.dart';
+import '../models/design_artifact.dart';
+import '../models/design_document.dart';
 import '../planning_provider.dart';
 import '../models/requirement.dart';
+import '../services/design_html_builder.dart';
+import 'design_engine_preview.dart';
+import 'design_node_inspector.dart';
+
+enum _DesignPreviewMode {
+  html,
+  engine,
+}
+
+class _StructuredDesignResponse {
+  final String html;
+  final DesignDocument? document;
+
+  const _StructuredDesignResponse({
+    required this.html,
+    required this.document,
+  });
+}
 
 /// AI UI Design Generator Screen
 /// Generates premium HTML/CSS designs based on plan context, previews in WebView, captures screenshots
@@ -33,10 +54,15 @@ class _UIDesignGeneratorScreenState
 
   WebViewController? _webViewController;
   String? _generatedHtml;
+  DesignDocument? _generatedDesignDocument;
   Uint8List? _screenshot;
   bool _isGenerating = false;
   bool _isCapturing = false;
   bool _isSaving = false;
+  bool _isRegeneratingSection = false;
+  _DesignPreviewMode _previewMode = _DesignPreviewMode.html;
+  String? _selectedDesignScreenId;
+  String? _selectedDesignNodeId;
   String _selectedStyle = 'modern';
   String _selectedColorScheme = 'purple';
 
@@ -567,7 +593,9 @@ class _UIDesignGeneratorScreenState
             Icon(LucideIcons.eye, color: scheme.primary, size: 20),
             const SizedBox(width: 8),
             Text(
-              'Live Preview',
+              _generatedDesignDocument != null
+                  ? 'Design Preview'
+                  : 'Live Preview',
               style: text.titleMedium?.copyWith(fontWeight: FontWeight.bold),
             ),
             const Spacer(),
@@ -594,8 +622,30 @@ class _UIDesignGeneratorScreenState
               ),
           ],
         ),
+        if (_generatedDesignDocument != null) ...[
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              ChoiceChip(
+                label: const Text('HTML'),
+                selected: _previewMode == _DesignPreviewMode.html,
+                onSelected: (_) {
+                  setState(() => _previewMode = _DesignPreviewMode.html);
+                },
+              ),
+              ChoiceChip(
+                label: const Text('Engine'),
+                selected: _previewMode == _DesignPreviewMode.engine,
+                onSelected: (_) {
+                  setState(() => _previewMode = _DesignPreviewMode.engine);
+                },
+              ),
+            ],
+          ),
+        ],
         const SizedBox(height: 12),
-        // WebView Preview
         Screenshot(
           controller: _screenshotController,
           child: Container(
@@ -612,9 +662,35 @@ class _UIDesignGeneratorScreenState
               ],
             ),
             clipBehavior: Clip.antiAlias,
-            child: WebViewWidget(controller: _webViewController!),
+            child: _previewMode == _DesignPreviewMode.engine &&
+                    _generatedDesignDocument != null
+                ? DesignEnginePreview(
+                    document: _generatedDesignDocument!,
+                    selectedScreenId: _selectedDesignScreenId,
+                    selectedNodeId: _selectedDesignNodeId,
+                    onScreenSelected: _handleEngineScreenSelected,
+                    onNodeSelected: _handleEngineNodeSelected,
+                  )
+                : WebViewWidget(controller: _webViewController!),
           ),
         ),
+        if (_previewMode == _DesignPreviewMode.engine &&
+            _generatedDesignDocument != null) ...[
+          const SizedBox(height: 12),
+          DesignNodeInspector(
+            screen: _selectedScreenSpec,
+            node: _selectedNodeSpec,
+            onApply: _applySelectedNodeEdits,
+            onRegenerate: _regenerateSelectedNode,
+            isRegenerating: _isRegeneratingSection,
+            onClearSelection: () {
+              setState(() {
+                _selectedDesignScreenId = null;
+                _selectedDesignNodeId = null;
+              });
+            },
+          ),
+        ],
       ],
     ).animate().fadeIn(delay: 400.ms).slideY(begin: 0.1);
   }
@@ -668,6 +744,154 @@ class _UIDesignGeneratorScreenState
     ).animate().fadeIn(delay: 500.ms);
   }
 
+  DesignScreenSpec? get _selectedScreenSpec {
+    final document = _generatedDesignDocument;
+    final screenId = _selectedDesignScreenId;
+    if (document == null || screenId == null) return null;
+    return document.findScreen(screenId);
+  }
+
+  DesignNodeSpec? get _selectedNodeSpec {
+    final document = _generatedDesignDocument;
+    final screenId = _selectedDesignScreenId;
+    final nodeId = _selectedDesignNodeId;
+    if (document == null || screenId == null || nodeId == null) return null;
+    return document.findNode(screenId, nodeId);
+  }
+
+  void _handleEngineScreenSelected(String screenId) {
+    final screen = _generatedDesignDocument?.findScreen(screenId);
+    setState(() {
+      _selectedDesignScreenId = screenId;
+      _selectedDesignNodeId = screen != null && screen.nodes.isNotEmpty
+          ? screen.nodes.first.id
+          : null;
+    });
+  }
+
+  void _handleEngineNodeSelected(String screenId, String nodeId) {
+    setState(() {
+      _selectedDesignScreenId = screenId;
+      _selectedDesignNodeId = nodeId;
+    });
+  }
+
+  void _applySelectedNodeEdits(DesignNodeSpec updatedNode) {
+    final document = _generatedDesignDocument;
+    final screenId = _selectedDesignScreenId;
+    final nodeId = _selectedDesignNodeId;
+    if (document == null || screenId == null || nodeId == null) return;
+
+    final updatedDocument = document.updateNode(
+      screenId,
+      nodeId,
+      (_) => updatedNode,
+    );
+
+    _syncGeneratedHtmlFromDocument(updatedDocument);
+  }
+
+  void _seedSelectionFromDocument(DesignDocument? document) {
+    if (document == null || document.screens.isEmpty) {
+      _selectedDesignScreenId = null;
+      _selectedDesignNodeId = null;
+      return;
+    }
+
+    final firstScreen = document.screens.first;
+    _selectedDesignScreenId = firstScreen.id;
+    _selectedDesignNodeId =
+        firstScreen.nodes.isNotEmpty ? firstScreen.nodes.first.id : null;
+  }
+
+  Future<void> _regenerateSelectedNode() async {
+    final document = _generatedDesignDocument;
+    final screen = _selectedScreenSpec;
+    final node = _selectedNodeSpec;
+    if (document == null || screen == null || node == null) return;
+
+    final hasCredits = await ref.tryUseCredits(
+      context: context,
+      amount: CreditCosts.chatMessage * 2,
+      feature: 'ui_design_section_regenerate',
+    );
+    if (!hasCredits) return;
+
+    setState(() => _isRegeneratingSection = true);
+
+    try {
+      final prompt = _buildNodeRegenerationPrompt(
+        document: document,
+        screen: screen,
+        node: node,
+      );
+
+      final aiNotifier = ref.read(aiProvider.notifier);
+      await aiNotifier.generateContent(prompt, style: ChatStyle.standard);
+
+      final aiState = ref.read(aiProvider);
+      if (aiState.error != null) {
+        throw Exception(aiState.error);
+      }
+
+      final regeneratedNode = _extractRegeneratedNodeFromResponse(
+        aiState.lastResponse ?? '',
+        fallbackNode: node,
+      );
+
+      if (regeneratedNode == null) {
+        throw Exception('Could not parse regenerated node');
+      }
+
+      final updatedDocument = document.updateNode(
+        screen.id,
+        node.id,
+        (_) => regeneratedNode,
+      );
+
+      await _syncGeneratedHtmlFromDocument(updatedDocument);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Section regenerated and synced to the HTML preview.',
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to regenerate section: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isRegeneratingSection = false);
+      }
+    }
+  }
+
+  Future<void> _syncGeneratedHtmlFromDocument(DesignDocument document) async {
+    final html = DesignDocumentHtmlBuilder.build(
+      document,
+      title: _promptController.text.trim().isNotEmpty
+          ? _promptController.text.trim()
+          : document.title,
+      initialScreenId: _selectedDesignScreenId,
+    );
+
+    if (!mounted) return;
+
+    setState(() {
+      _generatedDesignDocument = document;
+      _generatedHtml = html;
+    });
+
+    await _webViewController?.loadHtmlString(html);
+  }
+
   Future<void> _generateDesign() async {
     if (_promptController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -687,6 +911,10 @@ class _UIDesignGeneratorScreenState
     setState(() {
       _isGenerating = true;
       _screenshot = null;
+      _generatedDesignDocument = null;
+      _previewMode = _DesignPreviewMode.html;
+      _selectedDesignScreenId = null;
+      _selectedDesignNodeId = null;
     });
 
     try {
@@ -702,10 +930,18 @@ class _UIDesignGeneratorScreenState
       }
 
       final response = aiState.lastResponse ?? '';
-      final html = _extractHtmlFromResponse(response);
+      final structuredResponse = _extractStructuredDesignResponse(response);
+      final html = structuredResponse.html;
 
       if (html.isNotEmpty) {
-        setState(() => _generatedHtml = html);
+        setState(() {
+          _generatedHtml = html;
+          _generatedDesignDocument = structuredResponse.document;
+          if (structuredResponse.document != null) {
+            _previewMode = _DesignPreviewMode.engine;
+            _seedSelectionFromDocument(structuredResponse.document);
+          }
+        });
         await _webViewController?.loadHtmlString(html);
       } else {
         throw Exception('Could not generate valid HTML');
@@ -766,7 +1002,7 @@ ${relevantNotes.map((n) => '- ${n.content.length > 200 ? '${n.content.substring(
 ''';
     }
 
-    return '''Generate a complete, self-contained HTML page with embedded CSS for the following design:
+    return '''Generate a structured UI design package for the following request:
 
 **Design Request:** ${_promptController.text}
 $planContext
@@ -792,9 +1028,32 @@ $designNotesContext
 ${_getStyleGuidelines()}
 
 **Output Format:**
-Return ONLY the complete HTML code starting with <!DOCTYPE html> and ending with </html>.
-Do not include any explanations or markdown code blocks.
-The HTML must be self-contained with all CSS in a <style> tag.''';
+Return EXACTLY two tagged sections and nothing else:
+
+[[NOTECLAW_DESIGN_SPEC_JSON]]
+{valid JSON}
+[[/NOTECLAW_DESIGN_SPEC_JSON]]
+[[NOTECLAW_HTML]]
+<!DOCTYPE html>...full html...
+</html>
+[[/NOTECLAW_HTML]]
+
+**JSON Schema Rules:**
+- The JSON root must contain: schemaVersion, title, summary, theme, screens
+- theme fields: style, primaryColor, secondaryColor, accentColor, backgroundColor, surfaceColor, textColor, radius
+- screens must contain 1 or 2 screens only
+- each screen must contain: id, name, description, nodes
+- supported node types only: hero, stats_row, card_list, feature_grid, action_bar, form, timeline, quote, content, cta
+- each node may contain: id, type, title, subtitle, body, label, value, icon, variant, items
+- each item may contain: title, subtitle, label, value, meta, icon, tags
+- keep content concise, realistic, and aligned with the requested UI
+- use valid hex colors in the theme
+
+**HTML Rules:**
+- The HTML must be self-contained with all CSS in a <style> tag
+- The HTML should visually match the JSON design closely
+- Make it responsive and polished
+- Do not use markdown fences inside either section''';
   }
 
   String _getStyleGuidelines() {
@@ -818,6 +1077,46 @@ The HTML must be self-contained with all CSS in a <style> tag.''';
       default:
         return 'Modern and professional';
     }
+  }
+
+  String _buildNodeRegenerationPrompt({
+    required DesignDocument document,
+    required DesignScreenSpec screen,
+    required DesignNodeSpec node,
+  }) {
+    final requirementSummary = _selectedRequirements.isNotEmpty
+        ? _selectedRequirements
+            .map((r) => '- ${r.title}: ${r.description}')
+            .join('\n')
+        : '- No specific requirements selected';
+
+    return '''Rewrite one structured UI node for a design engine.
+
+**Design Request:** ${_promptController.text.trim()}
+**Style:** $_selectedStyle
+**Color Scheme:** $_selectedColorScheme
+**Theme JSON:**
+${jsonEncode(document.theme.toJson())}
+
+**Selected Requirements:**
+$requirementSummary
+
+**Screen Context JSON:**
+${jsonEncode(screen.toJson())}
+
+**Current Node JSON:**
+${jsonEncode(node.toJson())}
+
+**Task:**
+- Rewrite ONLY the selected node to be sharper, more realistic, and more polished
+- Preserve the same node `id`
+- Preserve the same node `type`
+- Keep the content aligned with the existing screen and design request
+- You may improve: title, subtitle, body, label, value, icon, variant, items, props
+- If the node uses items, return realistic items that fit the node type
+
+Return ONLY one valid JSON object for the rewritten node.
+Do not include markdown, explanations, or code fences.''';
   }
 
   String _extractHtmlFromResponse(String response) {
@@ -853,6 +1152,87 @@ The HTML must be self-contained with all CSS in a <style> tag.''';
     }
 
     return html;
+  }
+
+  _StructuredDesignResponse _extractStructuredDesignResponse(String response) {
+    final jsonBlock = _extractTaggedBlock(
+      response,
+      '[[NOTECLAW_DESIGN_SPEC_JSON]]',
+      '[[/NOTECLAW_DESIGN_SPEC_JSON]]',
+    );
+    final htmlBlock = _extractTaggedBlock(
+      response,
+      '[[NOTECLAW_HTML]]',
+      '[[/NOTECLAW_HTML]]',
+    );
+
+    DesignDocument? document;
+    if (jsonBlock != null && jsonBlock.trim().isNotEmpty) {
+      try {
+        var normalizedJson = jsonBlock.trim();
+        if (normalizedJson.startsWith('```json') &&
+            normalizedJson.endsWith('```')) {
+          normalizedJson =
+              normalizedJson.substring(7, normalizedJson.length - 3).trim();
+        } else if (normalizedJson.startsWith('```') &&
+            normalizedJson.endsWith('```')) {
+          normalizedJson =
+              normalizedJson.substring(3, normalizedJson.length - 3).trim();
+        }
+
+        final decoded = jsonDecode(normalizedJson);
+        if (decoded is Map) {
+          document =
+              DesignDocument.fromJson(Map<String, dynamic>.from(decoded));
+        }
+      } catch (_) {
+        document = null;
+      }
+    }
+
+    final html = _extractHtmlFromResponse(
+      htmlBlock != null && htmlBlock.trim().isNotEmpty ? htmlBlock : response,
+    );
+    return _StructuredDesignResponse(html: html, document: document);
+  }
+
+  String? _extractTaggedBlock(String text, String startTag, String endTag) {
+    final startIndex = text.indexOf(startTag);
+    final endIndex = text.indexOf(endTag);
+    if (startIndex == -1 || endIndex == -1 || endIndex <= startIndex) {
+      return null;
+    }
+    return text.substring(startIndex + startTag.length, endIndex).trim();
+  }
+
+  DesignNodeSpec? _extractRegeneratedNodeFromResponse(
+    String response, {
+    required DesignNodeSpec fallbackNode,
+  }) {
+    var normalized = response.trim();
+    if (normalized.startsWith('```json') && normalized.endsWith('```')) {
+      normalized = normalized.substring(7, normalized.length - 3).trim();
+    } else if (normalized.startsWith('```') && normalized.endsWith('```')) {
+      normalized = normalized.substring(3, normalized.length - 3).trim();
+    }
+
+    final firstBrace = normalized.indexOf('{');
+    final lastBrace = normalized.lastIndexOf('}');
+    if (firstBrace >= 0 && lastBrace > firstBrace) {
+      normalized = normalized.substring(firstBrace, lastBrace + 1);
+    }
+
+    try {
+      final decoded = jsonDecode(normalized);
+      if (decoded is! Map) return null;
+      final mergedJson = Map<String, dynamic>.from(fallbackNode.toJson())
+        ..addAll(Map<String, dynamic>.from(decoded))
+        ..['id'] = fallbackNode.id
+        ..['type'] = fallbackNode.type;
+      return DesignNodeSpec.fromJson(mergedJson);
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> _captureScreenshot() async {
@@ -948,13 +1328,49 @@ $codeBlockEnd
       // Get requirement IDs for linking
       final requirementIds = _selectedRequirements.map((r) => r.id).toList();
 
-      // Save as design note
-      await ref.read(planningProvider.notifier).createDesignNote(
-            content: designContent,
-            requirementIds: requirementIds,
-          );
+      final planning = ref.read(planningProvider.notifier);
+      final generatedAt = DateTime.now().toIso8601String();
+      final designDocumentJson = _generatedDesignDocument?.toJson();
+
+      final designNote = await planning.createDesignNote(
+        content: designContent,
+        requirementIds: requirementIds,
+      );
+      final designArtifact = await planning.createDesignArtifact(
+        name: _promptController.text.trim().isEmpty
+            ? 'Generated UI Design'
+            : _promptController.text.trim(),
+        artifactType: DesignArtifactType.screenSet,
+        status: DesignArtifactStatus.ready,
+        source: DesignArtifactSource.aiGenerated,
+        schemaVersion: designDocumentJson != null ? 2 : 1,
+        rootData: {
+          'format': designDocumentJson != null ? 'structured_html' : 'html',
+          'html': _generatedHtml,
+          if (designDocumentJson != null) 'document': designDocumentJson,
+          'prompt': _promptController.text.trim(),
+          'style': _selectedStyle,
+          'colorScheme': _selectedColorScheme,
+          'requirementIds': requirementIds,
+        },
+        metadata: {
+          'generatedAt': generatedAt,
+          'screenshotPath': screenshotPath,
+          'linkedRequirementCount': requirementIds.length,
+          'usedExistingDesignNotes': _useExistingDesignNotes,
+          'hasStructuredPreview': designDocumentJson != null,
+        },
+        changeSummary: designDocumentJson != null
+            ? 'Initial AI-generated UI design with structured screen spec'
+            : 'Initial AI-generated UI design',
+      );
+
+      if (designNote == null && designArtifact == null) {
+        throw Exception('Failed to save design outputs');
+      }
 
       if (mounted) {
+        final savedBoth = designNote != null && designArtifact != null;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Row(
@@ -963,7 +1379,9 @@ $codeBlockEnd
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'Design saved! ${requirementIds.isNotEmpty ? "Linked to ${requirementIds.length} requirement(s)" : ""}',
+                    savedBoth
+                        ? 'Design saved! ${requirementIds.isNotEmpty ? "Linked to ${requirementIds.length} requirement(s)." : ""}'
+                        : 'Design saved partially. Check plan outputs.',
                   ),
                 ),
               ],

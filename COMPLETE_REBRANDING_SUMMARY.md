@@ -72,7 +72,7 @@ Successfully completed full rebranding from "NotebookLLM" to "NoteClaw" across t
 - Title: "Notebook LLM" → "NoteClaw"
 
 **Android**
-- applicationId: `com.notebook.llm` → `com.noteclaw.app`
+- applicationId: `com.note.claw`
 - Label: `notebook_llm` → `NoteClaw`
 
 **User-Facing Text**
@@ -229,7 +229,7 @@ flutter build ios  # For iOS (if on macOS)
 ### Breaking Changes
 
 **Android Users**
-- New applicationId: `com.noteclaw.app`
+- New applicationId: `com.note.claw`
 - Users will see this as a new app
 - Existing app data may not migrate
 - Users need to reinstall

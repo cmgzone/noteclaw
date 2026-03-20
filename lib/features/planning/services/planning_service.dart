@@ -4,6 +4,7 @@ import '../../../core/api/api_service.dart';
 import '../models/plan.dart';
 import '../models/plan_task.dart';
 import '../models/requirement.dart';
+import '../models/design_artifact.dart';
 
 /// Provider for the Planning Service
 /// Requirements: 1.1, 1.2, 1.3, 3.1
@@ -702,6 +703,168 @@ class PlanningService {
       return response['success'] == true;
     } catch (e, stack) {
       developer.log('[PLANNING] Error deleting design note: $e',
+          name: 'PlanningService', error: e, stackTrace: stack);
+      rethrow;
+    }
+  }
+
+  // ==================== DESIGN ARTIFACT OPERATIONS ====================
+
+  /// List typed design artifacts for a plan.
+  Future<List<DesignArtifact>> listDesignArtifacts(
+    String planId, {
+    DesignArtifactType? artifactType,
+  }) async {
+    try {
+      developer.log('[PLANNING] Listing design artifacts for plan: $planId',
+          name: 'PlanningService');
+      final queryParams = <String, String>{};
+      if (artifactType != null) {
+        queryParams['artifactType'] = artifactType.backendValue;
+      }
+      final queryString = queryParams.isEmpty
+          ? ''
+          : '?${queryParams.entries.map((e) => '${e.key}=${e.value}').join('&')}';
+      final response =
+          await _api.get('/planning/$planId/design-artifacts$queryString');
+      final artifactsList = response['designArtifacts'] as List? ?? [];
+      return artifactsList
+          .map((json) =>
+              DesignArtifact.fromBackendJson(json as Map<String, dynamic>))
+          .toList();
+    } catch (e, stack) {
+      developer.log('[PLANNING] Error listing design artifacts: $e',
+          name: 'PlanningService', error: e, stackTrace: stack);
+      rethrow;
+    }
+  }
+
+  /// Get a design artifact with optional version history.
+  Future<DesignArtifact?> getDesignArtifact(
+    String planId,
+    String artifactId, {
+    bool includeVersions = true,
+  }) async {
+    try {
+      developer.log('[PLANNING] Getting design artifact: $artifactId',
+          name: 'PlanningService');
+      final query = includeVersions ? '?includeVersions=true' : '';
+      final response =
+          await _api.get('/planning/$planId/design-artifacts/$artifactId$query');
+      if (response['designArtifact'] == null) return null;
+      return DesignArtifact.fromBackendJson(
+          response['designArtifact'] as Map<String, dynamic>);
+    } catch (e, stack) {
+      developer.log('[PLANNING] Error getting design artifact: $e',
+          name: 'PlanningService', error: e, stackTrace: stack);
+      rethrow;
+    }
+  }
+
+  /// Create a design artifact with structured root data.
+  Future<DesignArtifact> createDesignArtifact({
+    required String planId,
+    required String name,
+    required DesignArtifactType artifactType,
+    required Map<String, dynamic> rootData,
+    DesignArtifactStatus status = DesignArtifactStatus.draft,
+    DesignArtifactSource source = DesignArtifactSource.manual,
+    int schemaVersion = 1,
+    Map<String, dynamic>? metadata,
+    String? changeSummary,
+  }) async {
+    try {
+      developer.log('[PLANNING] Creating design artifact: $name',
+          name: 'PlanningService');
+      final response = await _api.post('/planning/$planId/design-artifacts', {
+        'name': name,
+        'artifactType': artifactType.backendValue,
+        'rootData': rootData,
+        'status': status.backendValue,
+        'source': source.backendValue,
+        'schemaVersion': schemaVersion,
+        if (metadata != null) 'metadata': metadata,
+        if (changeSummary != null) 'changeSummary': changeSummary,
+      });
+      return DesignArtifact.fromBackendJson(
+          response['designArtifact'] as Map<String, dynamic>);
+    } catch (e, stack) {
+      developer.log('[PLANNING] Error creating design artifact: $e',
+          name: 'PlanningService', error: e, stackTrace: stack);
+      rethrow;
+    }
+  }
+
+  /// Update a design artifact and append a new saved version.
+  Future<DesignArtifact?> updateDesignArtifact(
+    String planId,
+    String artifactId, {
+    String? name,
+    DesignArtifactStatus? status,
+    int? schemaVersion,
+    Map<String, dynamic>? rootData,
+    Map<String, dynamic>? metadata,
+    String? changeSummary,
+  }) async {
+    try {
+      developer.log('[PLANNING] Updating design artifact: $artifactId',
+          name: 'PlanningService');
+      final body = <String, dynamic>{};
+      if (name != null) body['name'] = name;
+      if (status != null) body['status'] = status.backendValue;
+      if (schemaVersion != null) body['schemaVersion'] = schemaVersion;
+      if (rootData != null) body['rootData'] = rootData;
+      if (metadata != null) body['metadata'] = metadata;
+      if (changeSummary != null) body['changeSummary'] = changeSummary;
+      if (body.isEmpty) throw Exception('No fields to update');
+
+      final response = await _api.put(
+        '/planning/$planId/design-artifacts/$artifactId',
+        body,
+      );
+      if (response['designArtifact'] == null) return null;
+      return DesignArtifact.fromBackendJson(
+          response['designArtifact'] as Map<String, dynamic>);
+    } catch (e, stack) {
+      developer.log('[PLANNING] Error updating design artifact: $e',
+          name: 'PlanningService', error: e, stackTrace: stack);
+      rethrow;
+    }
+  }
+
+  /// Delete a design artifact and all saved versions.
+  Future<bool> deleteDesignArtifact(String planId, String artifactId) async {
+    try {
+      developer.log('[PLANNING] Deleting design artifact: $artifactId',
+          name: 'PlanningService');
+      final response =
+          await _api.delete('/planning/$planId/design-artifacts/$artifactId');
+      return response['success'] == true;
+    } catch (e, stack) {
+      developer.log('[PLANNING] Error deleting design artifact: $e',
+          name: 'PlanningService', error: e, stackTrace: stack);
+      rethrow;
+    }
+  }
+
+  /// Load version history for a design artifact.
+  Future<List<DesignArtifactVersion>> getDesignArtifactVersions(
+    String planId,
+    String artifactId,
+  ) async {
+    try {
+      developer.log(
+          '[PLANNING] Getting design artifact versions: $artifactId',
+          name: 'PlanningService');
+      final response = await _api
+          .get('/planning/$planId/design-artifacts/$artifactId/versions');
+      final versionsList = response['versions'] as List? ?? [];
+      return versionsList
+          .map((json) => DesignArtifactVersion.fromBackendJson(
+              json as Map<String, dynamic>))
+          .toList();
+    } catch (e, stack) {
+      developer.log('[PLANNING] Error getting design artifact versions: $e',
           name: 'PlanningService', error: e, stackTrace: stack);
       rethrow;
     }

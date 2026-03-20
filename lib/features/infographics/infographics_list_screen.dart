@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -298,15 +301,89 @@ class _InfographicCard extends StatelessWidget {
   }
 
   Widget _buildImagePreview() {
-    if (infographic.imageUrl != null) {
+    if (infographic.hasHtmlContent) {
+      return Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color(0xFFF5E8D3), Color(0xFFE4C49A)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.web_asset_rounded,
+                size: 34,
+                color: Colors.brown.shade700,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'HTML Infographic',
+                style: TextStyle(
+                  color: Colors.brown.shade900,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Fallback preview',
+                style: TextStyle(
+                  color: Colors.brown.shade700,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final imageUrl = infographic.imageUrl;
+    if (imageUrl != null && imageUrl.isNotEmpty) {
+      if (imageUrl.startsWith('data:image/')) {
+        try {
+          final commaIndex = imageUrl.indexOf(',');
+          final base64Data =
+              commaIndex == -1 ? imageUrl : imageUrl.substring(commaIndex + 1);
+          final bytes = base64Decode(base64Data);
+          return Image.memory(
+            Uint8List.fromList(bytes),
+            fit: BoxFit.cover,
+          );
+        } catch (_) {
+          return const Center(
+            child: Icon(LucideIcons.imageOff, size: 32),
+          );
+        }
+      }
+
       return AppNetworkImage(
-        imageUrl: infographic.imageUrl!,
+        imageUrl: imageUrl,
         fit: BoxFit.cover,
         errorWidget: (context) => const Center(
           child: Icon(LucideIcons.imageOff, size: 32),
         ),
       );
     }
+
+    final imageBase64 = infographic.imageBase64;
+    if (imageBase64 != null && imageBase64.isNotEmpty) {
+      try {
+        final bytes = base64Decode(imageBase64);
+        return Image.memory(
+          Uint8List.fromList(bytes),
+          fit: BoxFit.cover,
+        );
+      } catch (_) {
+        return const Center(
+          child: Icon(LucideIcons.imageOff, size: 32),
+        );
+      }
+    }
+
     return const SizedBox.shrink();
   }
 
@@ -489,19 +566,19 @@ class _SelectSourceSheetState extends ConsumerState<_SelectSourceSheet> {
       final source =
           widget.sources.firstWhere((s) => s.id == _selectedSourceId);
 
-      // Generate prompt first
-      final prompt = await ref
-          .read(infographicProvider.notifier)
-          .generateInfographicPrompt(
-            sourceId: _selectedSourceId!,
-            style: _selectedStyle,
-          );
+      final asset =
+          await ref.read(infographicProvider.notifier).generateInfographicAsset(
+                sourceId: _selectedSourceId!,
+                title: 'Infographic: ${source.title}',
+                style: _selectedStyle,
+              );
 
-      // Create infographic with the prompt (image generation would be separate)
       await ref.read(infographicProvider.notifier).createInfographic(
             sourceId: _selectedSourceId!,
             notebookId: widget.notebookId,
             title: 'Infographic: ${source.title}',
+            imageUrl: asset.imageUrl,
+            imageBase64: asset.imageBase64,
             style: _selectedStyle,
           );
 
@@ -509,8 +586,11 @@ class _SelectSourceSheetState extends ConsumerState<_SelectSourceSheet> {
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text(
-              'Infographic created! Prompt generated for image creation.'),
+          content: Text(
+            asset.isHtmlFallback
+                ? 'HTML infographic created because this model cannot generate images.'
+                : 'Infographic created and added to your notebook.',
+          ),
           action: SnackBarAction(
             label: 'View Prompt',
             onPressed: () {
@@ -518,7 +598,7 @@ class _SelectSourceSheetState extends ConsumerState<_SelectSourceSheet> {
                 context: context,
                 builder: (_) => AlertDialog(
                   title: const Text('Generated Prompt'),
-                  content: SingleChildScrollView(child: Text(prompt)),
+                  content: SingleChildScrollView(child: Text(asset.prompt)),
                   actions: [
                     TextButton(
                       onPressed: () => Navigator.pop(context),

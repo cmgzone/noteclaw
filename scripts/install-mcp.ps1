@@ -7,7 +7,7 @@ Write-Host "📦 Installing NotebookLLM MCP Server..." -ForegroundColor Cyan
 
 # Configuration - UPDATE THESE VALUES
 $GITHUB_REPO = "cmgzone/notebookllm"
-$BACKEND_URL = "https://notebookllm-ufj7.onrender.com"
+$BACKEND_URL = "https://noteclaw.onrender.com"
 
 # Get latest release
 Write-Host "🔍 Finding latest release..." -ForegroundColor Yellow

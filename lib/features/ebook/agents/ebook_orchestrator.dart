@@ -30,6 +30,8 @@ class EbookOrchestrator extends StateNotifier<EbookProject?> {
         status: EbookStatus.generating, currentPhase: 'Initializing...');
 
     try {
+      await ref.read(ebookProvider.notifier).updateEbook(state!);
+
       // 0. Context Gathering (if Notebook selected)
       state = state!.copyWith(currentPhase: 'Loading notebook sources...');
       await overlayBubbleService.updateStatus('Loading sources...');
@@ -253,7 +255,7 @@ class EbookOrchestrator extends StateNotifier<EbookProject?> {
       await overlayBubbleService.hide();
 
       // Save error state too so user can see it in library
-      await ref.read(ebookProvider.notifier).addEbook(state!);
+      await ref.read(ebookProvider.notifier).updateEbook(state!);
     } finally {
       // Release wake lock when done
       await wakelockService.release();

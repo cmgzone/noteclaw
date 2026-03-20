@@ -11,3 +11,5 @@ library planning_models;
 export 'plan.dart';
 export 'plan_task.dart';
 export 'requirement.dart';
+export 'design_artifact.dart';
+export 'design_document.dart';

@@ -11,6 +11,7 @@ import '../../core/services/activity_logger_service.dart';
 import 'models/plan.dart';
 import 'models/plan_task.dart';
 import 'models/requirement.dart';
+import 'models/design_artifact.dart';
 import 'services/planning_service.dart';
 
 /// State class for Planning Mode
@@ -19,16 +20,20 @@ import 'services/planning_service.dart';
 class PlanningState {
   final List<Plan> plans;
   final Plan? currentPlan;
+  final List<DesignArtifact> designArtifacts;
   final bool isLoading;
   final bool isLoadingTasks;
+  final bool isLoadingDesignArtifacts;
   final String? error;
   final bool isConnected; // WebSocket connection status
 
   const PlanningState({
     this.plans = const [],
     this.currentPlan,
+    this.designArtifacts = const [],
     this.isLoading = false,
     this.isLoadingTasks = false,
+    this.isLoadingDesignArtifacts = false,
     this.error,
     this.isConnected = false,
   });
@@ -36,8 +41,10 @@ class PlanningState {
   PlanningState copyWith({
     List<Plan>? plans,
     Plan? currentPlan,
+    List<DesignArtifact>? designArtifacts,
     bool? isLoading,
     bool? isLoadingTasks,
+    bool? isLoadingDesignArtifacts,
     String? error,
     bool? isConnected,
     bool clearCurrentPlan = false,
@@ -46,8 +53,11 @@ class PlanningState {
     return PlanningState(
       plans: plans ?? this.plans,
       currentPlan: clearCurrentPlan ? null : (currentPlan ?? this.currentPlan),
+      designArtifacts: designArtifacts ?? this.designArtifacts,
       isLoading: isLoading ?? this.isLoading,
       isLoadingTasks: isLoadingTasks ?? this.isLoadingTasks,
+      isLoadingDesignArtifacts:
+          isLoadingDesignArtifacts ?? this.isLoadingDesignArtifacts,
       error: clearError ? null : (error ?? this.error),
       isConnected: isConnected ?? this.isConnected,
     );
@@ -164,11 +174,13 @@ class PlanningNotifier extends StateNotifier<PlanningState> {
 
         // Subscribe to WebSocket updates for this plan (Requirement 6.1)
         _subscribeToPlan(planId);
+        await loadDesignArtifacts(planId: planId, silent: true);
       } else {
         state = state.copyWith(
           isLoadingTasks: false,
           error: 'Plan not found',
           clearCurrentPlan: true,
+          designArtifacts: const [],
         );
       }
     } catch (e, stack) {
@@ -179,6 +191,244 @@ class PlanningNotifier extends StateNotifier<PlanningState> {
         stackTrace: stack,
       );
       state = state.copyWith(isLoadingTasks: false, error: e.toString());
+    }
+  }
+
+  // ==================== DESIGN ARTIFACT OPERATIONS ====================
+
+  /// Load design artifacts for the selected or provided plan.
+  Future<void> loadDesignArtifacts({
+    String? planId,
+    bool silent = false,
+    DesignArtifactType? artifactType,
+  }) async {
+    final targetPlanId = planId ?? state.currentPlan?.id;
+    if (targetPlanId == null) {
+      state = state.copyWith(error: 'No plan selected');
+      return;
+    }
+
+    if (!silent) {
+      state = state.copyWith(
+        isLoadingDesignArtifacts: true,
+        clearError: true,
+      );
+    }
+
+    try {
+      developer.log(
+        '[PLANNING_PROVIDER] Loading design artifacts for plan: $targetPlanId',
+        name: 'PlanningProvider',
+      );
+      final artifacts = await _planningService.listDesignArtifacts(
+        targetPlanId,
+        artifactType: artifactType,
+      );
+
+      state = state.copyWith(
+        designArtifacts: artifacts,
+        isLoadingDesignArtifacts: false,
+      );
+    } catch (e, stack) {
+      developer.log(
+        '[PLANNING_PROVIDER] Error loading design artifacts: $e',
+        name: 'PlanningProvider',
+        error: e,
+        stackTrace: stack,
+      );
+      state = state.copyWith(
+        isLoadingDesignArtifacts: false,
+        error: e.toString(),
+      );
+    }
+  }
+
+  /// Create a typed design artifact in the current plan.
+  Future<DesignArtifact?> createDesignArtifact({
+    required String name,
+    required DesignArtifactType artifactType,
+    required Map<String, dynamic> rootData,
+    DesignArtifactStatus status = DesignArtifactStatus.draft,
+    DesignArtifactSource source = DesignArtifactSource.manual,
+    int schemaVersion = 1,
+    Map<String, dynamic>? metadata,
+    String? changeSummary,
+  }) async {
+    final planId = state.currentPlan?.id;
+    if (planId == null) {
+      state = state.copyWith(error: 'No plan selected');
+      return null;
+    }
+
+    try {
+      developer.log('[PLANNING_PROVIDER] Creating design artifact: $name',
+          name: 'PlanningProvider');
+      final artifact = await _planningService.createDesignArtifact(
+        planId: planId,
+        name: name,
+        artifactType: artifactType,
+        rootData: rootData,
+        status: status,
+        source: source,
+        schemaVersion: schemaVersion,
+        metadata: metadata,
+        changeSummary: changeSummary,
+      );
+
+      await loadDesignArtifacts(planId: planId, silent: true);
+      return artifact;
+    } catch (e, stack) {
+      developer.log(
+        '[PLANNING_PROVIDER] Error creating design artifact: $e',
+        name: 'PlanningProvider',
+        error: e,
+        stackTrace: stack,
+      );
+      state = state.copyWith(error: e.toString());
+      return null;
+    }
+  }
+
+  /// Update a design artifact and save a new version snapshot.
+  Future<DesignArtifact?> updateDesignArtifact(
+    String artifactId, {
+    String? name,
+    DesignArtifactStatus? status,
+    int? schemaVersion,
+    Map<String, dynamic>? rootData,
+    Map<String, dynamic>? metadata,
+    String? changeSummary,
+  }) async {
+    final planId = state.currentPlan?.id;
+    if (planId == null) {
+      state = state.copyWith(error: 'No plan selected');
+      return null;
+    }
+
+    try {
+      developer.log(
+        '[PLANNING_PROVIDER] Updating design artifact: $artifactId',
+        name: 'PlanningProvider',
+      );
+      final artifact = await _planningService.updateDesignArtifact(
+        planId,
+        artifactId,
+        name: name,
+        status: status,
+        schemaVersion: schemaVersion,
+        rootData: rootData,
+        metadata: metadata,
+        changeSummary: changeSummary,
+      );
+
+      await loadDesignArtifacts(planId: planId, silent: true);
+      return artifact;
+    } catch (e, stack) {
+      developer.log(
+        '[PLANNING_PROVIDER] Error updating design artifact: $e',
+        name: 'PlanningProvider',
+        error: e,
+        stackTrace: stack,
+      );
+      state = state.copyWith(error: e.toString());
+      return null;
+    }
+  }
+
+  /// Delete a design artifact from the current plan.
+  Future<bool> deleteDesignArtifact(String artifactId) async {
+    final planId = state.currentPlan?.id;
+    if (planId == null) {
+      state = state.copyWith(error: 'No plan selected');
+      return false;
+    }
+
+    try {
+      developer.log(
+        '[PLANNING_PROVIDER] Deleting design artifact: $artifactId',
+        name: 'PlanningProvider',
+      );
+      final success =
+          await _planningService.deleteDesignArtifact(planId, artifactId);
+
+      if (success) {
+        await loadDesignArtifacts(planId: planId, silent: true);
+      }
+
+      return success;
+    } catch (e, stack) {
+      developer.log(
+        '[PLANNING_PROVIDER] Error deleting design artifact: $e',
+        name: 'PlanningProvider',
+        error: e,
+        stackTrace: stack,
+      );
+      state = state.copyWith(error: e.toString());
+      return false;
+    }
+  }
+
+  /// Get full design artifact details including version history.
+  Future<DesignArtifact?> getDesignArtifact(
+    String artifactId, {
+    bool includeVersions = true,
+  }) async {
+    final planId = state.currentPlan?.id;
+    if (planId == null) {
+      state = state.copyWith(error: 'No plan selected');
+      return null;
+    }
+
+    try {
+      developer.log(
+        '[PLANNING_PROVIDER] Getting design artifact: $artifactId',
+        name: 'PlanningProvider',
+      );
+      return await _planningService.getDesignArtifact(
+        planId,
+        artifactId,
+        includeVersions: includeVersions,
+      );
+    } catch (e, stack) {
+      developer.log(
+        '[PLANNING_PROVIDER] Error getting design artifact: $e',
+        name: 'PlanningProvider',
+        error: e,
+        stackTrace: stack,
+      );
+      state = state.copyWith(error: e.toString());
+      return null;
+    }
+  }
+
+  /// Get version history for a design artifact.
+  Future<List<DesignArtifactVersion>> getDesignArtifactVersions(
+    String artifactId,
+  ) async {
+    final planId = state.currentPlan?.id;
+    if (planId == null) {
+      state = state.copyWith(error: 'No plan selected');
+      return const [];
+    }
+
+    try {
+      developer.log(
+        '[PLANNING_PROVIDER] Getting versions for design artifact: $artifactId',
+        name: 'PlanningProvider',
+      );
+      return await _planningService.getDesignArtifactVersions(
+        planId,
+        artifactId,
+      );
+    } catch (e, stack) {
+      developer.log(
+        '[PLANNING_PROVIDER] Error getting design artifact versions: $e',
+        name: 'PlanningProvider',
+        error: e,
+        stackTrace: stack,
+      );
+      state = state.copyWith(error: e.toString());
+      return const [];
     }
   }
 
@@ -1313,11 +1563,25 @@ final planningConnectionProvider = Provider<bool>((ref) {
 /// Provider for loading state
 final planningLoadingProvider = Provider<bool>((ref) {
   final state = ref.watch(planningProvider);
-  return state.isLoading || state.isLoadingTasks;
+  return state.isLoading ||
+      state.isLoadingTasks ||
+      state.isLoadingDesignArtifacts;
 });
 
 /// Provider for error state
 final planningErrorProvider = Provider<String?>((ref) {
   final state = ref.watch(planningProvider);
   return state.error;
+});
+
+/// Provider for design artifacts on the current plan.
+final planDesignArtifactsProvider = Provider<List<DesignArtifact>>((ref) {
+  final state = ref.watch(planningProvider);
+  return state.designArtifacts;
+});
+
+/// Provider for design artifact loading state.
+final planDesignArtifactsLoadingProvider = Provider<bool>((ref) {
+  final state = ref.watch(planningProvider);
+  return state.isLoadingDesignArtifacts;
 });

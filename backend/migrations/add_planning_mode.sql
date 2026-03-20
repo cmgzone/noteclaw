@@ -45,6 +45,37 @@ CREATE TABLE IF NOT EXISTS plan_design_notes (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- ==================== PLAN DESIGN ARTIFACTS TABLES ====================
+-- Stores typed design artifacts and version history
+
+CREATE TABLE IF NOT EXISTS plan_design_artifacts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  plan_id UUID NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
+  name VARCHAR(255) NOT NULL,
+  artifact_type VARCHAR(30) NOT NULL
+    CHECK (artifact_type IN ('prototype', 'design_system', 'screen_set', 'component_library', 'flow')),
+  status VARCHAR(20) DEFAULT 'draft'
+    CHECK (status IN ('draft', 'ready', 'archived')),
+  source VARCHAR(30) DEFAULT 'manual'
+    CHECK (source IN ('manual', 'ai_generated', 'imported')),
+  schema_version INTEGER DEFAULT 1,
+  root_data JSONB DEFAULT '{}',
+  metadata JSONB DEFAULT '{}',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS plan_design_artifact_versions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  artifact_id UUID NOT NULL REFERENCES plan_design_artifacts(id) ON DELETE CASCADE,
+  version_number INTEGER NOT NULL,
+  snapshot JSONB DEFAULT '{}',
+  change_summary TEXT,
+  created_by TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE (artifact_id, version_number)
+);
+
 -- ==================== PLAN TASKS TABLE ====================
 -- Stores tasks with hierarchical support
 -- Requirements: 3.1
@@ -125,6 +156,11 @@ CREATE INDEX IF NOT EXISTS idx_plan_requirements_sort ON plan_requirements(plan_
 
 -- Design notes indexes
 CREATE INDEX IF NOT EXISTS idx_plan_design_notes_plan_id ON plan_design_notes(plan_id);
+CREATE INDEX IF NOT EXISTS idx_plan_design_artifacts_plan_id ON plan_design_artifacts(plan_id);
+CREATE INDEX IF NOT EXISTS idx_plan_design_artifacts_type ON plan_design_artifacts(artifact_type);
+CREATE INDEX IF NOT EXISTS idx_plan_design_artifacts_updated_at ON plan_design_artifacts(updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_plan_design_artifact_versions_artifact_id ON plan_design_artifact_versions(artifact_id);
+CREATE INDEX IF NOT EXISTS idx_plan_design_artifact_versions_version ON plan_design_artifact_versions(artifact_id, version_number DESC);
 
 -- Tasks indexes
 CREATE INDEX IF NOT EXISTS idx_plan_tasks_plan_id ON plan_tasks(plan_id);
@@ -167,6 +203,12 @@ CREATE TRIGGER trigger_plans_updated_at
 DROP TRIGGER IF EXISTS trigger_plan_tasks_updated_at ON plan_tasks;
 CREATE TRIGGER trigger_plan_tasks_updated_at
   BEFORE UPDATE ON plan_tasks
+  FOR EACH ROW
+  EXECUTE FUNCTION update_planning_updated_at();
+
+DROP TRIGGER IF EXISTS trigger_plan_design_artifacts_updated_at ON plan_design_artifacts;
+CREATE TRIGGER trigger_plan_design_artifacts_updated_at
+  BEFORE UPDATE ON plan_design_artifacts
   FOR EACH ROW
   EXECUTE FUNCTION update_planning_updated_at();
 

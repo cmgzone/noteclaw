@@ -218,6 +218,72 @@ class DiscoverablePlan {
   }
 }
 
+class DiscoverableEbook {
+  final String id;
+  final String userId;
+  final String title;
+  final String? topic;
+  final String? targetAudience;
+  final String? coverImage;
+  final int chapterCount;
+  final int viewCount;
+  final int shareCount;
+  final bool isPublic;
+  final DateTime createdAt;
+  final String? username;
+  final String? avatarUrl;
+  final int likeCount;
+  final bool userLiked;
+
+  DiscoverableEbook({
+    required this.id,
+    required this.userId,
+    required this.title,
+    this.topic,
+    this.targetAudience,
+    this.coverImage,
+    this.chapterCount = 0,
+    this.viewCount = 0,
+    this.shareCount = 0,
+    this.isPublic = false,
+    required this.createdAt,
+    this.username,
+    this.avatarUrl,
+    this.likeCount = 0,
+    this.userLiked = false,
+  });
+
+  factory DiscoverableEbook.fromJson(Map<String, dynamic> json) {
+    return DiscoverableEbook(
+      id: json['id']?.toString() ?? '',
+      userId: json['user_id']?.toString() ?? json['userId']?.toString() ?? '',
+      title: json['title']?.toString() ?? '',
+      topic: json['topic']?.toString(),
+      targetAudience: json['target_audience']?.toString() ??
+          json['targetAudience']?.toString(),
+      coverImage:
+          json['cover_image']?.toString() ?? json['coverImage']?.toString(),
+      chapterCount: SharedContent._parseInt(
+          json['chapter_count'] ?? json['chapterCount']),
+      viewCount:
+          SharedContent._parseInt(json['view_count'] ?? json['viewCount']),
+      shareCount:
+          SharedContent._parseInt(json['share_count'] ?? json['shareCount']),
+      isPublic: json['is_public'] ?? json['isPublic'] ?? false,
+      createdAt: DateTime.tryParse(json['created_at']?.toString() ??
+              json['createdAt']?.toString() ??
+              '') ??
+          DateTime.now(),
+      username: json['username']?.toString(),
+      avatarUrl:
+          json['avatar_url']?.toString() ?? json['avatarUrl']?.toString(),
+      likeCount:
+          SharedContent._parseInt(json['like_count'] ?? json['likeCount']),
+      userLiked: json['user_liked'] ?? json['userLiked'] ?? false,
+    );
+  }
+}
+
 class ContentStats {
   final int totalNotebooks;
   final int publicNotebooks;
@@ -264,24 +330,30 @@ class ContentStats {
 class DiscoverState {
   final List<DiscoverableNotebook> notebooks;
   final List<DiscoverablePlan> plans;
+  final List<DiscoverableEbook> ebooks;
   final List<StudyGroup> groups;
   final bool isLoadingNotebooks;
   final bool isLoadingPlans;
+  final bool isLoadingEbooks;
   final bool isLoadingGroups;
   final bool hasMoreNotebooks;
   final bool hasMorePlans;
+  final bool hasMoreEbooks;
   final bool hasMoreGroups;
   final String? error;
 
   DiscoverState({
     this.notebooks = const [],
     this.plans = const [],
+    this.ebooks = const [],
     this.groups = const [],
     this.isLoadingNotebooks = false,
     this.isLoadingPlans = false,
+    this.isLoadingEbooks = false,
     this.isLoadingGroups = false,
     this.hasMoreNotebooks = true,
     this.hasMorePlans = true,
+    this.hasMoreEbooks = true,
     this.hasMoreGroups = true,
     this.error,
   });
@@ -289,24 +361,30 @@ class DiscoverState {
   DiscoverState copyWith({
     List<DiscoverableNotebook>? notebooks,
     List<DiscoverablePlan>? plans,
+    List<DiscoverableEbook>? ebooks,
     List<StudyGroup>? groups,
     bool? isLoadingNotebooks,
     bool? isLoadingPlans,
+    bool? isLoadingEbooks,
     bool? isLoadingGroups,
     bool? hasMoreNotebooks,
     bool? hasMorePlans,
+    bool? hasMoreEbooks,
     bool? hasMoreGroups,
     String? error,
   }) {
     return DiscoverState(
       notebooks: notebooks ?? this.notebooks,
       plans: plans ?? this.plans,
+      ebooks: ebooks ?? this.ebooks,
       groups: groups ?? this.groups,
       isLoadingNotebooks: isLoadingNotebooks ?? this.isLoadingNotebooks,
       isLoadingPlans: isLoadingPlans ?? this.isLoadingPlans,
+      isLoadingEbooks: isLoadingEbooks ?? this.isLoadingEbooks,
       isLoadingGroups: isLoadingGroups ?? this.isLoadingGroups,
       hasMoreNotebooks: hasMoreNotebooks ?? this.hasMoreNotebooks,
       hasMorePlans: hasMorePlans ?? this.hasMorePlans,
+      hasMoreEbooks: hasMoreEbooks ?? this.hasMoreEbooks,
       hasMoreGroups: hasMoreGroups ?? this.hasMoreGroups,
       error: error,
     );
@@ -421,6 +499,38 @@ class DiscoverNotifier extends StateNotifier<DiscoverState> {
     }
   }
 
+  Future<void> loadEbooks({
+    bool refresh = false,
+    String? search,
+    String sortBy = 'recent',
+  }) async {
+    if (state.isLoadingEbooks) return;
+
+    state = state.copyWith(isLoadingEbooks: true, error: null);
+    try {
+      final offset = refresh ? 0 : state.ebooks.length;
+      String url =
+          '/social-sharing/discover/ebooks?limit=20&offset=$offset&sortBy=$sortBy';
+      if (search != null && search.isNotEmpty) {
+        url += '&search=${Uri.encodeComponent(search)}';
+      }
+
+      final response = await _api.get(url);
+      final ebooksList = response['ebooks'] as List? ?? [];
+      final ebooks =
+          ebooksList.map((e) => DiscoverableEbook.fromJson(e)).toList();
+
+      state = state.copyWith(
+        ebooks: refresh ? ebooks : [...state.ebooks, ...ebooks],
+        isLoadingEbooks: false,
+        hasMoreEbooks: ebooks.length >= 20,
+      );
+    } catch (e, stack) {
+      _logger.error('Error loading discoverable ebooks', e, stack);
+      state = state.copyWith(isLoadingEbooks: false, error: e.toString());
+    }
+  }
+
   Future<void> loadGroups({
     bool refresh = false,
     String? search,
@@ -529,6 +639,41 @@ class DiscoverNotifier extends StateNotifier<DiscoverState> {
       );
     } catch (e) {
       _logger.error('Error liking plan', e);
+    }
+  }
+
+  Future<void> likeEbook(String ebookId) async {
+    try {
+      await _api.post('/social-sharing/like', {
+        'contentType': 'ebook',
+        'contentId': ebookId,
+      });
+      state = state.copyWith(
+        ebooks: state.ebooks.map((e) {
+          if (e.id == ebookId) {
+            return DiscoverableEbook(
+              id: e.id,
+              userId: e.userId,
+              title: e.title,
+              topic: e.topic,
+              targetAudience: e.targetAudience,
+              coverImage: e.coverImage,
+              chapterCount: e.chapterCount,
+              viewCount: e.viewCount,
+              shareCount: e.shareCount,
+              isPublic: e.isPublic,
+              createdAt: e.createdAt,
+              username: e.username,
+              avatarUrl: e.avatarUrl,
+              likeCount: e.userLiked ? e.likeCount : e.likeCount + 1,
+              userLiked: true,
+            );
+          }
+          return e;
+        }).toList(),
+      );
+    } catch (e) {
+      _logger.error('Error liking ebook', e);
     }
   }
 }

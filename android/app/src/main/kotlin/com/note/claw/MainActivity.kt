@@ -1,4 +1,4 @@
-package com.notebook.llm
+package com.note.claw
 
 import io.flutter.embedding.android.FlutterActivity
 

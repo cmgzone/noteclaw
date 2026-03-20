@@ -7,6 +7,7 @@ import 'package:share_plus/share_plus.dart';
 import '../social_sharing_provider.dart';
 import '../../../core/api/api_service.dart';
 import '../../../core/sources/source_icon_helper.dart';
+import '../../../core/utils/public_share_link.dart';
 import '../../../theme/app_theme.dart';
 
 /// Screen to view a public notebook with its sources
@@ -62,15 +63,6 @@ class _PublicNotebookScreenState extends ConsumerState<PublicNotebookScreen> {
           _isLoading = false;
         });
 
-        // Record view - intentionally fire and forget, but catch errors
-        try {
-          ref
-              .read(socialSharingServiceProvider)
-              .recordView('notebook', widget.notebookId)
-              .ignore();
-        } catch (_) {
-          // Ignore stats recording errors
-        }
       } else {
         setState(() {
           _error = 'Notebook not found or not public';
@@ -153,9 +145,8 @@ class _PublicNotebookScreenState extends ConsumerState<PublicNotebookScreen> {
 
   Future<void> _shareNotebook(String title) async {
     try {
-      final api = ref.read(apiServiceProvider);
       final publicUrl =
-          '${api.baseUrl}social-sharing/public/notebooks/${widget.notebookId}';
+          buildPublicShareLink('/social/notebook/${widget.notebookId}');
       await Share.share(
         'Notebook: $title\n$publicUrl',
         subject: title,

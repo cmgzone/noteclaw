@@ -253,9 +253,7 @@ class _StudioScreenState extends ConsumerState<StudioScreen> {
             ),
             const SizedBox(height: 20),
             Text(
-              state.isCancelled
-                  ? 'Cancelling...'
-                  : 'Producing Deep Dive Podcast...',
+              state.isCancelled ? 'Cancelling...' : 'Producing Podcast...',
               style: text.titleMedium?.copyWith(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
@@ -329,14 +327,14 @@ class _StudioScreenState extends ConsumerState<StudioScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Deep Dive Podcast',
+                      'Podcast Studio',
                       style: text.titleLarge?.copyWith(
                         fontWeight: FontWeight.bold,
                       ),
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      'Generate a conversational audio overview with two hosts.',
+                      'Choose a title, style, and focus to generate a custom podcast.',
                       style: text.bodyMedium?.copyWith(
                         color: scheme.onSurfaceVariant,
                       ),
@@ -363,7 +361,12 @@ class _StudioScreenState extends ConsumerState<StudioScreen> {
     showDialog(
       context: context,
       builder: (context) => _PodcastSettingsDialog(
-        onGenerate: (topic) => _generateAudioOverview(ref, topic),
+        onGenerate: (title, podcastType, topic) => _generateAudioOverview(
+          ref,
+          title: title,
+          podcastType: podcastType,
+          topic: topic,
+        ),
       ),
     );
   }
@@ -427,7 +430,12 @@ class _StudioScreenState extends ConsumerState<StudioScreen> {
     }
   }
 
-  Future<void> _generateAudioOverview(WidgetRef ref, String? topic) async {
+  Future<void> _generateAudioOverview(
+    WidgetRef ref, {
+    required String title,
+    required String podcastType,
+    String? topic,
+  }) async {
     // Check and consume credits for podcast generation
     final hasCredits = await ref.tryUseCredits(
       context: context,
@@ -437,9 +445,13 @@ class _StudioScreenState extends ConsumerState<StudioScreen> {
     if (!hasCredits) return;
 
     try {
-      await ref
-          .read(audioOverviewProvider.notifier)
-          .generate('Deep Dive Podcast', isPodcast: true, topic: topic);
+      await ref.read(audioOverviewProvider.notifier).generate(
+            title,
+            isPodcast: true,
+            topic: topic,
+            podcastType: podcastType,
+            notebookId: widget.notebookId,
+          );
 
       // We don't need a snackbar here because the UI updates to show generation progress
     } catch (e) {
@@ -599,9 +611,87 @@ class _TemplateCard extends StatelessWidget {
   }
 }
 
+const _podcastTypeOptions = [
+  _PodcastTypeOption(
+    id: 'deep_dive',
+    label: 'Deep Dive',
+    description: 'Detailed and conversational with extra context and analysis.',
+    defaultTitle: 'Deep Dive Podcast',
+    icon: LucideIcons.mic,
+  ),
+  _PodcastTypeOption(
+    id: 'quick_brief',
+    label: 'Quick Brief',
+    description: 'Fast highlights and takeaways in a short episode.',
+    defaultTitle: 'Quick Brief Podcast',
+    icon: LucideIcons.sparkles,
+  ),
+  _PodcastTypeOption(
+    id: 'debate',
+    label: 'Debate',
+    description:
+        'Two hosts challenge each other with pros, cons, and tradeoffs.',
+    defaultTitle: 'Debate Podcast',
+    icon: LucideIcons.messageSquare,
+  ),
+  _PodcastTypeOption(
+    id: 'storytelling',
+    label: 'Storytelling',
+    description: 'More narrative and example-driven with a polished flow.',
+    defaultTitle: 'Storytelling Podcast',
+    icon: LucideIcons.bookOpen,
+  ),
+  _PodcastTypeOption(
+    id: 'interview',
+    label: 'Interview',
+    description:
+        'One host leads with questions while the other teaches and explains.',
+    defaultTitle: 'Interview Podcast',
+    icon: LucideIcons.users,
+  ),
+  _PodcastTypeOption(
+    id: 'news_roundup',
+    label: 'News Roundup',
+    description: 'Headline-style coverage with fast updates and context.',
+    defaultTitle: 'News Roundup Podcast',
+    icon: LucideIcons.fileText,
+  ),
+  _PodcastTypeOption(
+    id: 'teaching_mode',
+    label: 'Teaching Mode',
+    description: 'Clear, step-by-step explanations designed for learning.',
+    defaultTitle: 'Teaching Mode Podcast',
+    icon: LucideIcons.graduationCap,
+  ),
+];
+
+class _PodcastTypeOption {
+  const _PodcastTypeOption({
+    required this.id,
+    required this.label,
+    required this.description,
+    required this.defaultTitle,
+    required this.icon,
+  });
+
+  final String id;
+  final String label;
+  final String description;
+  final String defaultTitle;
+  final IconData icon;
+}
+
+_PodcastTypeOption _podcastTypeById(String id) {
+  return _podcastTypeOptions.firstWhere(
+    (option) => option.id == id,
+    orElse: () => _podcastTypeOptions.first,
+  );
+}
+
 /// Podcast Settings Dialog with voice customization (Refined UI)
 class _PodcastSettingsDialog extends StatefulWidget {
-  final Function(String?) onGenerate;
+  final void Function(String title, String podcastType, String? topic)
+      onGenerate;
 
   const _PodcastSettingsDialog({required this.onGenerate});
 
@@ -610,10 +700,52 @@ class _PodcastSettingsDialog extends StatefulWidget {
 }
 
 class _PodcastSettingsDialogState extends State<_PodcastSettingsDialog> {
+  late final TextEditingController _titleController;
+  String _selectedType = _podcastTypeOptions.first.id;
   String? _topic;
+  bool _hasCustomTitle = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _titleController = TextEditingController(
+      text: _podcastTypeOptions.first.defaultTitle,
+    );
+  }
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    super.dispose();
+  }
+
+  void _selectPodcastType(String type) {
+    if (type == _selectedType) return;
+
+    final previousDefault = _podcastTypeById(_selectedType).defaultTitle;
+    final nextDefault = _podcastTypeById(type).defaultTitle;
+    final currentTitle = _titleController.text.trim();
+    final shouldRefreshTitle = !_hasCustomTitle ||
+        currentTitle.isEmpty ||
+        currentTitle == previousDefault;
+
+    setState(() {
+      _selectedType = type;
+    });
+
+    if (shouldRefreshTitle) {
+      _titleController.value = TextEditingValue(
+        text: nextDefault,
+        selection: TextSelection.collapsed(offset: nextDefault.length),
+      );
+      _hasCustomTitle = false;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    final selectedType = _podcastTypeById(_selectedType);
+
     // Return a refined Dialog
     return Dialog(
       backgroundColor: Colors.transparent,
@@ -639,9 +771,78 @@ class _PodcastSettingsDialogState extends State<_PodcastSettingsDialog> {
             // Content
             // Content
             Column(
-              // ... simplified content
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                Text('Podcast Name',
+                    style: Theme.of(context).textTheme.labelMedium),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _titleController,
+                  decoration: InputDecoration(
+                    isDense: true,
+                    hintText: selectedType.defaultTitle,
+                    filled: true,
+                    fillColor: Theme.of(context)
+                        .colorScheme
+                        .surface
+                        .withValues(alpha: 0.5),
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                  ),
+                  onChanged: (value) {
+                    final trimmed = value.trim();
+                    _hasCustomTitle = trimmed.isNotEmpty &&
+                        trimmed != _podcastTypeById(_selectedType).defaultTitle;
+                  },
+                ),
+                const SizedBox(height: 16),
+                Text('Podcast Type',
+                    style: Theme.of(context).textTheme.labelMedium),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: _podcastTypeOptions.map((option) {
+                    final isSelected = option.id == _selectedType;
+                    return ChoiceChip(
+                      selected: isSelected,
+                      label: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(option.icon, size: 16),
+                          const SizedBox(width: 6),
+                          Text(option.label),
+                        ],
+                      ),
+                      onSelected: (_) => _selectPodcastType(option.id),
+                    );
+                  }).toList(),
+                ),
+                const SizedBox(height: 10),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .surface
+                        .withValues(alpha: 0.35),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .outline
+                          .withValues(alpha: 0.15),
+                    ),
+                  ),
+                  child: Text(
+                    selectedType.description,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.secondary,
+                        ),
+                  ),
+                ),
+                const SizedBox(height: 16),
                 Text('Focus Topic (Optional)',
                     style: Theme.of(context).textTheme.labelMedium),
                 const SizedBox(height: 8),
@@ -682,9 +883,11 @@ class _PodcastSettingsDialogState extends State<_PodcastSettingsDialog> {
                 const SizedBox(width: 8),
                 FilledButton.icon(
                   onPressed: () {
-                    // simplified generation call for demo
+                    final title = _titleController.text.trim().isEmpty
+                        ? selectedType.defaultTitle
+                        : _titleController.text.trim();
                     Navigator.pop(context);
-                    widget.onGenerate(_topic);
+                    widget.onGenerate(title, _selectedType, _topic);
                   },
                   icon: const Icon(LucideIcons.sparkles, size: 18),
                   label: const Text('Generate'),

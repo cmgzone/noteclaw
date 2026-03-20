@@ -29,6 +29,9 @@ async function runMigration() {
                 selected_model TEXT,
                 status TEXT DEFAULT 'draft',
                 cover_image TEXT,
+                is_public BOOLEAN DEFAULT false,
+                view_count INTEGER DEFAULT 0,
+                share_count INTEGER DEFAULT 0,
                 created_at TIMESTAMPTZ DEFAULT NOW(),
                 updated_at TIMESTAMPTZ DEFAULT NOW()
             )`,
@@ -38,6 +41,7 @@ async function runMigration() {
                 title TEXT NOT NULL,
                 content TEXT,
                 chapter_order INTEGER NOT NULL,
+                images JSONB DEFAULT '[]'::jsonb,
                 status TEXT DEFAULT 'draft',
                 created_at TIMESTAMPTZ DEFAULT NOW(),
                 updated_at TIMESTAMPTZ DEFAULT NOW()

@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:just_audio/just_audio.dart';
 import 'package:audio_service/audio_service.dart';
 //
@@ -128,7 +130,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
     // 1. Define audio sources
     final audioSources = queue.map((item) {
       return AudioSource.uri(
-        Uri.parse(item.id), // We treat ID as the URL for simplicity
+        _toPlaybackUri(item.id), // We treat ID as the URL for simplicity
         tag: item,
       );
     }).toList();
@@ -155,6 +157,31 @@ class AudioPlayerHandler extends BaseAudioHandler {
   @override
   Future<dynamic> customAction(String name,
       [Map<String, dynamic>? extras]) async {
+    if (name == 'setUrl') {
+      final url = extras?['url']?.toString();
+      if (url == null || url.isEmpty) {
+        return null;
+      }
+
+      final item = MediaItem(
+        id: url,
+        title: extras?['title']?.toString() ?? 'Audio Overview',
+        artist: 'NoteClaw',
+        extras: extras == null ? null : Map<String, dynamic>.from(extras),
+      );
+
+      final audioSource = AudioSource.uri(
+        _toPlaybackUri(url),
+        tag: item,
+      );
+
+      _playlist = ConcatenatingAudioSource(children: [audioSource]);
+      await _player.setAudioSource(_playlist);
+      queue.add([item]);
+      mediaItem.add(item);
+      return null;
+    }
+
     if (name == 'setQueue') {
       // Expects 'items' (List<MediaItem encoded maps>?) or handle in provider
       // Simpler to define updateQueue in the abstract class if we could, but base doesn't have it.
@@ -162,5 +189,14 @@ class AudioPlayerHandler extends BaseAudioHandler {
       return null;
     }
     return super.customAction(name, extras);
+  }
+
+  Uri _toPlaybackUri(String source) {
+    final parsed = Uri.tryParse(source);
+    if (parsed != null && parsed.scheme.isNotEmpty) {
+      return parsed;
+    }
+
+    return Uri.file(source, windows: Platform.isWindows);
   }
 }

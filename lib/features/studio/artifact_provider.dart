@@ -10,6 +10,7 @@ import '../../core/services/background_ai_service.dart';
 import '../../core/services/overlay_bubble_service.dart';
 import '../../features/sources/source_provider.dart';
 import '../../features/sources/source.dart';
+import '../notebook/notebook_chat_context_builder.dart';
 import 'artifact.dart';
 
 class ArtifactNotifier extends StateNotifier<List<Artifact>> {
@@ -146,7 +147,10 @@ class ArtifactNotifier extends StateNotifier<List<Artifact>> {
         ? sources.where((s) => s.notebookId == notebookId).toList()
         : sources;
 
-    final sourceContent = _buildSourceContent(filteredSources);
+    final sourceContent = await _buildSourceContent(
+      filteredSources,
+      objective: _objectiveForArtifactType(type),
+    );
     final prompt = _buildPromptForType(type, sourceContent);
     final taskId = DateTime.now().millisecondsSinceEpoch.toString();
 
@@ -266,7 +270,10 @@ Format in Markdown with dates/periods as headers.''';
     }
 
     // Build source content for AI
-    final sourceContent = _buildSourceContent(filteredSources);
+    final sourceContent = await _buildSourceContent(
+      filteredSources,
+      objective: _objectiveForArtifactType(type),
+    );
     debugPrint(
         '[ArtifactProvider] Built source content length: ${sourceContent.length}');
 
@@ -314,14 +321,10 @@ Format in Markdown with dates/periods as headers.''';
     }
   }
 
-  String _buildSourceContent(List<Source> sources) {
-    final buffer = StringBuffer();
-    int totalChars = 0;
-    const int maxCharsPerSource = 50000; // Increased from 2000
-    const int maxTotalChars =
-        500000; // Safety cap to prevent hitting API limits
-    const int maxSources = 50; // Increased from 10
-
+  Future<String> _buildSourceContent(
+    List<Source> sources, {
+    required String objective,
+  }) async {
     // Filter out sources with no real content (e.g., media placeholders)
     final validSources = sources.where((s) {
       final content = s.content;
@@ -337,35 +340,37 @@ Format in Markdown with dates/periods as headers.''';
     debugPrint(
         '[ArtifactProvider] Valid sources with content: ${validSources.length}/${sources.length}');
 
-    for (final source in validSources.take(maxSources)) {
-      final content = source.content;
-
-      // Calculate how much content we can safely add
-      final remainingChars = maxTotalChars - totalChars;
-      if (remainingChars <= 0) break;
-
-      final maxAllowed = remainingChars < maxCharsPerSource
-          ? remainingChars
-          : maxCharsPerSource;
-      final charsToUse =
-          content.length < maxAllowed ? content.length : maxAllowed;
-      final preview = content.length > charsToUse
-          ? '${content.substring(0, charsToUse)}...'
-          : content;
-
-      buffer.writeln('## ${source.title}');
-      buffer.writeln(preview);
-      buffer.writeln();
-
-      final int previewLen = preview.length;
-      final int titleLen = source.title.length;
-      totalChars =
-          totalChars + previewLen + titleLen + 10; // +10 for formatting
+    if (validSources.isEmpty) {
+      return '';
     }
 
+    final contextText =
+        await NotebookChatContextBuilder.buildContextTextForCurrentModel(
+      read: ref.read,
+      sources: validSources,
+      objective: objective,
+    );
+
     debugPrint(
-        '[ArtifactProvider] Built source content: $totalChars chars from ${validSources.length} valid sources');
-    return buffer.toString();
+        '[ArtifactProvider] Built source content: ${contextText.length} chars from ${validSources.length} valid sources');
+    return contextText;
+  }
+
+  String _objectiveForArtifactType(String type) {
+    switch (type) {
+      case 'study-guide':
+        return 'Create a study guide that organizes the notebook into key concepts, important details, summaries, and study tips.';
+      case 'brief':
+        return 'Create an executive brief with the most important findings, analysis, recommendations, and conclusions.';
+      case 'faq':
+        return 'Create an FAQ that covers the most important notebook topics with clear, grounded answers.';
+      case 'timeline':
+        return 'Create a timeline that extracts the most important events, milestones, or developments in order.';
+      case 'mind-map':
+        return 'Create a mind map that highlights the central topic, major branches, supporting ideas, and relationships.';
+      default:
+        return 'Summarize the notebook sources into a clear, high-signal artifact.';
+    }
   }
 
   Future<String> _generateStudyGuideWithAI(

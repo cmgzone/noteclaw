@@ -300,6 +300,29 @@ Answer the user's question to the best of your ability.
     }
   }
 
+  bool _isConnectivityIssue(Object error) {
+    final lower = error.toString().toLowerCase();
+    const patterns = <String>[
+      'no internet connection',
+      'connection timed out',
+      'connection error',
+      'connection refused',
+      'failed host lookup',
+      'socketexception',
+      'socket exception',
+      'network is unreachable',
+      'software caused connection abort',
+      'connection reset by peer',
+      'connection closed before full header was received',
+      'xmlhttprequest error',
+      'clientexception',
+      'failed to fetch',
+      'net::err',
+    ];
+
+    return patterns.any(lower.contains);
+  }
+
   /// Ask a question and get a stream of tokens back
   Stream<List<StreamToken>> ask(String query,
       {List<Message> chatHistory = const [],
@@ -460,11 +483,7 @@ Answer the user's question to the best of your ability.
         if (mounted) state = [...state, doneToken];
         yield [doneToken];
       } catch (streamErr) {
-        final lower = streamErr.toString().toLowerCase();
-        final shouldFallback = kIsWeb ||
-            lower.contains('network') ||
-            lower.contains('connection') ||
-            lower.contains('timeout');
+        final shouldFallback = kIsWeb || _isConnectivityIssue(streamErr);
 
         if (shouldFallback) {
           final full = await api.chatWithAI(
@@ -543,9 +562,7 @@ Answer the user's question to the best of your ability.
           lowerError.contains('invalid model')) {
         errorMessage = '⚠️ **Model not available**\n\n'
             'The selected model is not available. Please go to Settings and select a different AI model.';
-      } else if (lowerError.contains('network') ||
-          lowerError.contains('connection') ||
-          lowerError.contains('timeout')) {
+      } else if (_isConnectivityIssue(e)) {
         errorMessage = '⚠️ **Network Error**\n\n'
             'Failed to connect to the AI service. Please check your internet connection and try again.';
       } else if (lowerError.contains('401') ||

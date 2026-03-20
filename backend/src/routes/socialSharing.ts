@@ -4,6 +4,13 @@ import { socialSharingService } from '../services/socialSharingService.js';
 
 const router = express.Router();
 
+function incrementReturnedViewCount(content: Record<string, any> | null | undefined, recorded: boolean) {
+  if (!content || !recorded) return;
+
+  const currentValue = Number(content.view_count ?? 0);
+  content.view_count = Number.isFinite(currentValue) ? currentValue + 1 : 1;
+}
+
 // =====================================================
 // Share Content to Social Feed
 // =====================================================
@@ -18,8 +25,8 @@ router.post('/share', authenticateToken, async (req: AuthRequest, res: Response)
       return res.status(400).json({ error: 'contentType and contentId are required' });
     }
 
-    if (!['notebook', 'plan'].includes(contentType)) {
-      return res.status(400).json({ error: 'contentType must be notebook or plan' });
+    if (!['notebook', 'plan', 'ebook'].includes(contentType)) {
+      return res.status(400).json({ error: 'contentType must be notebook, plan, or ebook' });
     }
 
     const shared = await socialSharingService.shareContent({
@@ -50,7 +57,7 @@ router.get('/feed', authenticateToken, async (req: AuthRequest, res: Response) =
     const feed = await socialSharingService.getSocialFeed(userId, {
       limit: limit ? parseInt(limit as string) : 20,
       offset: offset ? parseInt(offset as string) : 0,
-      contentType: contentType as 'notebook' | 'plan' | 'all' | undefined
+      contentType: contentType as 'notebook' | 'plan' | 'ebook' | 'all' | undefined
     });
 
     res.json({ success: true, feed });
@@ -107,6 +114,30 @@ router.get('/discover/plans', authenticateToken, async (req: AuthRequest, res: R
   } catch (error: any) {
     console.error('Discover plans error:', error);
     res.status(500).json({ error: 'Failed to discover plans' });
+  }
+});
+
+// =====================================================
+// Discover Public Ebooks
+// =====================================================
+router.get('/discover/ebooks', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.userId;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { limit, offset, search, sortBy } = req.query;
+
+    const ebooks = await socialSharingService.discoverEbooks(userId, {
+      limit: limit ? parseInt(limit as string) : 20,
+      offset: offset ? parseInt(offset as string) : 0,
+      search: search as string,
+      sortBy: sortBy as 'recent' | 'popular' | 'views'
+    });
+
+    res.json({ success: true, ebooks });
+  } catch (error: any) {
+    console.error('Discover ebooks error:', error);
+    res.status(500).json({ error: 'Failed to discover ebooks' });
   }
 });
 
@@ -218,7 +249,7 @@ router.get('/stats/:contentType/:contentId', optionalAuth, async (req: AuthReque
 // =====================================================
 // Like Content
 // =====================================================
-router.post('/like', async (req: AuthRequest, res: Response) => {
+router.post('/like', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.userId;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -240,7 +271,7 @@ router.post('/like', async (req: AuthRequest, res: Response) => {
 // =====================================================
 // Unlike Content
 // =====================================================
-router.delete('/like', async (req: AuthRequest, res: Response) => {
+router.delete('/like', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.userId;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -262,7 +293,7 @@ router.delete('/like', async (req: AuthRequest, res: Response) => {
 // =====================================================
 // Save Content (Bookmark)
 // =====================================================
-router.post('/save', async (req: AuthRequest, res: Response) => {
+router.post('/save', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.userId;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -284,7 +315,7 @@ router.post('/save', async (req: AuthRequest, res: Response) => {
 // =====================================================
 // Unsave Content
 // =====================================================
-router.delete('/save', async (req: AuthRequest, res: Response) => {
+router.delete('/save', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.userId;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -306,7 +337,7 @@ router.delete('/save', async (req: AuthRequest, res: Response) => {
 // =====================================================
 // Get Saved Content
 // =====================================================
-router.get('/saved', async (req: AuthRequest, res: Response) => {
+router.get('/saved', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.userId;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -329,7 +360,7 @@ router.get('/saved', async (req: AuthRequest, res: Response) => {
 // =====================================================
 // Get User Content Stats
 // =====================================================
-router.get('/my-stats', async (req: AuthRequest, res: Response) => {
+router.get('/my-stats', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.userId;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -355,6 +386,9 @@ router.get('/public/notebooks/:id', optionalAuth, async (req: AuthRequest, res: 
     if (!details) {
       return res.status(404).json({ error: 'Notebook not found or not public' });
     }
+
+    const recorded = await socialSharingService.recordView('notebook', id, viewerId, req.ip);
+    incrementReturnedViewCount(details.notebook, recorded);
 
     res.json({ success: true, ...details });
   } catch (error: any) {
@@ -387,7 +421,7 @@ router.get('/public/sources/:id', optionalAuth, async (req: AuthRequest, res: Re
 // =====================================================
 // Fork Notebook (Copy to User's Account)
 // =====================================================
-router.post('/fork/notebook/:id', async (req: AuthRequest, res: Response) => {
+router.post('/fork/notebook/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.userId;
     if (!userId) return res.status(401).json({ error: 'Unauthorized - login required to fork' });
@@ -413,6 +447,58 @@ router.post('/fork/notebook/:id', async (req: AuthRequest, res: Response) => {
 });
 
 // =====================================================
+// Get Public Ebook Details with Chapters
+// =====================================================
+router.get('/public/ebooks/:id', optionalAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const viewerId = req.userId;
+
+    const details = await socialSharingService.getPublicEbookDetails(id, viewerId);
+
+    if (!details) {
+      return res.status(404).json({ error: 'Ebook not found or not public' });
+    }
+
+    const recorded = await socialSharingService.recordView('ebook', id, viewerId, req.ip);
+    incrementReturnedViewCount(details.ebook, recorded);
+
+    res.json({ success: true, ...details });
+  } catch (error: any) {
+    console.error('Get public ebook details error:', error);
+    res.status(500).json({ error: 'Failed to get ebook details' });
+  }
+});
+
+// =====================================================
+// Fork Ebook (Copy to User's Account)
+// =====================================================
+router.post('/fork/ebook/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.userId;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized - login required to fork' });
+
+    const { id } = req.params;
+    const { newTitle } = req.body;
+
+    const result = await socialSharingService.forkEbook(id, userId, {
+      newTitle
+    });
+
+    res.json({
+      success: true,
+      ebook: result.ebook,
+      chapters: result.chapters,
+      chaptersCopied: result.chaptersCopied,
+      message: `Ebook forked successfully with ${result.chaptersCopied} chapters`
+    });
+  } catch (error: any) {
+    console.error('Fork ebook error:', error);
+    res.status(500).json({ error: error.message || 'Failed to fork ebook' });
+  }
+});
+
+// =====================================================
 // Get Public Plan Details with Requirements and Tasks
 // =====================================================
 router.get('/public/plans/:id', optionalAuth, async (req: AuthRequest, res: Response) => {
@@ -426,6 +512,9 @@ router.get('/public/plans/:id', optionalAuth, async (req: AuthRequest, res: Resp
       return res.status(404).json({ error: 'Plan not found or not public' });
     }
 
+    const recorded = await socialSharingService.recordView('plan', id, viewerId, req.ip);
+    incrementReturnedViewCount(details.plan, recorded);
+
     res.json({ success: true, ...details });
   } catch (error: any) {
     console.error('Get public plan details error:', error);
@@ -436,7 +525,7 @@ router.get('/public/plans/:id', optionalAuth, async (req: AuthRequest, res: Resp
 // =====================================================
 // Fork Plan (Copy to User's Account)
 // =====================================================
-router.post('/fork/plan/:id', async (req: AuthRequest, res: Response) => {
+router.post('/fork/plan/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.userId;
     if (!userId) return res.status(401).json({ error: 'Unauthorized - login required to fork' });

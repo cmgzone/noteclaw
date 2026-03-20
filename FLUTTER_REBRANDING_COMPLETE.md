@@ -16,7 +16,7 @@ All "NotebookLLM" and "Notebook AI" references in the Flutter app have been succ
 **Package Configuration**
 - Package name: `notebook_llm` → `noteclaw`
 - Description updated to reference NoteClaw
-- Android applicationId: `com.notebook.llm` → `com.noteclaw.app`
+- Android applicationId: `com.note.claw`
 - Android label: `notebook_llm` → `NoteClaw`
 - Web manifest: `notebook_llm` → `noteclaw`
 
@@ -92,7 +92,7 @@ description: Premium source-grounded NoteClaw mobile app (Flutter)
 
 **android/app/build.gradle.kts**
 ```kotlin
-applicationId = "com.noteclaw.app"
+applicationId = "com.note.claw"
 ```
 
 **android/app/src/main/AndroidManifest.xml**
@@ -143,8 +143,7 @@ The Flutter package name has been changed from `notebook_llm` to `noteclaw`. Thi
    ```
 
 2. **Android users will see this as a new app** (different applicationId)
-   - Old: `com.notebook.llm`
-   - New: `com.noteclaw.app`
+   - Current applicationId: `com.note.claw`
    - Users will need to reinstall the app
 
 3. **Existing app data may not migrate automatically**
@@ -179,7 +178,7 @@ flutter build ios  # For iOS
 
 ### 3. Update Backend
 Ensure your backend is configured to accept the new:
-- Application ID: `com.noteclaw.app`
+- Application ID: `com.note.claw`
 - API endpoints expecting the new branding
 
 ### 4. Test Thoroughly

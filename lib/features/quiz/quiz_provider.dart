@@ -6,6 +6,7 @@ import 'package:uuid/uuid.dart';
 import 'quiz.dart';
 import '../sources/source_provider.dart';
 import '../gamification/gamification_provider.dart';
+import '../notebook/notebook_chat_context_builder.dart';
 import '../../core/api/api_service.dart';
 import '../../core/services/activity_logger_service.dart';
 
@@ -88,7 +89,12 @@ class QuizNotifier extends StateNotifier<List<Quiz>> {
     }
 
     final sourceContent =
-        relevantSources.map((s) => '## ${s.title}\n${s.content}').join('\n\n');
+        await NotebookChatContextBuilder.buildContextTextForCurrentModel(
+      read: ref.read,
+      sources: relevantSources,
+      objective:
+          'Generate $questionCount multiple-choice questions with one correct answer and short explanations.',
+    );
 
     // Build prompt for AI
     final prompt = '''

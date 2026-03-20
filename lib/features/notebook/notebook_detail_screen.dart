@@ -910,6 +910,48 @@ class _StatItem extends StatelessWidget {
   }
 }
 
+const _mindMapStyleOptions = [
+  _MindMapStyleOption(
+    id: 'balanced',
+    label: 'Balanced',
+    description: 'Good overall structure with concepts, examples, and links.',
+  ),
+  _MindMapStyleOption(
+    id: 'relationships',
+    label: 'Relationships',
+    description: 'Highlights dependencies, comparisons, and connections.',
+  ),
+  _MindMapStyleOption(
+    id: 'process',
+    label: 'Process',
+    description: 'Organizes steps, flows, and sequences clearly.',
+  ),
+  _MindMapStyleOption(
+    id: 'study',
+    label: 'Study',
+    description: 'Optimized for definitions, categories, and memorization.',
+  ),
+];
+
+class _MindMapStyleOption {
+  const _MindMapStyleOption({
+    required this.id,
+    required this.label,
+    required this.description,
+  });
+
+  final String id;
+  final String label;
+  final String description;
+}
+
+_MindMapStyleOption _mindMapStyleById(String id) {
+  return _mindMapStyleOptions.firstWhere(
+    (option) => option.id == id,
+    orElse: () => _mindMapStyleOptions.first,
+  );
+}
+
 /// Sheet for viewing and generating mind maps
 class _MindMapsSheet extends ConsumerStatefulWidget {
   final String notebookId;
@@ -923,18 +965,26 @@ class _MindMapsSheet extends ConsumerStatefulWidget {
 class _MindMapsSheetState extends ConsumerState<_MindMapsSheet> {
   bool _isGenerating = false;
   final _titleController = TextEditingController(text: 'Mind Map');
+  final _focusController = TextEditingController();
+  String? _selectedSourceId;
+  String _mapStyle = _mindMapStyleOptions.first.id;
 
   @override
   void dispose() {
     _titleController.dispose();
+    _focusController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final mindMaps = ref.watch(mindMapProvider);
+    final allSources = ref.watch(sourceProvider);
+    final notebookSources =
+        allSources.where((s) => s.notebookId == widget.notebookId).toList();
     final notebookMindMaps =
         mindMaps.where((mm) => mm.notebookId == widget.notebookId).toList();
+    final selectedStyle = _mindMapStyleById(_mapStyle);
 
     final scheme = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
@@ -945,107 +995,202 @@ class _MindMapsSheetState extends ConsumerState<_MindMapsSheet> {
       maxChildSize: 0.95,
       expand: false,
       builder: (context, scrollController) {
-        return Container(
-          decoration: BoxDecoration(
-            color: scheme.surface,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          child: Column(
-            children: [
-              // Handle
-              Container(
-                width: 40,
-                height: 4,
-                margin: const EdgeInsets.symmetric(vertical: 12),
-                decoration: BoxDecoration(
-                  color: scheme.onSurface.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              // Header
-              Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-                child: Row(
-                  children: [
-                    const Icon(Icons.account_tree, color: Colors.teal),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text('Mind Maps', style: text.titleLarge),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed: () => Navigator.pop(context),
-                    ),
-                  ],
-                ),
-              ),
-              const Divider(),
-              // Generate button
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _titleController,
-                        decoration: InputDecoration(
-                          labelText: 'Title',
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
+        final keyboardInset = MediaQuery.of(context).viewInsets.bottom;
+
+        return AnimatedPadding(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOut,
+          padding: EdgeInsets.only(bottom: keyboardInset),
+          child: Container(
+            decoration: BoxDecoration(
+              color: scheme.surface,
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            child: CustomScrollView(
+              controller: scrollController,
+              slivers: [
+                SliverToBoxAdapter(
+                  child: Column(
+                    children: [
+                      Container(
+                        width: 40,
+                        height: 4,
+                        margin: const EdgeInsets.symmetric(vertical: 12),
+                        decoration: BoxDecoration(
+                          color: scheme.onSurface.withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(2),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 12),
-                    FilledButton.icon(
-                      onPressed: _isGenerating ? null : _generateMindMap,
-                      icon: _isGenerating
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.auto_awesome),
-                      label: Text(_isGenerating ? 'Generating...' : 'Generate'),
-                    ),
-                  ],
-                ),
-              ),
-              // List of mind maps
-              Expanded(
-                child: notebookMindMaps.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 24, vertical: 8),
+                        child: Row(
                           children: [
-                            Icon(
-                              Icons.account_tree_outlined,
-                              size: 64,
-                              color: scheme.onSurface.withValues(alpha: 0.3),
+                            const Icon(Icons.account_tree, color: Colors.teal),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text('Mind Maps', style: text.titleLarge),
                             ),
-                            const SizedBox(height: 16),
-                            Text(
-                              'No mind maps yet',
-                              style: text.titleMedium?.copyWith(
-                                color: scheme.secondaryText,
+                            IconButton(
+                              icon: const Icon(Icons.close),
+                              onPressed: () => Navigator.pop(context),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Divider(),
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            TextField(
+                              controller: _titleController,
+                              decoration: InputDecoration(
+                                labelText: 'Title',
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
                               ),
                             ),
+                            const SizedBox(height: 12),
+                            DropdownButtonFormField<String>(
+                              initialValue: _selectedSourceId ?? '__all__',
+                              decoration: InputDecoration(
+                                labelText: 'Source Scope',
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              items: [
+                                const DropdownMenuItem(
+                                  value: '__all__',
+                                  child: Text('All notebook sources'),
+                                ),
+                                ...notebookSources.map(
+                                  (source) => DropdownMenuItem(
+                                    value: source.id,
+                                    child: Text(
+                                      source.title,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                              onChanged: (value) {
+                                setState(() {
+                                  _selectedSourceId =
+                                      value == '__all__' ? null : value;
+                                });
+                              },
+                            ),
+                            const SizedBox(height: 12),
+                            Text('Map Style', style: text.labelMedium),
                             const SizedBox(height: 8),
-                            Text(
-                              'Generate one from your sources!',
-                              style: text.bodySmall?.copyWith(
-                                color: scheme.hintText,
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: _mindMapStyleOptions.map((option) {
+                                return ChoiceChip(
+                                  label: Text(option.label),
+                                  selected: option.id == _mapStyle,
+                                  onSelected: (_) {
+                                    setState(() => _mapStyle = option.id);
+                                  },
+                                );
+                              }).toList(),
+                            ),
+                            const SizedBox(height: 10),
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: scheme.surfaceContainerHighest
+                                    .withValues(alpha: 0.45),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                selectedStyle.description,
+                                style: text.bodySmall?.copyWith(
+                                  color: scheme.secondaryText,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            TextField(
+                              controller: _focusController,
+                              decoration: InputDecoration(
+                                labelText: 'Focus Area',
+                                hintText:
+                                    'Optional: e.g. causes, timeline, architecture',
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            SizedBox(
+                              width: double.infinity,
+                              child: FilledButton.icon(
+                                onPressed:
+                                    _isGenerating ? null : _generateMindMap,
+                                icon: _isGenerating
+                                    ? const SizedBox(
+                                        width: 18,
+                                        height: 18,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : const Icon(Icons.auto_awesome),
+                                label: Text(
+                                  _isGenerating ? 'Generating...' : 'Generate',
+                                ),
                               ),
                             ),
                           ],
                         ),
-                      )
-                    : ListView.builder(
-                        controller: scrollController,
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        itemCount: notebookMindMaps.length,
-                        itemBuilder: (context, index) {
+                      ),
+                    ],
+                  ),
+                ),
+                if (notebookMindMaps.isEmpty)
+                  SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.account_tree_outlined,
+                            size: 64,
+                            color: scheme.onSurface.withValues(alpha: 0.3),
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'No mind maps yet',
+                            style: text.titleMedium?.copyWith(
+                              color: scheme.secondaryText,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Generate one from your sources!',
+                            style: text.bodySmall?.copyWith(
+                              color: scheme.hintText,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                else
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    sliver: SliverList(
+                      delegate: SliverChildBuilderDelegate(
+                        (context, index) {
                           final mm = notebookMindMaps[index];
                           return Card(
                             margin: const EdgeInsets.only(bottom: 12),
@@ -1074,9 +1219,12 @@ class _MindMapsSheetState extends ConsumerState<_MindMapsSheet> {
                             ),
                           );
                         },
+                        childCount: notebookMindMaps.length,
                       ),
-              ),
-            ],
+                    ),
+                  ),
+              ],
+            ),
           ),
         );
       },
@@ -1100,6 +1248,9 @@ class _MindMapsSheetState extends ConsumerState<_MindMapsSheet> {
           await ref.read(mindMapProvider.notifier).generateFromSources(
                 notebookId: widget.notebookId,
                 title: _titleController.text.trim(),
+                sourceId: _selectedSourceId,
+                focusTopic: _focusController.text.trim(),
+                mapStyle: _mapStyle,
               );
 
       if (!mounted) return;

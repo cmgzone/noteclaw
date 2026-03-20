@@ -31,23 +31,26 @@ final apiServiceProvider = Provider<ApiService>((ref) {
 
 class ApiService {
   final Ref ref;
-  static final String _baseUrl = (() {
+  static const String _defaultApiBaseUrl = 'https://noteclaw.onrender.com/api/';
+  static const Duration _defaultChatTimeout = Duration(seconds: 120);
+
+  static String _normalizeBaseUrl(String url) {
+    final trimmed = url.trim();
+    return trimmed.endsWith('/') ? trimmed : '$trimmed/';
+  }
+
+  static String _resolveBaseUrl() {
     final envUrl = dotenv.env['API_BASE_URL'];
-    if (envUrl != null && envUrl.isNotEmpty) {
-      return envUrl.endsWith('/') ? envUrl : '$envUrl/';
+    if (envUrl != null && envUrl.trim().isNotEmpty) {
+      return _normalizeBaseUrl(envUrl);
     }
-    if (kReleaseMode) {
-      return 'https://backend.taskiumnetwork.com/api/';
-    }
-    if (kIsWeb) {
-      return 'http://localhost:3001/api/';
-    }
-    if (defaultTargetPlatform == TargetPlatform.android) {
-      return 'http://10.0.2.2:3001/api/';
-    }
-    return 'http://localhost:3001/api/';
-  })();
-  String get baseUrl => _baseUrl;
+
+    // Default to the hosted backend so debug builds also work on physical
+    // devices. Local development can still override this via API_BASE_URL.
+    return _defaultApiBaseUrl;
+  }
+
+  String get baseUrl => _dio.options.baseUrl;
   static const String _tokenKey = 'auth_token';
   static const String _refreshTokenKey = 'refresh_token';
   static const String _tokenBackupKey = 'auth_token_backup';
@@ -64,8 +67,11 @@ class ApiService {
   Completer<bool>? _refreshCompleter;
 
   ApiService(this.ref) {
+    final resolvedBaseUrl = _resolveBaseUrl();
+    developer.log('[API] Using base URL: $resolvedBaseUrl',
+        name: 'ApiService');
     _dio = Dio(BaseOptions(
-      baseUrl: _baseUrl,
+      baseUrl: resolvedBaseUrl,
       connectTimeout: const Duration(seconds: 30),
       receiveTimeout: const Duration(seconds: 60),
       sendTimeout: const Duration(seconds: 60),
@@ -110,7 +116,8 @@ class ApiService {
               final newCompleter = Completer<bool>();
               _refreshCompleter = newCompleter;
               try {
-                developer.log('[API] Access token expired, attempting refresh...',
+                developer.log(
+                    '[API] Access token expired, attempting refresh...',
                     name: 'ApiService');
                 refreshed = await refreshAccessToken();
                 newCompleter.complete(refreshed);
@@ -278,10 +285,8 @@ class ApiService {
       Options? options,
       int retries = 2}) async {
     try {
-      final response = await _dio.get(
-          endpoint.startsWith('/') ? endpoint.substring(1) : endpoint,
-          queryParameters: queryParameters,
-          options: options);
+      final response = await _dio.get(_normalizeEndpoint(endpoint),
+          queryParameters: queryParameters, options: options);
       return _handleResponse<T>(response);
     } catch (e) {
       if (retries > 0 && _isConnectionError(e)) {
@@ -306,12 +311,14 @@ class ApiService {
             error.type == DioExceptionType.sendTimeout);
   }
 
+  String _normalizeEndpoint(String endpoint) {
+    return endpoint.startsWith('/') ? endpoint.substring(1) : endpoint;
+  }
+
   Future<T> post<T>(String endpoint, dynamic data, {Options? options}) async {
     try {
-      final response = await _dio.post(
-          endpoint.startsWith('/') ? endpoint.substring(1) : endpoint,
-          data: data,
-          options: options);
+      final response = await _dio.post(_normalizeEndpoint(endpoint),
+          data: data, options: options);
       return _handleResponse<T>(response);
     } catch (e) {
       throw _handleError(e);
@@ -323,17 +330,21 @@ class ApiService {
   Future<T> postWithTimeout<T>(
     String endpoint,
     dynamic data, {
+    Options? options,
     Duration receiveTimeout = const Duration(seconds: 60),
     Duration sendTimeout = const Duration(seconds: 60),
   }) async {
     try {
-      final response = await _dio.post(
-          endpoint.startsWith('/') ? endpoint.substring(1) : endpoint,
-          data: data,
-          options: Options(
+      final requestOptions = options?.copyWith(
             receiveTimeout: receiveTimeout,
             sendTimeout: sendTimeout,
-          ));
+          ) ??
+          Options(
+            receiveTimeout: receiveTimeout,
+            sendTimeout: sendTimeout,
+          );
+      final response = await _dio.post(_normalizeEndpoint(endpoint),
+          data: data, options: requestOptions);
       return _handleResponse<T>(response);
     } catch (e) {
       throw _handleError(e);
@@ -342,10 +353,8 @@ class ApiService {
 
   Future<T> put<T>(String endpoint, dynamic data, {Options? options}) async {
     try {
-      final response = await _dio.put(
-          endpoint.startsWith('/') ? endpoint.substring(1) : endpoint,
-          data: data,
-          options: options);
+      final response = await _dio.put(_normalizeEndpoint(endpoint),
+          data: data, options: options);
       return _handleResponse<T>(response);
     } catch (e) {
       throw _handleError(e);
@@ -354,10 +363,8 @@ class ApiService {
 
   Future<T> patch<T>(String endpoint, dynamic data, {Options? options}) async {
     try {
-      final response = await _dio.patch(
-          endpoint.startsWith('/') ? endpoint.substring(1) : endpoint,
-          data: data,
-          options: options);
+      final response = await _dio.patch(_normalizeEndpoint(endpoint),
+          data: data, options: options);
       return _handleResponse<T>(response);
     } catch (e) {
       throw _handleError(e);
@@ -366,10 +373,8 @@ class ApiService {
 
   Future<T> delete<T>(String endpoint, {dynamic data, Options? options}) async {
     try {
-      final response = await _dio.delete(
-          endpoint.startsWith('/') ? endpoint.substring(1) : endpoint,
-          data: data,
-          options: options);
+      final response = await _dio.delete(_normalizeEndpoint(endpoint),
+          data: data, options: options);
       return _handleResponse<T>(response);
     } catch (e) {
       throw _handleError(e);
@@ -802,7 +807,8 @@ class ApiService {
 
   // ============ CHAT ============
 
-  Future<List<Map<String, dynamic>>> getChatHistory({String? notebookId}) async {
+  Future<List<Map<String, dynamic>>> getChatHistory(
+      {String? notebookId}) async {
     final path = notebookId != null
         ? '/ai/chat/history?notebookId=$notebookId'
         : '/ai/chat/history';
@@ -826,7 +832,8 @@ class ApiService {
 
   // ============ AI ============
 
-  Future<String?> _getByokKeyForProvider({required String provider, String? model}) async {
+  Future<String?> _getByokKeyForProvider(
+      {required String provider, String? model}) async {
     try {
       // Prefer model-derived provider when available.
       final normalizedModel = (model ?? '').trim().toLowerCase();
@@ -863,16 +870,20 @@ class ApiService {
     required List<Map<String, dynamic>> messages,
     String provider = 'gemini',
     String? model,
+    Duration receiveTimeout = _defaultChatTimeout,
+    Duration sendTimeout = _defaultChatTimeout,
   }) async {
     final byokKey =
         await _getByokKeyForProvider(provider: provider, model: model);
-    final response = await post<Map<String, dynamic>>(
+    final response = await postWithTimeout<Map<String, dynamic>>(
       '/ai/chat',
       {
         'messages': messages,
         'provider': provider,
         if (model != null) 'model': model,
       },
+      receiveTimeout: receiveTimeout,
+      sendTimeout: sendTimeout,
       options: byokKey != null
           ? Options(headers: {'X-User-Api-Key': byokKey})
           : null,
@@ -917,7 +928,7 @@ class ApiService {
       final byokKey =
           await _getByokKeyForProvider(provider: provider, model: model);
       final response = await _dio.post(
-        '/ai/chat/stream',
+        _normalizeEndpoint('/ai/chat/stream'),
         data: {
           'messages': messages,
           'provider': provider,
@@ -926,6 +937,8 @@ class ApiService {
         },
         options: Options(
           responseType: ResponseType.stream,
+          receiveTimeout: _defaultChatTimeout,
+          sendTimeout: _defaultChatTimeout,
           extra: {'clearTokenOn401': false},
           headers: {
             'Accept': 'text/event-stream',
@@ -1059,12 +1072,13 @@ class ApiService {
     if (token == null) throw Exception('Not authenticated');
     try {
       final response = await _dio.post(
-        '/research/stream',
+        _normalizeEndpoint('/research/stream'),
         data: {
           'query': query,
           'depth': depth,
           'template': template,
-          if (notebookId != null && notebookId.isNotEmpty) 'notebookId': notebookId,
+          if (notebookId != null && notebookId.isNotEmpty)
+            'notebookId': notebookId,
           if (includeImages != null) 'includeImages': includeImages,
           'useNotebookContext': useNotebookContext,
           if (provider != null && provider.isNotEmpty) 'provider': provider,
@@ -1196,17 +1210,18 @@ class ApiService {
   // ============ AUDIO OVERVIEWS ============
 
   Future<List<Map<String, dynamic>>> getAudioOverviews() async {
-    final response = await get<Map<String, dynamic>>('/voice/overviews');
+    final response =
+        await get<Map<String, dynamic>>('/features/audio/overviews');
     return List<Map<String, dynamic>>.from(response['overviews'] ?? []);
   }
 
   Future<Map<String, dynamic>> saveAudioOverview(
       Map<String, dynamic> data) async {
-    return await post<Map<String, dynamic>>('/voice/overviews', data);
+    return await post<Map<String, dynamic>>('/features/audio/overviews', data);
   }
 
   Future<void> deleteAudioOverview(String id) async {
-    await delete('/voice/overviews/$id');
+    await delete('/features/audio/overviews/$id');
   }
 
   // ============ MEDIA ============
@@ -1214,7 +1229,7 @@ class ApiService {
   Future<Uint8List?> getMediaBytes(String sourceId) async {
     try {
       final response = await _dio.get(
-        '/media/$sourceId',
+        _normalizeEndpoint('/media/$sourceId'),
         options: Options(responseType: ResponseType.bytes),
       );
       return response.data;
@@ -1590,16 +1605,20 @@ class ApiService {
     String? targetAudience,
     Map<String, dynamic>? branding,
     String? selectedModel,
-    required String notebookId,
+    String? notebookId,
+    String? status,
+    String? coverImage,
   }) async {
     final data = {
-      if (id != null) 'id': id,
+      if (id != null && id.isNotEmpty) 'id': id,
       'title': title,
       'topic': topic,
       if (targetAudience != null) 'targetAudience': targetAudience,
       if (branding != null) 'branding': branding,
       if (selectedModel != null) 'selectedModel': selectedModel,
-      'notebookId': notebookId,
+      if (notebookId != null && notebookId.isNotEmpty) 'notebookId': notebookId,
+      if (status != null && status.isNotEmpty) 'status': status,
+      if (coverImage != null && coverImage.isNotEmpty) 'coverImage': coverImage,
     };
     return await post<Map<String, dynamic>>('/ebooks', data);
   }

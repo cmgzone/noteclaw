@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:freezed_annotation/freezed_annotation.dart';
 import 'package:uuid/uuid.dart';
 
@@ -20,7 +22,8 @@ class MindMapNode with _$MindMapNode {
   const MindMapNode._();
 
   factory MindMapNode.fromBackendJson(dynamic json) {
-    if (json is! Map<String, dynamic>) {
+    final nodeJson = _normalizeNodeJson(json);
+    if (nodeJson == null) {
       return MindMapNode(
         id: const Uuid().v4(),
         label: json?.toString() ?? 'New Node',
@@ -29,15 +32,15 @@ class MindMapNode with _$MindMapNode {
       );
     }
     return MindMapNode(
-      id: json['id'] ?? const Uuid().v4(),
-      label: json['label'] ?? 'New Node',
-      children: (json['children'] as List? ?? [])
+      id: nodeJson['id']?.toString() ?? const Uuid().v4(),
+      label: nodeJson['label']?.toString() ?? 'New Node',
+      children: (nodeJson['children'] as List? ?? [])
           .map((c) => MindMapNode.fromBackendJson(c))
           .toList(),
-      level: json['level'] ?? 0,
-      colorValue: json['colorValue'],
-      x: (json['x'] as num?)?.toDouble(),
-      y: (json['y'] as num?)?.toDouble(),
+      level: _asInt(nodeJson['level']) ?? 0,
+      colorValue: _asInt(nodeJson['colorValue'] ?? nodeJson['color_value']),
+      x: _asDouble(nodeJson['x']),
+      y: _asDouble(nodeJson['y']),
     );
   }
 
@@ -71,16 +74,28 @@ class MindMap with _$MindMap {
 
   const MindMap._();
 
-  factory MindMap.fromBackendJson(Map<String, dynamic> json) => MindMap(
-        id: json['id'],
-        title: json['title'],
-        notebookId: json['notebook_id'],
-        sourceId: json['source_id'],
-        rootNode: MindMapNode.fromBackendJson(json['root_node'] ?? {}),
-        textContent: json['text_content'],
-        createdAt: DateTime.parse(json['created_at']),
-        updatedAt: DateTime.parse(json['updated_at']),
-      );
+  factory MindMap.fromBackendJson(Map<String, dynamic> json) {
+    final payload = json['mindMap'] is Map
+        ? Map<String, dynamic>.from(json['mindMap'] as Map)
+        : json;
+
+    return MindMap(
+      id: payload['id']?.toString() ?? const Uuid().v4(),
+      title: payload['title']?.toString() ?? 'Untitled Mind Map',
+      notebookId: payload['notebook_id']?.toString() ??
+          payload['notebookId']?.toString() ??
+          '',
+      sourceId:
+          payload['source_id']?.toString() ?? payload['sourceId']?.toString(),
+      rootNode: MindMapNode.fromBackendJson(
+        payload['root_node'] ?? payload['rootNode'] ?? {},
+      ),
+      textContent: payload['text_content']?.toString() ??
+          payload['textContent']?.toString(),
+      createdAt: _parseBackendDate(payload['created_at'] ?? payload['createdAt']),
+      updatedAt: _parseBackendDate(payload['updated_at'] ?? payload['updatedAt']),
+    );
+  }
 
   Map<String, dynamic> toBackendJson() => {
         'id': id,
@@ -95,4 +110,41 @@ class MindMap with _$MindMap {
 
   factory MindMap.fromJson(Map<String, dynamic> json) =>
       _$MindMapFromJson(json);
+}
+
+Map<String, dynamic>? _normalizeNodeJson(dynamic json) {
+  if (json is Map<String, dynamic>) return json;
+  if (json is Map) return Map<String, dynamic>.from(json);
+  if (json is String && json.trim().isNotEmpty) {
+    try {
+      final decoded = jsonDecode(json);
+      if (decoded is Map<String, dynamic>) return decoded;
+      if (decoded is Map) return Map<String, dynamic>.from(decoded);
+    } catch (_) {
+      return null;
+    }
+  }
+  return null;
+}
+
+int? _asInt(dynamic value) {
+  if (value is int) return value;
+  if (value is num) return value.toInt();
+  if (value is String) return int.tryParse(value);
+  return null;
+}
+
+double? _asDouble(dynamic value) {
+  if (value is double) return value;
+  if (value is num) return value.toDouble();
+  if (value is String) return double.tryParse(value);
+  return null;
+}
+
+DateTime _parseBackendDate(dynamic value) {
+  if (value is DateTime) return value;
+  if (value is String && value.isNotEmpty) {
+    return DateTime.tryParse(value) ?? DateTime.now();
+  }
+  return DateTime.now();
 }

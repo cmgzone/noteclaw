@@ -12,12 +12,41 @@
 
 import express, { type Response } from 'express';
 import { authenticateToken, type AuthRequest } from '../middleware/auth.js';
-import planService, { type CreatePlanInput, type UpdatePlanInput, type ListPlansOptions } from '../services/planService.js';
+import planService, {
+    type CreatePlanInput,
+    type UpdatePlanInput,
+    type ListPlansOptions,
+    type CreateDesignArtifactInput,
+    type UpdateDesignArtifactInput,
+    type DesignArtifactType,
+    type DesignArtifactStatus,
+    type DesignArtifactSource,
+} from '../services/planService.js';
 import planTaskService, { type CreateTaskInput, type UpdateTaskInput, type TaskStatus } from '../services/planTaskService.js';
 import planAccessService, { type GrantAccessInput, type Permission } from '../services/planAccessService.js';
 import { planningWebSocketService } from '../services/planningWebSocketService.js';
 
 const router = express.Router();
+
+const validDesignArtifactTypes: DesignArtifactType[] = [
+    'prototype',
+    'design_system',
+    'screen_set',
+    'component_library',
+    'flow',
+];
+
+const validDesignArtifactStatuses: DesignArtifactStatus[] = [
+    'draft',
+    'ready',
+    'archived',
+];
+
+const validDesignArtifactSources: DesignArtifactSource[] = [
+    'manual',
+    'ai_generated',
+    'imported',
+];
 
 // All routes require authentication
 router.use(authenticateToken);
@@ -1071,6 +1100,297 @@ router.delete('/:id/design-notes/:noteId', async (req: AuthRequest, res: Respons
         }
 
         res.status(500).json({ error: 'Failed to delete design note', message: error.message });
+    }
+});
+
+// ==================== DESIGN ARTIFACT ROUTES ====================
+
+/**
+ * GET /plans/:id/design-artifacts
+ * List design artifacts for a plan.
+ *
+ * Query params:
+ * - artifactType: Optional filter by artifact type
+ */
+router.get('/:id/design-artifacts', async (req: AuthRequest, res: Response) => {
+    try {
+        const { id } = req.params;
+        const artifactType =
+            typeof req.query.artifactType === 'string'
+                ? req.query.artifactType
+                : undefined;
+
+        if (artifactType && !validDesignArtifactTypes.includes(artifactType as DesignArtifactType)) {
+            return res.status(400).json({
+                error: `Invalid artifactType. Must be one of: ${validDesignArtifactTypes.join(', ')}`,
+            });
+        }
+
+        const designArtifacts = await planService.listDesignArtifacts(
+            id,
+            req.userId!,
+            artifactType as DesignArtifactType | undefined
+        );
+
+        res.json({
+            success: true,
+            designArtifacts,
+            count: designArtifacts.length,
+        });
+    } catch (error: any) {
+        console.error('List design artifacts error:', error);
+
+        if (error.message === 'Plan not found') {
+            return res.status(404).json({ error: error.message });
+        }
+
+        res.status(500).json({ error: 'Failed to list design artifacts', message: error.message });
+    }
+});
+
+/**
+ * GET /plans/:id/design-artifacts/:artifactId
+ * Get a single design artifact.
+ *
+ * Query params:
+ * - includeVersions: Include version history (default: false)
+ */
+router.get('/:id/design-artifacts/:artifactId', async (req: AuthRequest, res: Response) => {
+    try {
+        const { id, artifactId } = req.params;
+        const includeVersions = req.query.includeVersions === 'true';
+
+        const designArtifact = await planService.getDesignArtifact(
+            id,
+            artifactId,
+            req.userId!,
+            includeVersions
+        );
+
+        if (!designArtifact) {
+            return res.status(404).json({ error: 'Design artifact not found' });
+        }
+
+        res.json({ success: true, designArtifact });
+    } catch (error: any) {
+        console.error('Get design artifact error:', error);
+
+        if (error.message === 'Plan not found') {
+            return res.status(404).json({ error: error.message });
+        }
+
+        res.status(500).json({ error: 'Failed to get design artifact', message: error.message });
+    }
+});
+
+/**
+ * GET /plans/:id/design-artifacts/:artifactId/versions
+ * Get all saved versions for a design artifact.
+ */
+router.get('/:id/design-artifacts/:artifactId/versions', async (req: AuthRequest, res: Response) => {
+    try {
+        const { id, artifactId } = req.params;
+
+        const versions = await planService.getDesignArtifactVersions(
+            id,
+            artifactId,
+            req.userId!
+        );
+
+        res.json({
+            success: true,
+            versions,
+            count: versions.length,
+        });
+    } catch (error: any) {
+        console.error('Get design artifact versions error:', error);
+
+        if (error.message === 'Plan not found' || error.message === 'Design artifact not found') {
+            return res.status(404).json({ error: error.message });
+        }
+
+        res.status(500).json({ error: 'Failed to get design artifact versions', message: error.message });
+    }
+});
+
+/**
+ * POST /plans/:id/design-artifacts
+ * Create a typed design artifact for a plan.
+ */
+router.post('/:id/design-artifacts', async (req: AuthRequest, res: Response) => {
+    try {
+        const { id } = req.params;
+        const {
+            name,
+            artifactType,
+            rootData,
+            status,
+            source,
+            schemaVersion,
+            metadata,
+            changeSummary,
+        } = req.body;
+
+        if (!name || typeof name !== 'string' || name.trim() === '') {
+            return res.status(400).json({ error: 'Name is required' });
+        }
+        if (!artifactType || typeof artifactType !== 'string') {
+            return res.status(400).json({ error: 'artifactType is required' });
+        }
+        if (!validDesignArtifactTypes.includes(artifactType as DesignArtifactType)) {
+            return res.status(400).json({
+                error: `Invalid artifactType. Must be one of: ${validDesignArtifactTypes.join(', ')}`,
+            });
+        }
+        if (status != null && !validDesignArtifactStatuses.includes(status as DesignArtifactStatus)) {
+            return res.status(400).json({
+                error: `Invalid status. Must be one of: ${validDesignArtifactStatuses.join(', ')}`,
+            });
+        }
+        if (source != null && !validDesignArtifactSources.includes(source as DesignArtifactSource)) {
+            return res.status(400).json({
+                error: `Invalid source. Must be one of: ${validDesignArtifactSources.join(', ')}`,
+            });
+        }
+        if (!rootData || typeof rootData !== 'object' || Array.isArray(rootData)) {
+            return res.status(400).json({ error: 'rootData must be an object' });
+        }
+        if (metadata != null && (typeof metadata !== 'object' || Array.isArray(metadata))) {
+            return res.status(400).json({ error: 'metadata must be an object when provided' });
+        }
+
+        const input: CreateDesignArtifactInput = {
+            name: name.trim(),
+            artifactType: artifactType as DesignArtifactType,
+            rootData,
+            status: status as DesignArtifactStatus | undefined,
+            source: source as DesignArtifactSource | undefined,
+            schemaVersion,
+            metadata,
+            changeSummary,
+        };
+
+        const designArtifact = await planService.createDesignArtifact(
+            id,
+            req.userId!,
+            input
+        );
+
+        res.status(201).json({ success: true, designArtifact });
+    } catch (error: any) {
+        console.error('Create design artifact error:', error);
+
+        if (error.message === 'Plan not found') {
+            return res.status(404).json({ error: error.message });
+        }
+        if (error.message.includes('archived')) {
+            return res.status(400).json({ error: error.message });
+        }
+
+        res.status(500).json({ error: 'Failed to create design artifact', message: error.message });
+    }
+});
+
+/**
+ * PUT /plans/:id/design-artifacts/:artifactId
+ * Update a design artifact and append a version snapshot.
+ */
+router.put('/:id/design-artifacts/:artifactId', async (req: AuthRequest, res: Response) => {
+    try {
+        const { id, artifactId } = req.params;
+        const {
+            name,
+            status,
+            schemaVersion,
+            rootData,
+            metadata,
+            changeSummary,
+        } = req.body;
+
+        if (
+            name == null &&
+            status == null &&
+            schemaVersion == null &&
+            rootData == null &&
+            metadata == null &&
+            changeSummary == null
+        ) {
+            return res.status(400).json({ error: 'At least one field is required to update' });
+        }
+
+        if (rootData != null && (typeof rootData !== 'object' || Array.isArray(rootData))) {
+            return res.status(400).json({ error: 'rootData must be an object when provided' });
+        }
+        if (metadata != null && (typeof metadata !== 'object' || Array.isArray(metadata))) {
+            return res.status(400).json({ error: 'metadata must be an object when provided' });
+        }
+        if (status != null && !validDesignArtifactStatuses.includes(status as DesignArtifactStatus)) {
+            return res.status(400).json({
+                error: `Invalid status. Must be one of: ${validDesignArtifactStatuses.join(', ')}`,
+            });
+        }
+
+        const input: UpdateDesignArtifactInput = {};
+        if (name != null) input.name = String(name).trim();
+        if (status != null) input.status = status as DesignArtifactStatus;
+        if (schemaVersion != null) input.schemaVersion = schemaVersion;
+        if (rootData != null) input.rootData = rootData;
+        if (metadata != null) input.metadata = metadata;
+        if (changeSummary != null) input.changeSummary = changeSummary;
+
+        const designArtifact = await planService.updateDesignArtifact(
+            id,
+            artifactId,
+            req.userId!,
+            input
+        );
+
+        if (!designArtifact) {
+            return res.status(404).json({ error: 'Design artifact not found' });
+        }
+
+        res.json({ success: true, designArtifact });
+    } catch (error: any) {
+        console.error('Update design artifact error:', error);
+
+        if (error.message === 'Plan not found') {
+            return res.status(404).json({ error: error.message });
+        }
+        if (error.message.includes('archived')) {
+            return res.status(400).json({ error: error.message });
+        }
+
+        res.status(500).json({ error: 'Failed to update design artifact', message: error.message });
+    }
+});
+
+/**
+ * DELETE /plans/:id/design-artifacts/:artifactId
+ * Delete a design artifact and its version history.
+ */
+router.delete('/:id/design-artifacts/:artifactId', async (req: AuthRequest, res: Response) => {
+    try {
+        const { id, artifactId } = req.params;
+
+        const deleted = await planService.deleteDesignArtifact(
+            id,
+            artifactId,
+            req.userId!
+        );
+
+        if (!deleted) {
+            return res.status(404).json({ error: 'Design artifact not found' });
+        }
+
+        res.json({ success: true, message: 'Design artifact deleted' });
+    } catch (error: any) {
+        console.error('Delete design artifact error:', error);
+
+        if (error.message === 'Plan not found') {
+            return res.status(404).json({ error: error.message });
+        }
+
+        res.status(500).json({ error: 'Failed to delete design artifact', message: error.message });
     }
 });
 

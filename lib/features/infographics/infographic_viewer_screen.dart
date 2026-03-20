@@ -7,6 +7,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 import 'infographic.dart';
 import 'infographic_provider.dart';
 import '../../ui/widgets/app_network_image.dart';
@@ -25,6 +26,23 @@ class InfographicViewerScreen extends StatefulWidget {
 class _InfographicViewerScreenState extends State<InfographicViewerScreen> {
   final TransformationController _transformController =
       TransformationController();
+  WebViewController? _htmlController;
+
+  @override
+  void initState() {
+    super.initState();
+    _initHtmlController();
+  }
+
+  void _initHtmlController() {
+    final html = widget.infographic.htmlContent;
+    if (html == null || html.isEmpty) return;
+
+    _htmlController = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setBackgroundColor(Colors.white)
+      ..loadHtmlString(html);
+  }
 
   @override
   void dispose() {
@@ -68,12 +86,14 @@ class _InfographicViewerScreenState extends State<InfographicViewerScreen> {
 
   Widget _buildContent(ColorScheme scheme, TextTheme text) {
     // Check if we have image data
+    final hasHtml = widget.infographic.hasHtmlContent;
     final hasUrl = widget.infographic.imageUrl != null &&
-        widget.infographic.imageUrl!.isNotEmpty;
+        widget.infographic.imageUrl!.isNotEmpty &&
+        !hasHtml;
     final hasBase64 = widget.infographic.imageBase64 != null &&
         widget.infographic.imageBase64!.isNotEmpty;
 
-    if (!hasUrl && !hasBase64) {
+    if (!hasUrl && !hasBase64 && !hasHtml) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -105,16 +125,39 @@ class _InfographicViewerScreenState extends State<InfographicViewerScreen> {
       );
     }
 
+    if (hasHtml && _htmlController != null) {
+      return Container(
+        color: Colors.white,
+        child: WebViewWidget(controller: _htmlController!),
+      );
+    }
+
     Widget image;
     if (hasUrl) {
-      image = AppNetworkImage(
-        imageUrl: widget.infographic.imageUrl!,
-        fit: BoxFit.contain,
-        placeholder: (context) => const Center(
-          child: CircularProgressIndicator(),
-        ),
-        errorWidget: (context) => _buildErrorState(text),
-      );
+      final imageUrl = widget.infographic.imageUrl!;
+      if (imageUrl.startsWith('data:image/')) {
+        try {
+          final commaIndex = imageUrl.indexOf(',');
+          final base64Data =
+              commaIndex == -1 ? imageUrl : imageUrl.substring(commaIndex + 1);
+          final bytes = base64Decode(base64Data);
+          image = Image.memory(
+            Uint8List.fromList(bytes),
+            fit: BoxFit.contain,
+          );
+        } catch (e) {
+          return _buildErrorState(text);
+        }
+      } else {
+        image = AppNetworkImage(
+          imageUrl: imageUrl,
+          fit: BoxFit.contain,
+          placeholder: (context) => const Center(
+            child: CircularProgressIndicator(),
+          ),
+          errorWidget: (context) => _buildErrorState(text),
+        );
+      }
     } else {
       // Decode base64
       try {
@@ -184,8 +227,61 @@ class _InfographicViewerScreenState extends State<InfographicViewerScreen> {
   Future<void> _shareInfographic(BuildContext context) async {
     final infographic = widget.infographic;
 
+    if (infographic.hasHtmlContent && infographic.htmlContent != null) {
+      try {
+        final tempDir = await getTemporaryDirectory();
+        final fileName = 'infographic_${infographic.id}.html';
+        final file = File('${tempDir.path}/$fileName');
+        await file.writeAsString(infographic.htmlContent!);
+
+        await Share.shareXFiles(
+          [XFile(file.path)],
+          text: infographic.title,
+          subject: infographic.title,
+        );
+      } catch (e) {
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to share: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
     // If we have a URL, share it directly
     if (infographic.imageUrl != null && infographic.imageUrl!.isNotEmpty) {
+      if (infographic.imageUrl!.startsWith('data:image/')) {
+        try {
+          final commaIndex = infographic.imageUrl!.indexOf(',');
+          final base64Data = commaIndex == -1
+              ? infographic.imageUrl!
+              : infographic.imageUrl!.substring(commaIndex + 1);
+          final bytes = base64Decode(base64Data);
+          final tempDir = await getTemporaryDirectory();
+          final fileName = 'infographic_${infographic.id}.png';
+          final file = File('${tempDir.path}/$fileName');
+          await file.writeAsBytes(bytes);
+
+          await Share.shareXFiles(
+            [XFile(file.path)],
+            text: infographic.title,
+            subject: infographic.title,
+          );
+        } catch (e) {
+          if (!context.mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to share: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+
       await Share.share(
         '${infographic.title}\n\n${infographic.imageUrl}',
         subject: infographic.title,

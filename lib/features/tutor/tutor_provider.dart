@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'tutor_session.dart';
 import '../sources/source_provider.dart';
 import '../gamification/gamification_provider.dart';
+import '../notebook/notebook_chat_context_builder.dart';
 import '../../core/api/api_service.dart';
 import '../../core/ai/ai_settings_service.dart';
 
@@ -133,7 +134,12 @@ class TutorNotifier extends StateNotifier<List<TutorSession>> {
     }
 
     final sourceContent =
-        relevantSources.map((s) => '## ${s.title}\n${s.content}').join('\n\n');
+        await NotebookChatContextBuilder.buildContextTextForCurrentModel(
+      read: ref.read,
+      sources: relevantSources,
+      objective:
+          'Tutor the user on "${session.topic}" using the ${session.style.displayName} style at ${session.difficulty.displayName} difficulty.',
+    );
 
     final prompt = _buildTutorPrompt(session, sourceContent);
     final response = await _callAI(prompt);
@@ -171,7 +177,12 @@ class TutorNotifier extends StateNotifier<List<TutorSession>> {
         : sources.where((s) => s.notebookId == session.notebookId).toList();
 
     final sourceContent =
-        relevantSources.map((s) => '## ${s.title}\n${s.content}').join('\n\n');
+        await NotebookChatContextBuilder.buildContextTextForCurrentModel(
+      read: ref.read,
+      sources: relevantSources,
+      objective:
+          'Evaluate a student response about "${session.topic}" and ground the feedback in the most relevant source material.',
+    );
 
     final prompt = _buildFeedbackPrompt(
       session,

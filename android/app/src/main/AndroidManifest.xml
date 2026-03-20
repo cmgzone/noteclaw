@@ -16,7 +16,7 @@
         android:allowBackup="false"
         android:fullBackupContent="false">
         <activity
-            android:name=".MainActivity"
+            android:name="com.note.claw.MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
             android:taskAffinity=""

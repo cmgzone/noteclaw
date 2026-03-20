@@ -25,7 +25,8 @@ class EbookChapter with _$EbookChapter {
         images: (json['images'] as List? ?? [])
             .map((img) => EbookImage.fromBackendJson(img))
             .toList(),
-        orderIndex: json['order_index'] ?? 0,
+        orderIndex:
+            json['order_index'] ?? json['chapter_order'] ?? json['chapterOrder'] ?? 0,
         isGenerating: json['is_generating'] ?? false,
       );
 
@@ -34,8 +35,13 @@ class EbookChapter with _$EbookChapter {
         'title': title,
         'content': content,
         'images': images.map((img) => img.toBackendJson()).toList(),
+        'chapter_order': orderIndex,
+        'chapterOrder': orderIndex,
         'order_index': orderIndex,
         'is_generating': isGenerating,
+        'status': isGenerating
+            ? 'generating'
+            : (content.isNotEmpty ? 'completed' : 'draft'),
       };
 
   factory EbookChapter.fromJson(Map<String, dynamic> json) =>

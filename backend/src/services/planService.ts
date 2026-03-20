@@ -46,6 +46,63 @@ export interface DesignNote {
   createdAt: Date;
 }
 
+export type DesignArtifactType =
+  | 'prototype'
+  | 'design_system'
+  | 'screen_set'
+  | 'component_library'
+  | 'flow';
+
+export type DesignArtifactStatus = 'draft' | 'ready' | 'archived';
+
+export type DesignArtifactSource = 'manual' | 'ai_generated' | 'imported';
+
+export interface DesignArtifactVersion {
+  id: string;
+  artifactId: string;
+  versionNumber: number;
+  snapshot: Record<string, any>;
+  changeSummary?: string;
+  createdBy?: string;
+  createdAt: Date;
+}
+
+export interface DesignArtifact {
+  id: string;
+  planId: string;
+  name: string;
+  artifactType: DesignArtifactType;
+  status: DesignArtifactStatus;
+  source: DesignArtifactSource;
+  schemaVersion: number;
+  rootData: Record<string, any>;
+  metadata: Record<string, any>;
+  createdAt: Date;
+  updatedAt: Date;
+  latestVersionNumber: number;
+  versions?: DesignArtifactVersion[];
+}
+
+export interface CreateDesignArtifactInput {
+  name: string;
+  artifactType: DesignArtifactType;
+  rootData: Record<string, any>;
+  status?: DesignArtifactStatus;
+  source?: DesignArtifactSource;
+  schemaVersion?: number;
+  metadata?: Record<string, any>;
+  changeSummary?: string;
+}
+
+export interface UpdateDesignArtifactInput {
+  name?: string;
+  status?: DesignArtifactStatus;
+  schemaVersion?: number;
+  rootData?: Record<string, any>;
+  metadata?: Record<string, any>;
+  changeSummary?: string;
+}
+
 export interface TaskSummary {
   total: number;
   notStarted: number;
@@ -607,6 +664,318 @@ class PlanService {
     return true;
   }
 
+  // ==================== DESIGN ARTIFACT METHODS ====================
+
+  /**
+   * List design artifacts for a plan.
+   */
+  async listDesignArtifacts(
+    planId: string,
+    userId: string,
+    artifactType?: DesignArtifactType
+  ): Promise<DesignArtifact[]> {
+    const plan = await this.getPlan(planId, userId, false);
+    if (!plan) {
+      throw new Error('Plan not found');
+    }
+
+    const params: any[] = [planId];
+    let query = `
+      SELECT a.*, COALESCE(MAX(v.version_number), 0) AS latest_version_number
+      FROM plan_design_artifacts a
+      LEFT JOIN plan_design_artifact_versions v ON v.artifact_id = a.id
+      WHERE a.plan_id = $1
+    `;
+
+    if (artifactType) {
+      query += ` AND a.artifact_type = $2`;
+      params.push(artifactType);
+    }
+
+    query += `
+      GROUP BY a.id
+      ORDER BY a.updated_at DESC
+    `;
+
+    const result = await pool.query(query, params);
+    return result.rows.map((row) => this.mapRowToDesignArtifact(row));
+  }
+
+  /**
+   * Get a single design artifact with optional versions.
+   */
+  async getDesignArtifact(
+    planId: string,
+    artifactId: string,
+    userId: string,
+    includeVersions: boolean = false
+  ): Promise<DesignArtifact | null> {
+    const plan = await this.getPlan(planId, userId, false);
+    if (!plan) {
+      throw new Error('Plan not found');
+    }
+
+    const result = await pool.query(
+      `
+      SELECT a.*, COALESCE(MAX(v.version_number), 0) AS latest_version_number
+      FROM plan_design_artifacts a
+      LEFT JOIN plan_design_artifact_versions v ON v.artifact_id = a.id
+      WHERE a.plan_id = $1 AND a.id = $2
+      GROUP BY a.id
+      `,
+      [planId, artifactId]
+    );
+
+    if (result.rows.length === 0) {
+      return null;
+    }
+
+    const artifact = this.mapRowToDesignArtifact(result.rows[0]);
+    if (includeVersions) {
+      artifact.versions = await this.getDesignArtifactVersionsInternal(
+        artifactId
+      );
+    }
+    return artifact;
+  }
+
+  /**
+   * Create a new design artifact for a plan and seed version 1.
+   */
+  async createDesignArtifact(
+    planId: string,
+    userId: string,
+    input: CreateDesignArtifactInput
+  ): Promise<DesignArtifact> {
+    const plan = await this.getPlan(planId, userId, false);
+    if (!plan) {
+      throw new Error('Plan not found');
+    }
+    if (plan.status === 'archived') {
+      throw new Error('Cannot add design artifacts to archived plan');
+    }
+
+    const artifactId = uuidv4();
+    const status = input.status ?? 'draft';
+    const source = input.source ?? 'manual';
+    const schemaVersion = input.schemaVersion ?? 1;
+    const rootData = input.rootData ?? {};
+    const metadata = input.metadata ?? {};
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const artifactResult = await client.query(
+        `
+        INSERT INTO plan_design_artifacts
+          (id, plan_id, name, artifact_type, status, source, schema_version, root_data, metadata)
+        VALUES
+          ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb)
+        RETURNING *
+        `,
+        [
+          artifactId,
+          planId,
+          input.name,
+          input.artifactType,
+          status,
+          source,
+          schemaVersion,
+          JSON.stringify(rootData),
+          JSON.stringify(metadata),
+        ]
+      );
+
+      const snapshot = {
+        name: input.name,
+        artifactType: input.artifactType,
+        status,
+        source,
+        schemaVersion,
+        rootData,
+        metadata,
+      };
+
+      await client.query(
+        `
+        INSERT INTO plan_design_artifact_versions
+          (id, artifact_id, version_number, snapshot, change_summary, created_by)
+        VALUES
+          ($1, $2, $3, $4::jsonb, $5, $6)
+        `,
+        [
+          uuidv4(),
+          artifactId,
+          1,
+          JSON.stringify(snapshot),
+          input.changeSummary ?? 'Initial design artifact',
+          userId,
+        ]
+      );
+
+      await client.query('COMMIT');
+
+      const artifact = this.mapRowToDesignArtifact({
+        ...artifactResult.rows[0],
+        latest_version_number: 1,
+      });
+      artifact.versions = await this.getDesignArtifactVersionsInternal(
+        artifactId
+      );
+      return artifact;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Update a design artifact and append a new version snapshot.
+   */
+  async updateDesignArtifact(
+    planId: string,
+    artifactId: string,
+    userId: string,
+    input: UpdateDesignArtifactInput
+  ): Promise<DesignArtifact | null> {
+    const plan = await this.getPlan(planId, userId, false);
+    if (!plan) {
+      throw new Error('Plan not found');
+    }
+    if (plan.status === 'archived') {
+      throw new Error('Cannot update design artifacts in archived plan');
+    }
+
+    const existing = await this.getDesignArtifact(planId, artifactId, userId);
+    if (!existing) {
+      return null;
+    }
+
+    const nextName = input.name ?? existing.name;
+    const nextStatus = input.status ?? existing.status;
+    const nextSchemaVersion = input.schemaVersion ?? existing.schemaVersion;
+    const nextRootData = input.rootData ?? existing.rootData;
+    const nextMetadata = input.metadata ?? existing.metadata;
+    const nextVersionNumber = existing.latestVersionNumber + 1;
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const artifactResult = await client.query(
+        `
+        UPDATE plan_design_artifacts
+        SET
+          name = $3,
+          status = $4,
+          schema_version = $5,
+          root_data = $6::jsonb,
+          metadata = $7::jsonb,
+          updated_at = NOW()
+        WHERE plan_id = $1 AND id = $2
+        RETURNING *
+        `,
+        [
+          planId,
+          artifactId,
+          nextName,
+          nextStatus,
+          nextSchemaVersion,
+          JSON.stringify(nextRootData),
+          JSON.stringify(nextMetadata),
+        ]
+      );
+
+      if (artifactResult.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return null;
+      }
+
+      const snapshot = {
+        name: nextName,
+        artifactType: existing.artifactType,
+        status: nextStatus,
+        source: existing.source,
+        schemaVersion: nextSchemaVersion,
+        rootData: nextRootData,
+        metadata: nextMetadata,
+      };
+
+      await client.query(
+        `
+        INSERT INTO plan_design_artifact_versions
+          (id, artifact_id, version_number, snapshot, change_summary, created_by)
+        VALUES
+          ($1, $2, $3, $4::jsonb, $5, $6)
+        `,
+        [
+          uuidv4(),
+          artifactId,
+          nextVersionNumber,
+          JSON.stringify(snapshot),
+          input.changeSummary ?? 'Updated design artifact',
+          userId,
+        ]
+      );
+
+      await client.query('COMMIT');
+
+      const artifact = this.mapRowToDesignArtifact({
+        ...artifactResult.rows[0],
+        latest_version_number: nextVersionNumber,
+      });
+      artifact.versions = await this.getDesignArtifactVersionsInternal(
+        artifactId
+      );
+      return artifact;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Delete a design artifact and its versions.
+   */
+  async deleteDesignArtifact(
+    planId: string,
+    artifactId: string,
+    userId: string
+  ): Promise<boolean> {
+    const plan = await this.getPlan(planId, userId, false);
+    if (!plan) {
+      throw new Error('Plan not found');
+    }
+
+    const result = await pool.query(
+      `DELETE FROM plan_design_artifacts WHERE plan_id = $1 AND id = $2 RETURNING id`,
+      [planId, artifactId]
+    );
+
+    return result.rows.length > 0;
+  }
+
+  /**
+   * List all saved versions for a design artifact.
+   */
+  async getDesignArtifactVersions(
+    planId: string,
+    artifactId: string,
+    userId: string
+  ): Promise<DesignArtifactVersion[]> {
+    const artifact = await this.getDesignArtifact(planId, artifactId, userId);
+    if (!artifact) {
+      throw new Error('Design artifact not found');
+    }
+
+    return this.getDesignArtifactVersionsInternal(artifactId);
+  }
+
   // ==================== PRIVATE HELPER METHODS ====================
 
   /**
@@ -686,6 +1055,25 @@ class PlanService {
   }
 
   /**
+   * Get versions for a design artifact without repeating access checks.
+   */
+  private async getDesignArtifactVersionsInternal(
+    artifactId: string
+  ): Promise<DesignArtifactVersion[]> {
+    const result = await pool.query(
+      `
+      SELECT *
+      FROM plan_design_artifact_versions
+      WHERE artifact_id = $1
+      ORDER BY version_number DESC
+      `,
+      [artifactId]
+    );
+
+    return result.rows.map((row) => this.mapRowToDesignArtifactVersion(row));
+  }
+
+  /**
    * Map a database row to a Plan object.
    */
   private mapRowToPlan(row: any): Plan {
@@ -727,6 +1115,41 @@ class PlanService {
       planId: row.plan_id,
       requirementIds: row.requirement_ids || [],
       content: row.content,
+      createdAt: new Date(row.created_at),
+    };
+  }
+
+  /**
+   * Map a database row to a DesignArtifact object.
+   */
+  private mapRowToDesignArtifact(row: any): DesignArtifact {
+    return {
+      id: row.id,
+      planId: row.plan_id,
+      name: row.name,
+      artifactType: row.artifact_type as DesignArtifactType,
+      status: row.status as DesignArtifactStatus,
+      source: row.source as DesignArtifactSource,
+      schemaVersion: parseInt(row.schema_version) || 1,
+      rootData: row.root_data || {},
+      metadata: row.metadata || {},
+      createdAt: new Date(row.created_at),
+      updatedAt: new Date(row.updated_at),
+      latestVersionNumber: parseInt(row.latest_version_number) || 0,
+    };
+  }
+
+  /**
+   * Map a database row to a DesignArtifactVersion object.
+   */
+  private mapRowToDesignArtifactVersion(row: any): DesignArtifactVersion {
+    return {
+      id: row.id,
+      artifactId: row.artifact_id,
+      versionNumber: parseInt(row.version_number) || 1,
+      snapshot: row.snapshot || {},
+      changeSummary: row.change_summary || undefined,
+      createdBy: row.created_by || undefined,
       createdAt: new Date(row.created_at),
     };
   }

@@ -64,6 +64,17 @@ class GoogleTtsService {
         });
 
         _flutterTts.setErrorHandler((msg) {
+          final normalized = msg.toString().toLowerCase();
+          final isInterrupted = normalized.contains('interrupted') ||
+              normalized.contains('canceled') ||
+              normalized.contains('cancelled') ||
+              normalized.contains('speechsynthesiserrorevent');
+
+          if (isInterrupted) {
+            debugPrint('Google TTS: Speech interrupted');
+            return;
+          }
+
           debugPrint('Google TTS Error: $msg');
         });
 

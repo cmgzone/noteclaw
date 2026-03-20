@@ -1083,7 +1083,7 @@ class _OutputsTab extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              'Outputs from coding agents will appear here',
+              'Outputs from connected agents will appear here',
               style: text.bodySmall?.copyWith(
                 color: scheme.onSurface.withValues(alpha: 0.4),
               ),

@@ -6,7 +6,7 @@ $ErrorActionPreference = "Stop"
 Write-Host "[*] Installing NotebookLLM MCP Server..." -ForegroundColor Cyan
 
 $GITHUB_REPO = "cmgzone/notebookllmmcp"
-$BACKEND_URL = "https://notebookllm-ufj7.onrender.com"
+$BACKEND_URL = "https://noteclaw.onrender.com"
 
 Write-Host "[*] Finding latest release..." -ForegroundColor Yellow
 $version = "1.0.0"

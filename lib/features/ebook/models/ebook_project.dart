@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:freezed_annotation/freezed_annotation.dart';
 import 'branding_config.dart';
 import 'ebook_chapter.dart';
@@ -38,11 +40,13 @@ class EbookProject with _$EbookProject {
 
   factory EbookProject.fromBackendJson(Map<String, dynamic> json) =>
       EbookProject(
-        id: json['id'],
+        id: json['id'].toString(),
         title: json['title'],
         topic: json['topic'],
-        targetAudience: json['target_audience'],
-        branding: BrandingConfig.fromBackendJson(json['branding'] ?? {}),
+        targetAudience: json['target_audience'] ?? '',
+        branding: BrandingConfig.fromBackendJson(
+          _parseBrandingJson(json['branding']),
+        ),
         chapters: (json['chapters'] as List? ?? [])
             .map((c) => EbookChapter.fromBackendJson(c))
             .toList(),
@@ -50,10 +54,10 @@ class EbookProject with _$EbookProject {
           (s) => s.name == (json['status'] ?? 'draft'),
           orElse: () => EbookStatus.draft,
         ),
-        selectedModel: json['selected_model'],
+        selectedModel: json['selected_model'] ?? '',
         createdAt: DateTime.parse(json['created_at']),
         updatedAt: DateTime.parse(json['updated_at']),
-        coverImageUrl: json['cover_image_url'],
+        coverImageUrl: json['cover_image_url'] ?? json['cover_image'],
         notebookId: json['notebook_id'],
         chapterAudioUrls: List<String>.from(json['chapter_audio_urls'] ?? []),
         currentPhase: json['current_phase'] ?? 'Starting...',
@@ -89,4 +93,30 @@ class EbookProject with _$EbookProject {
 
   factory EbookProject.fromJson(Map<String, dynamic> json) =>
       _$EbookProjectFromJson(json);
+
+  static Map<String, dynamic> _parseBrandingJson(dynamic rawBranding) {
+    if (rawBranding is Map<String, dynamic>) {
+      return rawBranding;
+    }
+
+    if (rawBranding is Map) {
+      return Map<String, dynamic>.from(rawBranding);
+    }
+
+    if (rawBranding is String && rawBranding.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(rawBranding);
+        if (decoded is Map<String, dynamic>) {
+          return decoded;
+        }
+        if (decoded is Map) {
+          return Map<String, dynamic>.from(decoded);
+        }
+      } catch (_) {
+        return {};
+      }
+    }
+
+    return {};
+  }
 }
