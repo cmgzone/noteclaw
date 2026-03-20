@@ -194,6 +194,20 @@ router.post('/login', async (req: Request, res: Response) => {
     }
 });
 
+// Public privacy policy
+router.get('/privacy-policy', async (_req: Request, res: Response) => {
+    try {
+        const result = await pool.query(
+            "SELECT COALESCE(value, content) AS content FROM app_settings WHERE key = 'privacy_policy'"
+        );
+
+        res.json({ content: result.rows[0]?.content || null });
+    } catch (error) {
+        console.error('Get privacy policy error:', error);
+        res.status(500).json({ error: 'Failed to fetch privacy policy' });
+    }
+});
+
 // Get current user
 router.get('/me', authenticateToken, async (req: AuthRequest, res: Response) => {
     try {

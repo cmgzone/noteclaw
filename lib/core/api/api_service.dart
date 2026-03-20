@@ -1773,7 +1773,7 @@ class ApiService {
   // ============ PRIVACY POLICY ============
 
   Future<String> getPrivacyPolicy() async {
-    final response = await get<Map<String, dynamic>>('/admin/privacy-policy');
+    final response = await get<Map<String, dynamic>>('/auth/privacy-policy');
     return response['content'] as String? ?? '';
   }
 }

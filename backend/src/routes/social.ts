@@ -762,7 +762,7 @@ router.post('/activities', async (req: AuthRequest, res: Response) => {
 
 // Valid options for leaderboard
 const VALID_PERIODS = ['daily', 'weekly', 'monthly', 'all_time'] as const;
-const VALID_METRICS = ['xp', 'quizzes', 'flashcards', 'study_time'] as const;
+const VALID_METRICS = ['xp', 'quizzes', 'flashcards', 'study_time', 'streak'] as const;
 const VALID_TYPES = ['global', 'friends'] as const;
 
 type LeaderboardPeriod = typeof VALID_PERIODS[number];
@@ -803,8 +803,16 @@ router.get('/leaderboard', async (req: AuthRequest, res: Response) => {
       );
     }
 
+    leaderboard = leaderboard.map((entry) => ({
+      ...entry,
+      isCurrentUser: entry.userId === userId,
+    }));
+
+    const rankScope = leaderboardType === 'friends'
+      ? [userId, ...(await friendService.getFriendIds(userId))]
+      : undefined;
     const userRank = await leaderboardService.getUserRank(
-      userId, leaderboardPeriod, leaderboardMetric
+      userId, leaderboardPeriod, leaderboardMetric, rankScope
     );
 
     res.json({ leaderboard, userRank });

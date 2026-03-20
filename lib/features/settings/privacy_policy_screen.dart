@@ -13,7 +13,7 @@ class PrivacyPolicyScreen extends ConsumerStatefulWidget {
 }
 
 class _PrivacyPolicyScreenState extends ConsumerState<PrivacyPolicyScreen> {
-  late Future<String?> _policyFuture;
+  late Future<String> _policyFuture;
 
   @override
   void initState() {
@@ -35,7 +35,7 @@ class _PrivacyPolicyScreenState extends ConsumerState<PrivacyPolicyScreen> {
         titleTextStyle: const TextStyle(
             color: Colors.white, fontWeight: FontWeight.bold, fontSize: 20),
       ),
-      body: FutureBuilder<String?>(
+      body: FutureBuilder<String>(
         future: _policyFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {

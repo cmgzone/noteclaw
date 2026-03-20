@@ -7,6 +7,39 @@ import ebookGenerationService from '../services/ebookGenerationService.js';
 const router = express.Router();
 router.use(authenticateToken);
 
+let ebookSchemaReady: Promise<void> | null = null;
+
+async function ensureEbookSchema(): Promise<void> {
+    if (ebookSchemaReady != null) {
+        return ebookSchemaReady;
+    }
+
+    ebookSchemaReady = (async () => {
+        await pool.query(`
+            ALTER TABLE ebook_projects
+                ADD COLUMN IF NOT EXISTS topic TEXT,
+                ADD COLUMN IF NOT EXISTS target_audience TEXT,
+                ADD COLUMN IF NOT EXISTS branding JSONB,
+                ADD COLUMN IF NOT EXISTS selected_model TEXT;
+        `);
+    })().catch((error) => {
+        ebookSchemaReady = null;
+        throw error;
+    });
+
+    return ebookSchemaReady;
+}
+
+router.use(async (_req, _res, next) => {
+    try {
+        await ensureEbookSchema();
+        next();
+    } catch (error) {
+        console.error('Ensure ebook schema error:', error);
+        next(error);
+    }
+});
+
 type NormalizedChapterImage = {
     id: string;
     prompt: string;

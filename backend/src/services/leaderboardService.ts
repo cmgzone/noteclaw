@@ -88,10 +88,15 @@ export const leaderboardService = {
   async getUserRank(
     userId: string,
     period: LeaderboardPeriod = 'weekly',
-    metric: LeaderboardMetric = 'xp'
+    metric: LeaderboardMetric = 'xp',
+    scopedUserIds?: string[]
   ): Promise<{ rank: number; score: number; totalUsers: number }> {
     const periodStart = this.getPeriodStart(period);
     const metricColumn = this.getMetricColumn(metric);
+    const scopeClause = scopedUserIds?.length ? 'WHERE u.id = ANY($3)' : '';
+    const queryParams = scopedUserIds?.length
+      ? [userId, periodStart, scopedUserIds]
+      : [userId, periodStart];
 
     const result = await pool.query(`
       WITH user_scores AS (
@@ -101,6 +106,7 @@ export const leaderboardService = {
         FROM users u
         LEFT JOIN leaderboard_snapshots ls ON ls.user_id = u.id 
           AND ls.period_start >= $2
+        ${scopeClause}
         GROUP BY u.id
       ),
       ranked AS (
@@ -111,7 +117,7 @@ export const leaderboardService = {
       SELECT rank, score, (SELECT COUNT(*) FROM ranked) as total_users
       FROM ranked
       WHERE id = $1
-    `, [userId, periodStart]);
+    `, queryParams);
 
     if (result.rows.length === 0) {
       return { rank: 0, score: 0, totalUsers: 0 };
