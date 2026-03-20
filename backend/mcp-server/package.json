@@ -15,6 +15,7 @@
   },
   "scripts": {
     "build": "tsc",
+    "build:standalone": "node ./scripts/build-standalone.cjs",
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts"
   },

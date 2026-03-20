@@ -128,9 +128,9 @@ flutter build windows
 
 ### Deploy MCP
 
-MCP is distributed from this repo through GitHub Releases at `backend/mcp-server/`.
+MCP is distributed from this repo through the standalone GitHub-hosted bundle at `backend/mcp-server/github-install/index.cjs`.
 
-End users should download the release package or run the GitHub install scripts described in `backend/mcp-server/README.md`. No npm or npx package install is required for the hosted MCP package.
+End users should run the GitHub install scripts described in `backend/mcp-server/README.md`, which download the bundled runtime directly from the repo. No npm, npx, or GitHub Releases download is required for the hosted MCP package.
 
 If you want to build it locally instead:
 
@@ -138,6 +138,7 @@ If you want to build it locally instead:
 cd backend/mcp-server
 npm install
 npm run build
+npm run build:standalone
 node dist/index.js
 ```
 

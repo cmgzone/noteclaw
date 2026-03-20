@@ -2,7 +2,7 @@
   "mcpServers": {
     "noteclaw": {
       "command": "node",
-      "args": ["~/.noteclaw-mcp/index.js"],
+      "args": ["~/.noteclaw-mcp/index.cjs"],
       "env": {
         "BACKEND_URL": "https://noteclaw.onrender.com",
         "CODING_AGENT_API_KEY": "nclaw_your-personal-api-token-here"

@@ -13,7 +13,8 @@ const router = Router();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const GITHUB_REPO = process.env.MCP_GITHUB_REPO || 'cmgzone/noteclaw';
-const GITHUB_RELEASES_URL = `https://github.com/${GITHUB_REPO}/releases`;
+const RAW_MCP_CJS_URL =
+  `https://raw.githubusercontent.com/${GITHUB_REPO}/HEAD/backend/mcp-server/github-install/index.cjs`;
 const RAW_INSTALL_PS1_URL =
   `https://raw.githubusercontent.com/${GITHUB_REPO}/HEAD/scripts/install-mcp.ps1`;
 const RAW_INSTALL_SH_URL =
@@ -32,15 +33,15 @@ const getProjectRoot = () => {
  */
 router.get('/package.tgz', async (req: Request, res: Response) => {
   try {
-    const packagePath = path.join(getProjectRoot(), 'mcp-server/dist/index.js');
+    const packagePath = path.join(getProjectRoot(), 'mcp-server/github-install/index.cjs');
 
     if (!fs.existsSync(packagePath)) {
       return res.status(404).json({ error: 'MCP package not found' });
     }
 
     res.status(200).json({
-      message: 'The MCP package is distributed through GitHub Releases.',
-      releasesUrl: GITHUB_RELEASES_URL,
+      message: 'The MCP package is distributed directly from the GitHub repository.',
+      runtimeUrl: RAW_MCP_CJS_URL,
       installScripts: {
         windows: RAW_INSTALL_PS1_URL,
         macLinux: RAW_INSTALL_SH_URL,
@@ -54,11 +55,11 @@ router.get('/package.tgz', async (req: Request, res: Response) => {
 
 /**
  * GET /api/mcp/index.js
- * Serve the compiled MCP server JavaScript
+ * Legacy alias for the standalone MCP server bundle
  */
 router.get('/index.js', async (req: Request, res: Response) => {
   try {
-    const indexPath = path.join(getProjectRoot(), 'mcp-server/dist/index.js');
+    const indexPath = path.join(getProjectRoot(), 'mcp-server/github-install/index.cjs');
     
     if (!fs.existsSync(indexPath)) {
       return res.status(404).json({ error: 'MCP server not found' });
@@ -67,7 +68,27 @@ router.get('/index.js', async (req: Request, res: Response) => {
     res.setHeader('Content-Type', 'application/javascript');
     res.sendFile(indexPath);
   } catch (error: any) {
-    console.error('MCP index.js error:', error);
+    console.error('MCP index.js alias error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/mcp/index.cjs
+ * Serve the standalone MCP server bundle
+ */
+router.get('/index.cjs', async (req: Request, res: Response) => {
+  try {
+    const indexPath = path.join(getProjectRoot(), 'mcp-server/github-install/index.cjs');
+
+    if (!fs.existsSync(indexPath)) {
+      return res.status(404).json({ error: 'MCP server not found' });
+    }
+
+    res.setHeader('Content-Type', 'application/javascript');
+    res.sendFile(indexPath);
+  } catch (error: any) {
+    console.error('MCP index.cjs error:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -108,35 +129,26 @@ set -euo pipefail
 GITHUB_REPO="${GITHUB_REPO}"
 BACKEND_URL="${backendUrl}"
 MCP_DIR="$HOME/.noteclaw-mcp"
-TEMP_ZIP="/tmp/noteclaw-mcp-server.zip"
-ASSET_PATTERN='noteclaw-mcp-server-.*\\.zip'
+DOWNLOAD_URL="${RAW_MCP_CJS_URL}"
+TARGET_FILE="$MCP_DIR/index.cjs"
 
-echo "Installing NoteClaw MCP Server from GitHub Releases..."
+echo "Installing NoteClaw MCP Server from the GitHub repository..."
 
 if ! command -v node >/dev/null 2>&1; then
     echo "Node.js is required to run the NoteClaw MCP Server. Install Node.js 20+ and try again." >&2
     exit 1
 fi
 
-echo "Finding latest release..."
-RELEASE_INFO="$(curl -fsSL "https://api.github.com/repos/$GITHUB_REPO/releases/latest")"
-VERSION="$(printf '%s' "$RELEASE_INFO" | grep -o '"tag_name": *"[^"]*"' | head -1 | sed 's/.*"mcp-v\\([^"]*\\)".*/\\1/')"
-DOWNLOAD_URL="$(printf '%s' "$RELEASE_INFO" | grep -o '"browser_download_url": *"[^"]*"' | grep -E "$ASSET_PATTERN" | head -1 | sed 's/.*"\\(https:[^"]*\\)".*/\\1/')"
-
-if [ -z "$DOWNLOAD_URL" ]; then
-    echo "Could not find a GitHub release asset matching noteclaw-mcp-server-*.zip." >&2
+echo "Downloading standalone MCP runtime from GitHub..."
+rm -rf "$MCP_DIR"
+mkdir -p "$MCP_DIR"
+if ! curl -fsSL "$DOWNLOAD_URL" -o "$TARGET_FILE"; then
+    echo "Could not download the NoteClaw MCP bundle from $DOWNLOAD_URL." >&2
     exit 1
 fi
 
-echo "Downloading NoteClaw MCP Server v$VERSION..."
-rm -rf "$MCP_DIR"
-mkdir -p "$MCP_DIR"
-curl -fsSL "$DOWNLOAD_URL" -o "$TEMP_ZIP"
-unzip -q "$TEMP_ZIP" -d "$MCP_DIR"
-rm -f "$TEMP_ZIP"
-
 echo ""
-echo "NoteClaw MCP Server v$VERSION installed to $MCP_DIR"
+echo "NoteClaw MCP Server installed to $MCP_DIR"
 echo ""
 echo "Add this to your MCP config:"
 echo ""
@@ -144,7 +156,7 @@ echo '{
   "mcpServers": {
     "noteclaw": {
       "command": "node",
-      "args": ["'$MCP_DIR'/index.js"],
+      "args": ["'$MCP_DIR'/index.cjs"],
       "env": {
         "BACKEND_URL": "${backendUrl}",
         "CODING_AGENT_API_KEY": "YOUR_API_TOKEN_HERE"
@@ -173,37 +185,29 @@ router.get('/install.ps1', async (req: Request, res: Response) => {
 $GitHubRepo = "${GITHUB_REPO}"
 $BackendUrl = "${backendUrl}"
 $MCP_DIR = "$env:USERPROFILE\\.noteclaw-mcp"
-$TempZip = Join-Path $env:TEMP "noteclaw-mcp-server.zip"
-$AssetPattern = "noteclaw-mcp-server-*.zip"
+$DownloadUrl = "${RAW_MCP_CJS_URL}"
+$TargetFile = Join-Path $MCP_DIR "index.cjs"
 
-Write-Host "Installing NoteClaw MCP Server from GitHub Releases..." -ForegroundColor Cyan
+Write-Host "Installing NoteClaw MCP Server from the GitHub repository..." -ForegroundColor Cyan
 
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
     throw "Node.js is required to run the NoteClaw MCP Server. Install Node.js 20+ and try again."
 }
 
-Write-Host "Finding latest release..." -ForegroundColor Yellow
-$release = Invoke-RestMethod -Uri "https://api.github.com/repos/$GitHubRepo/releases/latest"
-$asset = $release.assets | Where-Object { $_.name -like $AssetPattern } | Select-Object -First 1
-
-if (-not $asset) {
-    throw "Could not find a release asset matching '$AssetPattern' in $GitHubRepo."
-}
-
-$version = ($release.tag_name -replace "^mcp-v", "")
-$downloadUrl = $asset.browser_download_url
-
-Write-Host "Downloading NoteClaw MCP Server v$version..." -ForegroundColor Yellow
+Write-Host "Downloading standalone MCP runtime from GitHub..." -ForegroundColor Yellow
 if (Test-Path $MCP_DIR) {
     Remove-Item -Recurse -Force $MCP_DIR
 }
 New-Item -ItemType Directory -Force -Path $MCP_DIR | Out-Null
-Invoke-WebRequest -Uri $downloadUrl -OutFile $TempZip
-Expand-Archive -Path $TempZip -DestinationPath $MCP_DIR -Force
-Remove-Item $TempZip -Force
+
+try {
+    Invoke-WebRequest -Uri $DownloadUrl -OutFile $TargetFile
+} catch {
+    throw "Could not download the NoteClaw MCP bundle from $DownloadUrl."
+}
 
 Write-Host ""
-Write-Host "NoteClaw MCP Server v$version installed to $MCP_DIR" -ForegroundColor Green
+Write-Host "NoteClaw MCP Server installed to $MCP_DIR" -ForegroundColor Green
 Write-Host ""
 Write-Host "Add this to your MCP config:" -ForegroundColor Cyan
 Write-Host ""
@@ -212,7 +216,7 @@ Write-Host @"
   "mcpServers": {
     "noteclaw": {
       "command": "node",
-      "args": ["$MCP_DIR\\index.js"],
+      "args": ["$MCP_DIR\\index.cjs"],
       "env": {
         "BACKEND_URL": "${backendUrl}",
         "CODING_AGENT_API_KEY": "YOUR_API_TOKEN_HERE"
@@ -239,7 +243,7 @@ router.get('/config', async (req: Request, res: Response) => {
     mcpServers: {
       noteclaw: {
         command: 'node',
-        args: ['%USERPROFILE%\\.noteclaw-mcp\\index.js'],
+        args: ['%USERPROFILE%\\.noteclaw-mcp\\index.cjs'],
         env: {
           BACKEND_URL: backendUrl,
           CODING_AGENT_API_KEY: 'YOUR_API_TOKEN_HERE',
@@ -252,7 +256,7 @@ router.get('/config', async (req: Request, res: Response) => {
     mcpServers: {
       noteclaw: {
         command: 'node',
-        args: ['$HOME/.noteclaw-mcp/index.js'],
+        args: ['$HOME/.noteclaw-mcp/index.cjs'],
         env: {
           BACKEND_URL: backendUrl,
           CODING_AGENT_API_KEY: 'YOUR_API_TOKEN_HERE',
@@ -269,7 +273,7 @@ router.get('/config', async (req: Request, res: Response) => {
     instructions: {
       windows: `irm ${RAW_INSTALL_PS1_URL} | iex`,
       macLinux: `curl -fsSL ${RAW_INSTALL_SH_URL} | bash`,
-      manual: `Download the latest package from ${GITHUB_RELEASES_URL}`,
+      manual: `Download the standalone bundle from ${RAW_MCP_CJS_URL}`,
     },
   });
 });

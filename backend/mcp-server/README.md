@@ -4,7 +4,7 @@ An MCP (Model Context Protocol) server that allows third-party coding agents to 
 
 ## Quick Install
 
-GitHub Releases are the distribution source for this MCP package. No npm or npx package install is required for end users.
+This MCP package is distributed directly from this GitHub repo. No npm, npx, or GitHub Release download is required for end users.
 
 Prerequisite: install Node.js 20+ before using the MCP server.
 
@@ -241,16 +241,15 @@ Complete a task with an optional summary.
 
 ### Option 1: Quick Install (Recommended)
 
-Use the install scripts above. They download the latest GitHub Release, extract it to `~/.noteclaw-mcp` or `%USERPROFILE%\.noteclaw-mcp`, and print a ready-to-paste MCP config.
+Use the install scripts above. They download the standalone MCP runtime from this repo into `~/.noteclaw-mcp` or `%USERPROFILE%\.noteclaw-mcp`, and print a ready-to-paste MCP config.
 
-### Option 2: Manual Install from GitHub Release
+### Option 2: Manual Install from the GitHub Repo
 
-1. Download the latest release from [GitHub Releases](https://github.com/cmgzone/noteclaw/releases)
-2. Extract it to `~/.noteclaw-mcp` on macOS/Linux or `%USERPROFILE%\.noteclaw-mcp` on Windows
-3. Confirm `index.js` exists in that folder
-4. Configure your MCP client (see below)
+1. Download [`index.cjs`](https://raw.githubusercontent.com/cmgzone/noteclaw/HEAD/backend/mcp-server/github-install/index.cjs)
+2. Save it to `~/.noteclaw-mcp/index.cjs` on macOS/Linux or `%USERPROFILE%\.noteclaw-mcp\index.cjs` on Windows
+3. Configure your MCP client (see below)
 
-The GitHub release zip already includes the runtime dependencies needed to run the MCP server.
+The bundled `index.cjs` file already includes the runtime dependencies needed to run the MCP server.
 
 ### Option 3: Build from Source
 
@@ -258,6 +257,7 @@ The GitHub release zip already includes the runtime dependencies needed to run t
 cd backend/mcp-server
 npm install
 npm run build
+npm run build:standalone
 ```
 
 ## Authentication
@@ -303,7 +303,7 @@ Add to `.kiro/settings/mcp.json`:
   "mcpServers": {
     "noteclaw": {
       "command": "node",
-      "args": ["~/.noteclaw-mcp/index.js"],
+      "args": ["~/.noteclaw-mcp/index.cjs"],
       "env": {
         "BACKEND_URL": "https://noteclaw.onrender.com",
         "CODING_AGENT_API_KEY": "nclaw_your-personal-api-token-here"
@@ -322,7 +322,7 @@ Add to `claude_desktop_config.json`:
   "mcpServers": {
     "noteclaw": {
       "command": "node",
-      "args": ["/absolute/path/to/.noteclaw-mcp/index.js"],
+      "args": ["/absolute/path/to/.noteclaw-mcp/index.cjs"],
       "env": {
         "BACKEND_URL": "https://noteclaw.onrender.com",
         "CODING_AGENT_API_KEY": "nclaw_your-personal-api-token-here"

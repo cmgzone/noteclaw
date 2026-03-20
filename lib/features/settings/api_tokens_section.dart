@@ -1712,7 +1712,7 @@ class _McpConfigInstructionsState extends State<McpConfigInstructions> {
   "mcpServers": {
     "noteclaw": {
       "command": "node",
-      "args": ["C:\\\\Users\\\\YOUR_NAME\\\\.noteclaw-mcp\\\\index.js"],
+      "args": ["C:\\\\Users\\\\YOUR_NAME\\\\.noteclaw-mcp\\\\index.cjs"],
       "env": {
         "BACKEND_URL": "https://noteclaw.onrender.com",
         "CODING_AGENT_API_KEY": "nclaw_your_personal_api_token_here"
@@ -1922,7 +1922,7 @@ class _McpConfigInstructionsState extends State<McpConfigInstructions> {
                     title: 'Windows PowerShell',
                     code: _windowsInstallCommand,
                     description:
-                        'Downloads the latest NoteClaw MCP GitHub Release into %USERPROFILE%\\.noteclaw-mcp.',
+                        'Downloads the standalone NoteClaw MCP runtime directly from the GitHub repo into %USERPROFILE%\\.noteclaw-mcp.',
                     copyLabel: 'Windows install command',
                     icon: Icons.desktop_windows_rounded,
                     badge: 'PowerShell',
@@ -1933,7 +1933,7 @@ class _McpConfigInstructionsState extends State<McpConfigInstructions> {
                     title: 'macOS / Linux',
                     code: _macLinuxInstallCommand,
                     description:
-                        'Downloads the same tagged release into ~/.noteclaw-mcp for shell-based MCP clients.',
+                        'Downloads the same standalone bundle into ~/.noteclaw-mcp for shell-based MCP clients.',
                     copyLabel: 'macOS/Linux install command',
                     icon: Icons.code_rounded,
                     badge: 'bash',
@@ -1974,19 +1974,19 @@ class _McpConfigInstructionsState extends State<McpConfigInstructions> {
                         ),
                         const SizedBox(height: 6),
                         Text(
-                          'Windows install path: %USERPROFILE%\\.noteclaw-mcp\\index.js',
+                          'Windows install path: %USERPROFILE%\\.noteclaw-mcp\\index.cjs',
                           style:
                               TextStyle(fontSize: 11, color: scheme.onSurface),
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          'macOS/Linux install path: ~/.noteclaw-mcp/index.js',
+                          'macOS/Linux install path: ~/.noteclaw-mcp/index.cjs',
                           style:
                               TextStyle(fontSize: 11, color: scheme.onSurface),
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          'The scripts install from GitHub Releases only. Users do not need npm or npx, but they still need Node.js 20+ to run index.js.',
+                          'The scripts install directly from the GitHub repo. Users do not need npm, npx, or GitHub Releases, but they still need Node.js 20+ to run index.cjs.',
                           style:
                               TextStyle(fontSize: 11, color: scheme.onSurface),
                         ),
