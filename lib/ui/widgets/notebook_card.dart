@@ -124,7 +124,7 @@ class NotebookCard extends StatelessWidget {
       ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: () => context.go('/notebook/$notebookId'),
+        onTap: () => context.push('/notebook/$notebookId'),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [

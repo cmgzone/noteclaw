@@ -538,22 +538,22 @@ class _AppDrawer extends ConsumerWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Container(
-                        padding: const EdgeInsets.all(12),
+                        width: 56,
+                        height: 56,
                         decoration: BoxDecoration(
-                          gradient: AppTheme.premiumGradient,
-                          borderRadius: BorderRadius.circular(16),
+                          borderRadius: BorderRadius.circular(18),
                           boxShadow: [
                             BoxShadow(
-                              color: scheme.primary.withValues(alpha: 0.3),
-                              blurRadius: 12,
-                              offset: const Offset(0, 4),
+                              color: scheme.primary.withValues(alpha: 0.24),
+                              blurRadius: 14,
+                              offset: const Offset(0, 6),
                             )
                           ],
                         ),
+                        clipBehavior: Clip.antiAlias,
                         child: Image.asset(
-                          'assets/images/logo.png',
-                          height: 32,
-                          color: Colors.white,
+                          'assets/images/app_icon.png',
+                          fit: BoxFit.cover,
                         ),
                       ),
                       const SizedBox(height: 16),

@@ -59,7 +59,7 @@ class _PlansListScreenState extends ConsumerState<PlansListScreen>
           SliverAppBar(
             floating: true,
             pinned: true,
-            expandedHeight: 160,
+            expandedHeight: 188,
             flexibleSpace: FlexibleSpaceBar(
               background: Container(
                 decoration: const BoxDecoration(
@@ -93,37 +93,46 @@ class _PlansListScreenState extends ConsumerState<PlansListScreen>
                       ),
                     ),
                     SafeArea(
+                      bottom: false,
                       child: Padding(
-                        padding: const EdgeInsets.all(20.0),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                const Icon(
-                                  LucideIcons.clipboardList,
-                                  color: Colors.white,
-                                  size: 28,
-                                ),
-                                const SizedBox(width: 12),
-                                Text(
-                                  'Planning Mode',
-                                  style: text.headlineSmall?.copyWith(
+                        padding: const EdgeInsets.fromLTRB(
+                          20,
+                          20,
+                          20,
+                          kTextTabBarHeight + 28,
+                        ),
+                        child: Align(
+                          alignment: Alignment.bottomLeft,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  const Icon(
+                                    LucideIcons.clipboardList,
                                     color: Colors.white,
-                                    fontWeight: FontWeight.bold,
+                                    size: 28,
                                   ),
+                                  const SizedBox(width: 12),
+                                  Text(
+                                    'Planning Mode',
+                                    style: text.headlineSmall?.copyWith(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              ).animate().fadeIn().slideX(),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Create and manage your project plans',
+                                style: text.bodyMedium?.copyWith(
+                                  color: Colors.white.withValues(alpha: 0.8),
                                 ),
-                              ],
-                            ).animate().fadeIn().slideX(),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Create and manage your project plans',
-                              style: text.bodyMedium?.copyWith(
-                                color: Colors.white.withValues(alpha: 0.8),
-                              ),
-                            ).animate().fadeIn(delay: 100.ms).slideX(),
-                          ],
+                              ).animate().fadeIn(delay: 100.ms).slideX(),
+                            ],
+                          ),
                         ),
                       ),
                     ),

@@ -31,6 +31,99 @@ class EnhancedSourcesScreen extends ConsumerStatefulWidget {
 class _EnhancedSourcesScreenState extends ConsumerState<EnhancedSourcesScreen> {
   bool _showAIResearch = false;
   String _researchQuery = '';
+  bool _isSelectionMode = false;
+  final Set<String> _selectedSourceIds = <String>{};
+
+  void _enterSelectionMode(String sourceId) {
+    setState(() {
+      _isSelectionMode = true;
+      _selectedSourceIds.add(sourceId);
+    });
+  }
+
+  void _toggleSelection(String sourceId) {
+    setState(() {
+      if (_selectedSourceIds.contains(sourceId)) {
+        _selectedSourceIds.remove(sourceId);
+        if (_selectedSourceIds.isEmpty) {
+          _isSelectionMode = false;
+        }
+      } else {
+        _selectedSourceIds.add(sourceId);
+      }
+    });
+  }
+
+  void _exitSelectionMode() {
+    setState(() {
+      _isSelectionMode = false;
+      _selectedSourceIds.clear();
+    });
+  }
+
+  void _toggleSelectAll(List<Source> sources) {
+    setState(() {
+      if (_selectedSourceIds.length == sources.length) {
+        _selectedSourceIds.clear();
+        _isSelectionMode = false;
+      } else {
+        _selectedSourceIds
+          ..clear()
+          ..addAll(sources.map((source) => source.id));
+        _isSelectionMode = sources.isNotEmpty;
+      }
+    });
+  }
+
+  Future<void> _deleteSelectedSources() async {
+    final count = _selectedSourceIds.length;
+    if (count == 0) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Delete $count sources?'),
+        content: const Text(
+          'This action cannot be undone. All selected sources will be permanently removed.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(dialogContext).colorScheme.error,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    final deletedCount = await ref
+        .read(sourceProvider.notifier)
+        .deleteSources(_selectedSourceIds.toList());
+
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          deletedCount == count
+              ? '$deletedCount sources deleted'
+              : 'Deleted $deletedCount of $count selected sources',
+        ),
+        backgroundColor:
+            deletedCount > 0 ? Colors.green : Theme.of(context).colorScheme.error,
+      ),
+    );
+
+    _exitSelectionMode();
+  }
 
   void _showExportDialog() {
     final scheme = Theme.of(context).colorScheme;
@@ -363,130 +456,167 @@ class _EnhancedSourcesScreenState extends ConsumerState<EnhancedSourcesScreen> {
     final sources = ref.watch(sourceProvider);
     final aiState = ref.watch(aiProvider);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Sources'),
-        actions: [
-          // Export button
-          IconButton(
-            onPressed: _showExportDialog,
-            icon: const Icon(Icons.download_outlined),
-            tooltip: 'Export notebook',
-          ).animate().scale(duration: Motion.short, delay: Motion.short),
-
-          // AI Research button
-          IconButton(
-            onPressed: _showAIResearchDialog,
-            icon: const Icon(Icons.auto_awesome),
-            tooltip: 'AI Research Assistant',
-          ).animate().scale(duration: Motion.short, delay: Motion.medium),
-
-          // Add source button
-          IconButton(
-            onPressed: () => showModalBottomSheet(
-              context: context,
-              isScrollControlled: true,
-              builder: (_) => const AddSourceSheet(),
-            ),
-            icon: const Icon(Icons.add_circle_outline),
-            tooltip: 'Add source',
-          ).animate().scale(duration: Motion.short, delay: Motion.long),
-        ],
-      ),
-      body: Column(
-        children: [
-          // Header section with premium design
-          Container(
-            margin: const EdgeInsets.all(16),
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  scheme.primary.withValues(alpha: 0.1),
-                  scheme.secondary.withValues(alpha: 0.05),
+    return PopScope(
+      canPop: !_isSelectionMode,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (_isSelectionMode) {
+          _exitSelectionMode();
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          leading: _isSelectionMode
+              ? IconButton(
+                  onPressed: _exitSelectionMode,
+                  icon: const Icon(Icons.close),
+                )
+              : null,
+          title: Text(
+            _isSelectionMode
+                ? '${_selectedSourceIds.length} selected'
+                : 'Sources',
+          ),
+          actions: _isSelectionMode
+              ? [
+                  IconButton(
+                    onPressed:
+                        sources.isEmpty ? null : () => _toggleSelectAll(sources),
+                    icon: Icon(
+                      _selectedSourceIds.length == sources.length &&
+                              sources.isNotEmpty
+                          ? Icons.deselect
+                          : Icons.select_all,
+                    ),
+                    tooltip: _selectedSourceIds.length == sources.length &&
+                            sources.isNotEmpty
+                        ? 'Deselect all'
+                        : 'Select all',
+                  ),
+                  IconButton(
+                    onPressed: _selectedSourceIds.isEmpty
+                        ? null
+                        : _deleteSelectedSources,
+                    icon: const Icon(Icons.delete_outline),
+                    tooltip: 'Delete selected',
+                  ),
+                ]
+              : [
+                  IconButton(
+                    onPressed: _showExportDialog,
+                    icon: const Icon(Icons.download_outlined),
+                    tooltip: 'Export notebook',
+                  ).animate().scale(duration: Motion.short, delay: Motion.short),
+                  IconButton(
+                    onPressed: _showAIResearchDialog,
+                    icon: const Icon(Icons.auto_awesome),
+                    tooltip: 'AI Research Assistant',
+                  ).animate().scale(duration: Motion.short, delay: Motion.medium),
+                  IconButton(
+                    onPressed: () => showModalBottomSheet(
+                      context: context,
+                      isScrollControlled: true,
+                      builder: (_) => const AddSourceSheet(),
+                    ),
+                    icon: const Icon(Icons.add_circle_outline),
+                    tooltip: 'Add source',
+                  ).animate().scale(duration: Motion.short, delay: Motion.long),
+                ],
+        ),
+        body: Column(
+          children: [
+            if (!_isSelectionMode)
+            // Header section with premium design
+            Container(
+              margin: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    scheme.primary.withValues(alpha: 0.1),
+                    scheme.secondary.withValues(alpha: 0.05),
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(
+                  color: scheme.outline.withValues(alpha: 0.2),
+                  width: 1,
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: scheme.primary.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Icon(
+                          Icons.source,
+                          color: scheme.primary,
+                          size: 24,
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Research Sources',
+                              style: text.headlineSmall?.copyWith(
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            Text(
+                              '${sources.length} sources collected',
+                              style: text.bodyMedium?.copyWith(
+                                color: scheme.onSurface.withValues(alpha: 0.7),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  // Source type chips
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _SourceChip(
+                          label: 'Web Search',
+                          icon: LucideIcons.globe,
+                          color: scheme.primary),
+                      _SourceChip(
+                          label: 'Upload File',
+                          icon: LucideIcons.fileUp,
+                          color: scheme.secondary),
+                      const _SourceChip(
+                          label: 'YouTube',
+                          icon: LucideIcons.youtube,
+                          color: Colors.red),
+                      _SourceChip(
+                          label: 'Audio',
+                          icon: LucideIcons.mic,
+                          color: scheme.tertiary),
+                    ],
+                  ),
                 ],
               ),
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(
-                color: scheme.outline.withValues(alpha: 0.2),
-                width: 1,
-              ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: scheme.primary.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: Icon(
-                        Icons.source,
-                        color: scheme.primary,
-                        size: 24,
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Research Sources',
-                            style: text.headlineSmall?.copyWith(
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          Text(
-                            '${sources.length} sources collected',
-                            style: text.bodyMedium?.copyWith(
-                              color: scheme.onSurface.withValues(alpha: 0.7),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-                // Source type chips
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    _SourceChip(
-                        label: 'Web Search',
-                        icon: LucideIcons.globe,
-                        color: scheme.primary),
-                    _SourceChip(
-                        label: 'Upload File',
-                        icon: LucideIcons.fileUp,
-                        color: scheme.secondary),
-                    const _SourceChip(
-                        label: 'YouTube',
-                        icon: LucideIcons.youtube,
-                        color: Colors.red),
-                    _SourceChip(
-                        label: 'Audio',
-                        icon: LucideIcons.mic,
-                        color: scheme.tertiary),
-                  ],
-                ),
-              ],
-            ),
-          )
-              .animate()
-              .slideY(begin: 0.2, duration: Motion.medium)
-              .fadeIn(duration: Motion.medium),
+            )
+                .animate()
+                .slideY(begin: 0.2, duration: Motion.medium)
+                .fadeIn(duration: Motion.medium),
 
-          // AI Research Results
-          if (_showAIResearch && aiState.status == AIStatus.loading)
-            Container(
+            // AI Research Results
+            if (_showAIResearch && aiState.status == AIStatus.loading)
+              Container(
               margin: const EdgeInsets.symmetric(horizontal: 16),
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
@@ -505,14 +635,14 @@ class _EnhancedSourcesScreenState extends ConsumerState<EnhancedSourcesScreen> {
                   ),
                 ],
               ),
-            )
+              )
                 .animate()
                 .slideY(begin: -0.2, duration: Motion.short)
                 .fadeIn(duration: Motion.short),
 
-          if (_showAIResearch && aiState.status == AIStatus.success)
-            Expanded(
-              child: Container(
+            if (_showAIResearch && aiState.status == AIStatus.success)
+              Expanded(
+                child: Container(
                 margin: const EdgeInsets.symmetric(horizontal: 16),
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
@@ -605,57 +735,68 @@ class _EnhancedSourcesScreenState extends ConsumerState<EnhancedSourcesScreen> {
                     ),
                   ],
                 ),
-              ),
-            )
+                ),
+              )
                 .animate()
                 .slideY(begin: -0.2, duration: Motion.short)
                 .fadeIn(duration: Motion.short),
 
-          // Sources list (hide when AI research is showing)
-          if (!(_showAIResearch && aiState.status == AIStatus.success))
-            Expanded(
-              child: sources.isEmpty
-                  ? _EmptySourcesView(scheme: scheme, text: text)
-                  : _SourcesList(sources: sources),
-            ),
-        ],
-      ),
+            // Sources list (hide when AI research is showing)
+            if (!(_showAIResearch && aiState.status == AIStatus.success))
+              Expanded(
+                child: sources.isEmpty
+                    ? _EmptySourcesView(scheme: scheme, text: text)
+                    : _SourcesList(
+                        sources: sources,
+                        isSelectionMode: _isSelectionMode,
+                        selectedSourceIds: _selectedSourceIds,
+                        onToggleSelection: _toggleSelection,
+                        onEnterSelectionMode: _enterSelectionMode,
+                      ),
+              ),
+          ],
+        ),
 
       // Premium floating action buttons
-      floatingActionButton: Column(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          FloatingActionButton.extended(
-            onPressed: () => context.go('/search'),
-            heroTag: 'web_search',
-            backgroundColor: scheme.secondary,
-            icon: const Icon(Icons.search),
-            label: const Text('Web Search'),
-          ).animate().scale(
-              duration: Motion.short,
-              delay: const Duration(milliseconds: 5 * Motion.baseStagger)),
-          const SizedBox(height: 16),
-          FloatingActionButton(
-            onPressed: () => showModalBottomSheet(
-              context: context,
-              isScrollControlled: true,
-              backgroundColor: Colors.transparent,
-              builder: (_) => Container(
-                decoration: BoxDecoration(
-                  color: scheme.surface,
-                  borderRadius:
-                      const BorderRadius.vertical(top: Radius.circular(20)),
-                ),
-                child: const AddSourceSheet(),
+        floatingActionButton: _isSelectionMode
+            ? null
+            : Column(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  FloatingActionButton.extended(
+                    onPressed: () => context.go('/search'),
+                    heroTag: 'web_search',
+                    backgroundColor: scheme.secondary,
+                    icon: const Icon(Icons.search),
+                    label: const Text('Web Search'),
+                  ).animate().scale(
+                      duration: Motion.short,
+                      delay:
+                          const Duration(milliseconds: 5 * Motion.baseStagger)),
+                  const SizedBox(height: 16),
+                  FloatingActionButton(
+                    onPressed: () => showModalBottomSheet(
+                      context: context,
+                      isScrollControlled: true,
+                      backgroundColor: Colors.transparent,
+                      builder: (_) => Container(
+                        decoration: BoxDecoration(
+                          color: scheme.surface,
+                          borderRadius:
+                              const BorderRadius.vertical(top: Radius.circular(20)),
+                        ),
+                        child: const AddSourceSheet(),
+                      ),
+                    ),
+                    heroTag: 'add_source',
+                    backgroundColor: scheme.primary,
+                    child: const Icon(Icons.add),
+                  ).animate().scale(
+                      duration: Motion.short,
+                      delay:
+                          const Duration(milliseconds: 6 * Motion.baseStagger)),
+                ],
               ),
-            ),
-            heroTag: 'add_source',
-            backgroundColor: scheme.primary,
-            child: const Icon(Icons.add),
-          ).animate().scale(
-              duration: Motion.short,
-              delay: const Duration(milliseconds: 6 * Motion.baseStagger)),
-        ],
       ),
     );
   }
@@ -698,8 +839,19 @@ class _EnhancedSourcesScreenState extends ConsumerState<EnhancedSourcesScreen> {
 }
 
 class _SourcesList extends StatelessWidget {
-  const _SourcesList({required this.sources});
+  const _SourcesList({
+    required this.sources,
+    required this.isSelectionMode,
+    required this.selectedSourceIds,
+    required this.onToggleSelection,
+    required this.onEnterSelectionMode,
+  });
+
   final List<Source> sources;
+  final bool isSelectionMode;
+  final Set<String> selectedSourceIds;
+  final ValueChanged<String> onToggleSelection;
+  final ValueChanged<String> onEnterSelectionMode;
 
   @override
   Widget build(BuildContext context) {
@@ -710,19 +862,48 @@ class _SourcesList extends StatelessWidget {
       separatorBuilder: (_, __) => const SizedBox(height: 8),
       itemBuilder: (context, index) {
         final s = sources[index];
+        final isSelected = selectedSourceIds.contains(s.id);
         return Card(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: isSelected
+                ? BorderSide(color: scheme.primary, width: 2)
+                : BorderSide.none,
+          ),
           child: ListTile(
-            leading: Icon(_iconForType(s.type), color: scheme.primary),
-            title: Text(s.title),
+            onTap: () {
+              if (isSelectionMode) {
+                onToggleSelection(s.id);
+                return;
+              }
+
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => SourceDetailScreen(sourceId: s.id),
+                ),
+              );
+            },
+            onLongPress: () => onEnterSelectionMode(s.id),
+            leading: isSelectionMode
+                ? Checkbox(
+                    value: isSelected,
+                    onChanged: (_) => onToggleSelection(s.id),
+                  )
+                : Icon(_iconForType(s.type), color: scheme.primary),
+            title: Text(
+              s.title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
             subtitle: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                    '${s.type} • ${s.addedAt.day}/${s.addedAt.month}/${s.addedAt.year}'),
+                    '${s.type} - ${s.addedAt.day}/${s.addedAt.month}/${s.addedAt.year}'),
                 _IndexStatusBadge(sourceId: s.id),
               ],
             ),
-            trailing: _PreviewTrailing(source: s),
+            trailing: isSelectionMode ? null : _PreviewTrailing(source: s),
           ),
         );
       },

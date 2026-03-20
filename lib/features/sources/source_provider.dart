@@ -97,6 +97,29 @@ class SourceNotifier extends StateNotifier<List<Source>> {
     }
   }
 
+  Future<int> deleteSources(List<String> sourceIds) async {
+    final ids = sourceIds.toSet().toList();
+    if (ids.isEmpty) return 0;
+
+    final apiService = ref.read(apiServiceProvider);
+    final deletedIds = <String>[];
+
+    for (final sourceId in ids) {
+      try {
+        await apiService.deleteSource(sourceId);
+        deletedIds.add(sourceId);
+      } catch (e) {
+        debugPrint('Error deleting source $sourceId: $e');
+      }
+    }
+
+    if (deletedIds.isNotEmpty) {
+      state = state.where((s) => !deletedIds.contains(s.id)).toList();
+    }
+
+    return deletedIds.length;
+  }
+
   Future<void> updateSource({
     required String sourceId,
     String? title,

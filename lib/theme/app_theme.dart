@@ -103,10 +103,22 @@ class AppTheme {
           color: colorScheme.onSurface)),
       titleMedium: withFallback(GoogleFonts.plusJakartaSans(
           fontWeight: FontWeight.w600, color: colorScheme.onSurface)),
+      titleSmall: withFallback(GoogleFonts.plusJakartaSans(
+          fontWeight: FontWeight.w600, color: colorScheme.onSurface)),
       bodyLarge: withFallback(GoogleFonts.plusJakartaSans(
           height: 1.6, color: colorScheme.onSurface)),
       bodyMedium: withFallback(GoogleFonts.plusJakartaSans(
           height: 1.5, color: colorScheme.onSurface)),
+      bodySmall: withFallback(GoogleFonts.plusJakartaSans(
+          height: 1.45, color: colorScheme.onSurface)),
+      labelMedium: withFallback(GoogleFonts.plusJakartaSans(
+          fontWeight: FontWeight.w500,
+          letterSpacing: 0.3,
+          color: colorScheme.onSurface)),
+      labelSmall: withFallback(GoogleFonts.plusJakartaSans(
+          fontWeight: FontWeight.w500,
+          letterSpacing: 0.3,
+          color: colorScheme.onSurfaceVariant)),
       labelLarge: withFallback(GoogleFonts.plusJakartaSans(
           fontWeight: FontWeight.w600,
           letterSpacing: 0.5,

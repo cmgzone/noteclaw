@@ -24,6 +24,14 @@ class NotebookDetailScreen extends ConsumerWidget {
 
   const NotebookDetailScreen({super.key, required this.notebookId});
 
+  void _handleBack(BuildContext context) {
+    if (GoRouter.of(context).canPop()) {
+      context.pop();
+    } else {
+      context.go('/home');
+    }
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final allSources = ref.watch(sourceProvider);
@@ -52,7 +60,7 @@ class NotebookDetailScreen extends ConsumerWidget {
           title: const Text('Notebook Not Found'),
           leading: IconButton(
             icon: const Icon(Icons.arrow_back),
-            onPressed: () => context.pop(),
+            onPressed: () => _handleBack(context),
           ),
         ),
         body: Center(
@@ -67,7 +75,7 @@ class NotebookDetailScreen extends ConsumerWidget {
               ),
               const SizedBox(height: 24),
               FilledButton.icon(
-                onPressed: () => context.pop(),
+                onPressed: () => _handleBack(context),
                 icon: const Icon(Icons.arrow_back),
                 label: const Text('Go Back'),
               ),
@@ -90,7 +98,7 @@ class NotebookDetailScreen extends ConsumerWidget {
             pinned: true,
             leading: IconButton(
               icon: const Icon(Icons.arrow_back, color: Colors.white),
-              onPressed: () => context.pop(),
+              onPressed: () => _handleBack(context),
             ),
             flexibleSpace: FlexibleSpaceBar(
               title: Text(
