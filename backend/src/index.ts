@@ -39,6 +39,7 @@ import contentRoutes from './routes/content.js';
 import deepResearchRoutes from './routes/deepResearch.js';
 import ragRoutes from './routes/rag.js';
 import agentSkillsRoutes from './routes/agentSkills.js';
+import publicPagesRoutes from './routes/publicPages.js';
 
 // Import services
 import bunnyService from './services/bunnyService.js';
@@ -154,6 +155,7 @@ app.use('/api/messaging', messagingRoutes);
 app.use('/api/notifications', notificationsRoutes);
 app.use('/api/google-drive', googleDriveRoutes);
 app.use('/api/content', contentRoutes);
+app.use('/', publicPagesRoutes);
 // 404 handler
 app.use((req, res) => {
     console.log(`[404] Route not found: ${req.method} ${req.path}`);
