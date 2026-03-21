@@ -4,6 +4,7 @@ import { authenticateToken, requireAdmin, type AuthRequest } from '../middleware
 import { mcpLimitsService } from '../services/mcpLimitsService.js';
 import { notificationService, type NotificationType } from '../services/notificationService.js';
 import { encryptSecret } from '../services/secretEncryptionService.js';
+import { getPrivacyPolicyContent, setPrivacyPolicyContent } from '../services/appSettingsService.js';
 
 const router = express.Router();
 const SUPPORTED_ADMIN_NOTIFICATION_TYPES = new Set<NotificationType>(['system']);
@@ -364,10 +365,8 @@ router.put('/onboarding', async (req: AuthRequest, res: Response) => {
 
 router.get('/privacy-policy', async (req: AuthRequest, res: Response) => {
     try {
-        const result = await pool.query(
-            "SELECT value FROM app_settings WHERE key = 'privacy_policy'"
-        );
-        res.json({ content: result.rows[0]?.value || null });
+        const content = await getPrivacyPolicyContent();
+        res.json({ content });
     } catch (error) {
         console.error('Error fetching privacy policy:', error);
         res.status(500).json({ error: 'Failed to fetch privacy policy' });
@@ -378,12 +377,7 @@ router.put('/privacy-policy', async (req: AuthRequest, res: Response) => {
     try {
         const { content } = req.body;
 
-        await pool.query(`
-            INSERT INTO app_settings (key, value, updated_at)
-            VALUES ('privacy_policy', $1, CURRENT_TIMESTAMP)
-            ON CONFLICT (key) 
-            DO UPDATE SET value = $1, updated_at = CURRENT_TIMESTAMP
-        `, [content]);
+        await setPrivacyPolicyContent(content);
 
         res.json({ message: 'Privacy policy updated' });
     } catch (error) {

@@ -7,6 +7,7 @@ import pool from '../config/database.js';
 import { tokenService, MAX_TOKENS_PER_USER } from '../services/tokenService.js';
 import { authenticateToken, type AuthRequest } from '../middleware/auth.js';
 import { getJwtRefreshSecret, getJwtSecret } from '../config/secrets.js';
+import { getPrivacyPolicyContent } from '../services/appSettingsService.js';
 
 const router = express.Router();
 
@@ -197,11 +198,8 @@ router.post('/login', async (req: Request, res: Response) => {
 // Public privacy policy
 router.get('/privacy-policy', async (_req: Request, res: Response) => {
     try {
-        const result = await pool.query(
-            "SELECT COALESCE(value, content) AS content FROM app_settings WHERE key = 'privacy_policy'"
-        );
-
-        res.json({ content: result.rows[0]?.content || null });
+        const content = await getPrivacyPolicyContent();
+        res.json({ content });
     } catch (error) {
         console.error('Get privacy policy error:', error);
         res.status(500).json({ error: 'Failed to fetch privacy policy' });
