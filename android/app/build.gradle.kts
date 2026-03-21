@@ -1,3 +1,4 @@
+import java.io.ByteArrayInputStream
 import java.util.Properties
 
 plugins {
@@ -12,8 +13,26 @@ val keystorePropertiesFile = rootProject.file("key.properties")
 val hasReleaseSigning = keystorePropertiesFile.exists()
 
 if (hasReleaseSigning) {
-    keystorePropertiesFile.inputStream().use { keystoreProperties.load(it) }
+    val rawProperties = keystorePropertiesFile.readBytes()
+    val sanitizedProperties = if (
+        rawProperties.size >= 3 &&
+        rawProperties[0] == 0xEF.toByte() &&
+        rawProperties[1] == 0xBB.toByte() &&
+        rawProperties[2] == 0xBF.toByte()
+    ) {
+        rawProperties.copyOfRange(3, rawProperties.size)
+    } else {
+        rawProperties
+    }
+
+    ByteArrayInputStream(sanitizedProperties).use {
+        keystoreProperties.load(it)
+    }
 }
+
+fun requiredKeystoreProperty(name: String): String =
+    keystoreProperties.getProperty(name)?.trim()?.takeIf { it.isNotEmpty() }
+        ?: error("android/key.properties is missing required property \"$name\"")
 
 android {
     namespace = "com.note.claw"
@@ -23,10 +42,10 @@ android {
     signingConfigs {
         if (hasReleaseSigning) {
             create("release") {
-                keyAlias = keystoreProperties.getProperty("keyAlias")
-                keyPassword = keystoreProperties.getProperty("keyPassword")
-                storeFile = rootProject.file(keystoreProperties.getProperty("storeFile"))
-                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = requiredKeystoreProperty("keyAlias")
+                keyPassword = requiredKeystoreProperty("keyPassword")
+                storeFile = rootProject.file(requiredKeystoreProperty("storeFile"))
+                storePassword = requiredKeystoreProperty("storePassword")
             }
         }
     }

@@ -150,6 +150,18 @@ GoRouter createRouter(bool hasSeenOnboarding, ProviderContainer container) {
           );
         },
       ),
+      GoRoute(
+        path: '/privacy-policy',
+        name: 'privacy-policy',
+        pageBuilder: (context, state) =>
+            buildTransitionPage(child: const PrivacyPolicyScreen()),
+      ),
+      GoRoute(
+        path: '/terms-of-service',
+        name: 'terms-of-service',
+        pageBuilder: (context, state) =>
+            buildTransitionPage(child: const TermsOfServiceScreen()),
+      ),
 
       // Protected routes with shell
       ShellRoute(
@@ -335,18 +347,6 @@ GoRouter createRouter(bool hasSeenOnboarding, ProviderContainer container) {
             pageBuilder: (context, state) =>
                 buildTransitionPage(child: const WellnessScreen()),
           ),
-          GoRoute(
-            path: '/privacy-policy',
-            name: 'privacy-policy',
-            pageBuilder: (context, state) =>
-                buildTransitionPage(child: const PrivacyPolicyScreen()),
-          ),
-          GoRoute(
-            path: '/terms-of-service',
-            name: 'terms-of-service',
-            pageBuilder: (context, state) =>
-                buildTransitionPage(child: const TermsOfServiceScreen()),
-          ),
           // Gamification routes
           GoRoute(
             path: '/progress',
@@ -406,7 +406,7 @@ GoRouter createRouter(bool hasSeenOnboarding, ProviderContainer container) {
               );
             },
           ),
-GoRoute(
+          GoRoute(
             path: '/agent-connections',
             name: 'agent-connections',
             pageBuilder: (context, state) =>

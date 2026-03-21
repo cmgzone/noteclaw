@@ -11,6 +11,8 @@ const publicRoutes = {
   '/login',
   '/password-reset',
   '/verify-email',
+  '/privacy-policy',
+  '/terms-of-service',
 };
 
 /// Protected route prefixes
