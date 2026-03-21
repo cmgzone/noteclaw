@@ -68,8 +68,7 @@ class ApiService {
 
   ApiService(this.ref) {
     final resolvedBaseUrl = _resolveBaseUrl();
-    developer.log('[API] Using base URL: $resolvedBaseUrl',
-        name: 'ApiService');
+    developer.log('[API] Using base URL: $resolvedBaseUrl', name: 'ApiService');
     _dio = Dio(BaseOptions(
       baseUrl: resolvedBaseUrl,
       connectTimeout: const Duration(seconds: 30),
@@ -1786,6 +1785,11 @@ class ApiService {
 
   Future<String> getPrivacyPolicy() async {
     final response = await get<Map<String, dynamic>>('/auth/privacy-policy');
+    return response['content'] as String? ?? '';
+  }
+
+  Future<String> getTermsOfService() async {
+    final response = await get<Map<String, dynamic>>('/auth/terms-of-service');
     return response['content'] as String? ?? '';
   }
 }

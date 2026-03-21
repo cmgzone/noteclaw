@@ -1,11 +1,14 @@
 import express, { type Request, type Response } from 'express';
-import { getPrivacyPolicyContent } from '../services/appSettingsService.js';
+import {
+    getPrivacyPolicyContent,
+    getTermsOfServiceContent,
+} from '../services/appSettingsService.js';
 
 const router = express.Router();
 
 router.get('/privacy-policy', async (_req: Request, res: Response) => {
     try {
-        const content = (await getPrivacyPolicyContent())?.trim() || 'Privacy policy is not available right now.';
+        const content = (await getPrivacyPolicyContent()).trim();
 
         res.setHeader('Cache-Control', 'no-store');
         res.type('html').send(renderDocumentPage({
@@ -18,6 +21,25 @@ router.get('/privacy-policy', async (_req: Request, res: Response) => {
         res.status(500).type('html').send(renderErrorPage(
             'Privacy Policy',
             'We could not load the privacy policy right now. Please try again shortly.'
+        ));
+    }
+});
+
+router.get('/terms-of-service', async (_req: Request, res: Response) => {
+    try {
+        const content = (await getTermsOfServiceContent()).trim();
+
+        res.setHeader('Cache-Control', 'no-store');
+        res.type('html').send(renderDocumentPage({
+            title: 'Terms and Conditions',
+            eyebrow: 'NoteClaw',
+            content,
+        }));
+    } catch (error) {
+        console.error('Render terms of service page error:', error);
+        res.status(500).type('html').send(renderErrorPage(
+            'Terms and Conditions',
+            'We could not load the terms and conditions right now. Please try again shortly.'
         ));
     }
 });
@@ -170,7 +192,7 @@ function renderDocumentPage({
         ${renderSimpleMarkdown(content)}
       </section>
       <footer class="footer">
-        Public policy page for sharing with users and app store reviewers.
+        Public legal page for sharing with users and app store reviewers.
       </footer>
     </article>
   </main>

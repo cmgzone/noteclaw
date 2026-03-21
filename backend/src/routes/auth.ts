@@ -7,7 +7,10 @@ import pool from '../config/database.js';
 import { tokenService, MAX_TOKENS_PER_USER } from '../services/tokenService.js';
 import { authenticateToken, type AuthRequest } from '../middleware/auth.js';
 import { getJwtRefreshSecret, getJwtSecret } from '../config/secrets.js';
-import { getPrivacyPolicyContent } from '../services/appSettingsService.js';
+import {
+    getPrivacyPolicyContent,
+    getTermsOfServiceContent,
+} from '../services/appSettingsService.js';
 
 const router = express.Router();
 
@@ -203,6 +206,17 @@ router.get('/privacy-policy', async (_req: Request, res: Response) => {
     } catch (error) {
         console.error('Get privacy policy error:', error);
         res.status(500).json({ error: 'Failed to fetch privacy policy' });
+    }
+});
+
+// Public terms of service
+router.get('/terms-of-service', async (_req: Request, res: Response) => {
+    try {
+        const content = await getTermsOfServiceContent();
+        res.json({ content });
+    } catch (error) {
+        console.error('Get terms of service error:', error);
+        res.status(500).json({ error: 'Failed to fetch terms of service' });
     }
 });
 

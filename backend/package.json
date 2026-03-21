@@ -11,6 +11,7 @@
     "lint": "tsc -p tsconfig.json --noEmit",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --runInBand",
     "test:pbt": "node --experimental-vm-modules node_modules/jest/bin/jest.js --runInBand --testMatch \"**/*.pbt.test.ts\"",
+    "seed:legal-docs": "tsx src/scripts/seed-legal-documents.ts",
     "migrate:agent-communication": "tsx src/scripts/run-agent-communication-migration.ts",
     "migrate:google-calendar": "tsx src/scripts/run-google-calendar-migration.ts",
     "migrate:mcp-user-limits": "tsx src/scripts/run-mcp-user-limits-migration.ts"

@@ -4,7 +4,12 @@ import { authenticateToken, requireAdmin, type AuthRequest } from '../middleware
 import { mcpLimitsService } from '../services/mcpLimitsService.js';
 import { notificationService, type NotificationType } from '../services/notificationService.js';
 import { encryptSecret } from '../services/secretEncryptionService.js';
-import { getPrivacyPolicyContent, setPrivacyPolicyContent } from '../services/appSettingsService.js';
+import {
+    getPrivacyPolicyContent,
+    getTermsOfServiceContent,
+    setPrivacyPolicyContent,
+    setTermsOfServiceContent,
+} from '../services/appSettingsService.js';
 
 const router = express.Router();
 const SUPPORTED_ADMIN_NOTIFICATION_TYPES = new Set<NotificationType>(['system']);
@@ -383,6 +388,31 @@ router.put('/privacy-policy', async (req: AuthRequest, res: Response) => {
     } catch (error) {
         console.error('Error updating privacy policy:', error);
         res.status(500).json({ error: 'Failed to update privacy policy' });
+    }
+});
+
+// ==================== TERMS OF SERVICE ====================
+
+router.get('/terms-of-service', async (_req: AuthRequest, res: Response) => {
+    try {
+        const content = await getTermsOfServiceContent();
+        res.json({ content });
+    } catch (error) {
+        console.error('Error fetching terms of service:', error);
+        res.status(500).json({ error: 'Failed to fetch terms of service' });
+    }
+});
+
+router.put('/terms-of-service', async (req: AuthRequest, res: Response) => {
+    try {
+        const { content } = req.body;
+
+        await setTermsOfServiceContent(content);
+
+        res.json({ message: 'Terms of service updated' });
+    } catch (error) {
+        console.error('Error updating terms of service:', error);
+        res.status(500).json({ error: 'Failed to update terms of service' });
     }
 });
 

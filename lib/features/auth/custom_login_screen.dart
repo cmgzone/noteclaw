@@ -550,7 +550,7 @@ class _CustomLoginScreenState extends ConsumerState<CustomLoginScreen>
         GestureDetector(
           onTap: () => context.push('/terms-of-service'),
           child: Text(
-            'Terms of Service',
+            'Terms & Conditions',
             style: theme.textTheme.bodySmall?.copyWith(
               color: Colors.white,
               fontSize: 11,
