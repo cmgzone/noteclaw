@@ -1,6 +1,7 @@
 import express, { type Request, type Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import type { PoolClient } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
 import crypto from 'crypto';
 import pool from '../config/database.js';
@@ -59,6 +60,76 @@ const getUserFromToken = (req: Request): string | null => {
         return decoded.userId;
     } catch {
         return null;
+    }
+};
+
+const isSafeSqlIdentifier = (value: string): boolean => /^[a-z_][a-z0-9_]*$/i.test(value);
+
+const quoteSqlIdentifier = (value: string): string => {
+    if (!isSafeSqlIdentifier(value)) {
+        throw new Error(`Unsafe SQL identifier: ${value}`);
+    }
+    return `"${value}"`;
+};
+
+const tableHasColumn = async (
+    client: PoolClient,
+    tableName: string,
+    columnName: string,
+): Promise<boolean> => {
+    const result = await client.query(`
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = $1 AND column_name = $2
+        LIMIT 1
+    `, [tableName, columnName]);
+
+    return result.rows.length > 0;
+};
+
+const deleteRowsByUserIdIfTableExists = async (
+    client: PoolClient,
+    tableName: string,
+    userId: string,
+): Promise<void> => {
+    if (!(await tableHasColumn(client, tableName, 'user_id'))) {
+        return;
+    }
+
+    await client.query(
+        `DELETE FROM ${quoteSqlIdentifier(tableName)} WHERE user_id = $1`,
+        [userId],
+    );
+};
+
+const cleanupTextUserTablesForDeletedAccount = async (
+    client: PoolClient,
+    userId: string,
+): Promise<void> => {
+    if (await tableHasColumn(client, 'api_tokens', 'user_id')) {
+        if (await tableHasColumn(client, 'token_usage_logs', 'token_id')) {
+            await client.query(
+                'DELETE FROM token_usage_logs WHERE token_id IN (SELECT id FROM api_tokens WHERE user_id = $1)',
+                [userId],
+            );
+        }
+
+        await client.query('DELETE FROM api_tokens WHERE user_id = $1', [userId]);
+    }
+
+    const directDeleteTables = [
+        'file_audit_logs',
+        'gmail_connections',
+        'agent_memory_entries',
+        'agent_sessions',
+        'media_uploads',
+        'research_jobs',
+        'agent_skills',
+        'user_ai_models',
+    ];
+
+    for (const tableName of directDeleteTables) {
+        await deleteRowsByUserIdIfTableExists(client, tableName, userId);
     }
 };
 
@@ -317,6 +388,7 @@ router.post('/reset-password', async (req: Request, res: Response) => {
 
 // Delete Account
 router.post('/delete-account', async (req: Request, res: Response) => {
+    const client = await pool.connect();
     try {
         const userId = getUserFromToken(req);
         if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -330,11 +402,21 @@ router.post('/delete-account', async (req: Request, res: Response) => {
         const valid = await bcrypt.compare(password, userRes.rows[0].password_hash);
         if (!valid) return res.status(401).json({ error: 'Invalid password' });
 
-        await pool.query('DELETE FROM users WHERE id = $1', [userId]);
+        await client.query('BEGIN');
+        await cleanupTextUserTablesForDeletedAccount(client, userId);
+        await client.query('DELETE FROM users WHERE id = $1', [userId]);
+        await client.query('COMMIT');
         res.json({ success: true, message: 'Account deleted' });
     } catch (error) {
+        try {
+            await client.query('ROLLBACK');
+        } catch {
+            // Ignore rollback errors after a failed delete flow.
+        }
         console.error('Delete account error:', error);
         res.status(500).json({ error: 'Server error' });
+    } finally {
+        client.release();
     }
 });
 

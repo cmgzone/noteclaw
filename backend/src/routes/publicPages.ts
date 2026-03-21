@@ -1,4 +1,5 @@
 import express, { type Request, type Response } from 'express';
+import { ACCOUNT_DELETION_MARKDOWN } from '../content/legalDocuments.js';
 import {
     getPrivacyPolicyContent,
     getTermsOfServiceContent,
@@ -42,6 +43,15 @@ router.get('/terms-of-service', async (_req: Request, res: Response) => {
             'We could not load the terms and conditions right now. Please try again shortly.'
         ));
     }
+});
+
+router.get(['/delete-account', '/account-deletion'], (_req: Request, res: Response) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.type('html').send(renderDocumentPage({
+        title: 'Delete Your NoteClaw Account',
+        eyebrow: 'NoteClaw',
+        content: ACCOUNT_DELETION_MARKDOWN,
+    }));
 });
 
 function renderDocumentPage({

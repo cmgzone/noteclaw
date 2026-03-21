@@ -124,3 +124,27 @@ If any part of these Terms is found unenforceable, the remaining provisions will
 
 ## Contact
 If you have questions about these Terms and Conditions, please use the support contact method provided in the NoteClaw app or website.`;
+
+export const ACCOUNT_DELETION_MARKDOWN = `*Last updated: ${LEGAL_DOCUMENT_LAST_UPDATED}*
+
+## Delete your account in the app
+You can permanently delete your NoteClaw account directly inside the app:
+
+1. Sign in to your NoteClaw account.
+2. Open **Settings**.
+3. Open **Security Settings**.
+4. In the **Danger Zone** section, tap **Delete Account**.
+5. Enter your account password and confirm the deletion request.
+
+## What happens after deletion
+- Your NoteClaw account is permanently deleted.
+- Access to your account ends immediately.
+- Account-linked content stored inside NoteClaw is deleted or scheduled for deletion as part of the account removal process.
+- Some limited billing, transaction, fraud-prevention, or legal compliance records may be retained where required.
+- If you purchased a subscription through Google Play or another app store, you should also cancel the subscription in that store to stop future renewals.
+
+## If you cannot access the app
+If you cannot sign in to complete the in-app deletion flow, use the support contact method provided in the NoteClaw app or website and request account deletion from the email address linked to your account.
+
+## Need help?
+If you need help finding the delete option, look for **Settings -> Security Settings -> Delete Account** inside the latest version of NoteClaw.`;
