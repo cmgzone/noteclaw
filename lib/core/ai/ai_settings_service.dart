@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../features/admin/services/ai_model_service.dart';
+import '../security/credentials_service.dart';
 
 typedef ProviderRead = T Function<T>(ProviderListenable<T> provider);
 
@@ -126,6 +127,91 @@ class AISettingsService {
       provider: provider,
       model: modelId,
     );
+  }
+
+  static String _resolveCredentialService({
+    required String provider,
+    String? modelId,
+  }) {
+    final normalizedProvider = provider.trim().toLowerCase();
+    final normalizedModel = (modelId ?? '').trim().toLowerCase();
+
+    if (normalizedModel.startsWith('gemini')) {
+      return 'gemini';
+    }
+
+    if (normalizedModel.contains('/') ||
+        normalizedModel.startsWith('gpt-') ||
+        normalizedModel.startsWith('claude-') ||
+        normalizedModel.startsWith('meta-')) {
+      return 'openrouter';
+    }
+
+    return _normalizeProvider(normalizedProvider);
+  }
+
+  static Future<bool> shouldBypassCreditsForSelectedModel(
+    ProviderRead read,
+  ) async {
+    final settings = await getSettingsWithDefault(read);
+    return shouldBypassCreditsForModel(
+      read,
+      provider: settings.provider,
+      modelId: settings.model,
+    );
+  }
+
+  static Future<bool> shouldBypassCreditsForModel(
+    ProviderRead read, {
+    required String provider,
+    String? modelId,
+  }) async {
+    final credentialService = _resolveCredentialService(
+      provider: provider,
+      modelId: modelId,
+    );
+
+    try {
+      final credentials = read(credentialsServiceProvider);
+      final apiKey =
+          (await credentials.getApiKey(credentialService) ?? '').trim();
+      if (apiKey.isNotEmpty) {
+        return true;
+      }
+    } catch (e, st) {
+      assert(() {
+        debugPrint(
+          '[AISettingsService] Failed to read local BYOK credentials: $e\n$st',
+        );
+        return true;
+      }());
+    }
+
+    final normalizedModelId = (modelId ?? '').trim();
+    if (normalizedModelId.isEmpty) {
+      return false;
+    }
+
+    try {
+      final service = read(aiModelServiceProvider);
+      final models = await service.listModels();
+      final selectedModel =
+          models
+              .where((model) => model.modelId == normalizedModelId)
+              .firstOrNull;
+
+      return selectedModel?.isUserModel == true ||
+          selectedModel?.hasPersonalApiKey == true;
+    } catch (e, st) {
+      assert(() {
+        debugPrint(
+          '[AISettingsService] Failed to resolve model billing mode: $e\n$st',
+        );
+        return true;
+      }());
+    }
+
+    return false;
   }
 
   /// Save AI provider

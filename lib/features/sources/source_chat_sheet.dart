@@ -6,7 +6,7 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:convert';
-import 'dart:ui' show ImageFilter;
+import 'dart:ui';
 
 import 'source_conversation_provider.dart';
 import 'source.dart';
@@ -37,7 +37,6 @@ class _SourceChatSheetState extends ConsumerState<SourceChatSheet> {
   final FocusNode _focusNode = FocusNode();
   final ImagePicker _imagePicker = ImagePicker();
   List<_PendingImageAttachment> _pendingImageAttachments = [];
-  int _lastAutoScrolledMessageCount = 0;
 
   @override
   void dispose() {
@@ -47,44 +46,16 @@ class _SourceChatSheetState extends ConsumerState<SourceChatSheet> {
     super.dispose();
   }
 
-  Future<void> _scrollToBottom({bool animated = true}) async {
-    if (!mounted || !_scrollController.hasClients) return;
-
-    final position = _scrollController.position;
-    if (!position.hasContentDimensions) return;
-
-    final targetOffset = position.maxScrollExtent;
-
-    try {
-      if (animated) {
-        await _scrollController.animateTo(
-          targetOffset,
-          duration: const Duration(milliseconds: 250),
+  void _scrollToBottom() {
+    if (_scrollController.hasClients) {
+      Future.delayed(const Duration(milliseconds: 100), () {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
           curve: Curves.easeOut,
         );
-      } else {
-        _scrollController.jumpTo(targetOffset);
-      }
-    } catch (_) {
-      // Ignore transient scroll errors if the sheet is closing mid-animation.
+      });
     }
-  }
-
-  void _scheduleScrollToBottom({bool animated = true}) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      _scrollToBottom(animated: animated);
-    });
-  }
-
-  void _maybeAutoScroll(int messageCount) {
-    if (messageCount <= 0 || messageCount == _lastAutoScrolledMessageCount) {
-      return;
-    }
-
-    final shouldAnimate = _lastAutoScrolledMessageCount > 0;
-    _lastAutoScrolledMessageCount = messageCount;
-    _scheduleScrollToBottom(animated: shouldAnimate);
   }
 
   /// Build GitHub context for the message (Requirements: 4.2)
@@ -105,15 +76,6 @@ class _SourceChatSheetState extends ConsumerState<SourceChatSheet> {
     final message = _messageController.text.trim();
     if (message.isEmpty && _pendingImageAttachments.isEmpty) return;
 
-    if (message.isEmpty && _pendingImageAttachments.isNotEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Add a short message before sending images.'),
-        ),
-      );
-      return;
-    }
-
     final imageAttachments = _pendingImageAttachments
         .map((item) => item.toPayload())
         .toList(growable: false);
@@ -132,10 +94,8 @@ class _SourceChatSheetState extends ConsumerState<SourceChatSheet> {
           imageAttachments: imageAttachments,
         );
 
-    if (!mounted) return;
-
     if (success) {
-      _scheduleScrollToBottom();
+      _scrollToBottom();
     }
   }
 
@@ -186,73 +146,62 @@ class _SourceChatSheetState extends ConsumerState<SourceChatSheet> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
-    final viewInsets = MediaQuery.of(context).viewInsets;
     final conversationState =
         ref.watch(sourceConversationProvider(widget.source.id));
-    _maybeAutoScroll(conversationState.messages.length);
 
-    return SafeArea(
-      top: false,
-      child: AnimatedPadding(
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOut,
-        padding: EdgeInsets.only(bottom: viewInsets.bottom),
-        child: ClipRRect(
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-            child: Container(
-              height: MediaQuery.of(context).size.height * 0.85,
-              decoration: BoxDecoration(
-                color: scheme.surface.withValues(alpha: 0.95),
-                borderRadius:
-                    const BorderRadius.vertical(top: Radius.circular(20)),
-                border: Border.all(
-                  color: scheme.outline.withValues(alpha: 0.1),
+    return ClipRRect(
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: Container(
+          height: MediaQuery.of(context).size.height * 0.85,
+          decoration: BoxDecoration(
+            color: scheme.surface.withValues(alpha: 0.95),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+            border: Border.all(
+              color: scheme.outline.withValues(alpha: 0.1),
+            ),
+          ),
+          child: Column(
+            children: [
+              // Drag handle
+              Center(
+                child: Container(
+                  margin: const EdgeInsets.only(top: 12),
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: scheme.outline.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
                 ),
               ),
-              child: Column(
-                children: [
-                  // Drag handle
-                  Center(
-                    child: Container(
-                      margin: const EdgeInsets.only(top: 12),
-                      width: 40,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: scheme.outline.withValues(alpha: 0.3),
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
-                  ),
 
-                  // Header
-                  _buildHeader(context, scheme, text),
+              // Header
+              _buildHeader(context, scheme, text),
 
-                  // Divider
-                  Divider(
-                    height: 1,
-                    color: scheme.outline.withValues(alpha: 0.1),
-                  ),
-
-                  // Messages list
-                  Expanded(
-                    child: conversationState.isLoading
-                        ? const Center(child: CircularProgressIndicator())
-                        : conversationState.error != null
-                            ? _buildErrorState(
-                                context, scheme, conversationState.error!)
-                            : conversationState.messages.isEmpty
-                                ? _buildEmptyState(context, scheme, text)
-                                : _buildMessagesList(
-                                    context, scheme, conversationState),
-                  ),
-
-                  // Input area
-                  _buildInputArea(context, scheme, conversationState),
-                ],
+              // Divider
+              Divider(
+                height: 1,
+                color: scheme.outline.withValues(alpha: 0.1),
               ),
-            ),
+
+              // Messages list
+              Expanded(
+                child: conversationState.isLoading
+                    ? const Center(child: CircularProgressIndicator())
+                    : conversationState.error != null
+                        ? _buildErrorState(
+                            context, scheme, conversationState.error!)
+                        : conversationState.messages.isEmpty
+                            ? _buildEmptyState(context, scheme, text)
+                            : _buildMessagesList(
+                                context, scheme, conversationState),
+              ),
+
+              // Input area
+              _buildInputArea(context, scheme, conversationState),
+            ],
           ),
         ),
       ),
@@ -428,6 +377,8 @@ class _SourceChatSheetState extends ConsumerState<SourceChatSheet> {
     ColorScheme scheme,
     SourceConversationState state,
   ) {
+    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+
     return ListView.builder(
       controller: _scrollController,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -453,7 +404,12 @@ class _SourceChatSheetState extends ConsumerState<SourceChatSheet> {
     SourceConversationState state,
   ) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      padding: EdgeInsets.fromLTRB(
+        16,
+        12,
+        16,
+        12 + MediaQuery.of(context).viewInsets.bottom,
+      ),
       decoration: BoxDecoration(
         color: scheme.surface,
         border: Border(
@@ -539,7 +495,8 @@ class _SourceChatSheetState extends ConsumerState<SourceChatSheet> {
                 child: Container(
                   constraints: const BoxConstraints(maxHeight: 120),
                   decoration: BoxDecoration(
-                    color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                    color:
+                        scheme.surfaceContainerHighest.withValues(alpha: 0.5),
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(
                       color: scheme.outline.withValues(alpha: 0.1),
@@ -740,7 +697,9 @@ class _MessageBubble extends StatelessWidget {
               ),
 
             // Create Issue action button for agent suggestions (Requirements: 4.5)
-            if (issueSuggestion != null && isGitHubSource && onCreateIssue != null)
+            if (issueSuggestion != null &&
+                isGitHubSource &&
+                onCreateIssue != null)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: _IssueActionButton(
@@ -963,7 +922,8 @@ class _IssueActionButton extends StatelessWidget {
               if (suggestion.isExplicit) ...[
                 const SizedBox(width: 6),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                   decoration: BoxDecoration(
                     color: Colors.green.withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(8),

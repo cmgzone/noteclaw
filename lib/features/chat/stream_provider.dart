@@ -343,11 +343,14 @@ Answer the user's question to the best of your ability.
       // creditCost += CreditCosts.deepResearch;
     }
 
-    // Soft check for credits (don't consume yet)
+    // Skip the client-side credit gate when the user is supplying their own key
+    // or using a private model. The backend stream path handles billing itself.
     final creditManager = ref.read(creditManagerProvider);
+    final shouldSkipCredits =
+        await AISettingsService.shouldBypassCreditsForSelectedModel(ref.read);
     final currentBalance = creditManager.currentBalance;
 
-    if (currentBalance <= 0) {
+    if (!shouldSkipCredits && currentBalance <= 0) {
       yield [
         const StreamToken.text(
             text:
@@ -358,6 +361,7 @@ Answer the user's question to the best of your ability.
     }
 
     bool streamSuccess = false;
+    bool usedNonStreamingFallback = false;
 
     try {
       final provider = await _getSelectedProvider();
@@ -486,6 +490,7 @@ Answer the user's question to the best of your ability.
         final shouldFallback = kIsWeb || _isConnectivityIssue(streamErr);
 
         if (shouldFallback) {
+          usedNonStreamingFallback = true;
           final full = await api.chatWithAI(
             messages: messages,
             provider: provider,
@@ -582,8 +587,8 @@ Answer the user's question to the best of your ability.
       yield [errorToken];
       yield [const StreamToken.done()];
     } finally {
-      // Consume credits if the stream was successful
-      if (streamSuccess) {
+      // Only bill locally when we had to fall back to the non-streaming endpoint.
+      if (streamSuccess && usedNonStreamingFallback && !shouldSkipCredits) {
         try {
           await creditManager.useCredits(
             amount: creditCost,
