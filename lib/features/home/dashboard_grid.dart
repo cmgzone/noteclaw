@@ -26,7 +26,7 @@ class DashboardGrid extends ConsumerWidget {
                   ),
             ).animate().fadeIn().slideX(),
             const SizedBox(height: 12),
-            
+
             // 1. Deep Research (Top Priority)
             _BentoCard(
               title: 'Deep Research Agent',
@@ -123,43 +123,25 @@ class DashboardGrid extends ConsumerWidget {
             const SizedBox(height: 12),
 
             // 3. Learning Section
-            Row(
-              children: [
-                Expanded(
-                  child: _BentoCard(
-                    title: 'Ai Tutor',
-                    subtitle: 'Master any subject',
-                    icon: LucideIcons.graduationCap,
-                    color: const Color(0xFF6366F1), // Indigo
-                    onTap: () {
-                      final notebooks = ref.read(notebookProvider);
-                      if (notebooks.isNotEmpty) {
-                        final id = notebooks.first.id;
-                        context.push('/notebook/$id/tutor-sessions');
-                      } else {
-                        showDialog(
-                          context: context,
-                          builder: (_) => const CreateNotebookDialog(),
-                        );
-                      }
-                    },
-                    height: 120,
-                    compact: true,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _BentoCard(
-                    title: 'Wellness AI',
-                    subtitle: 'Mental health & balance',
-                    icon: LucideIcons.heartHandshake,
-                    color: const Color(0xFFEC4899), // Pink
-                    onTap: () => context.push('/wellness'),
-                    height: 120,
-                    compact: true,
-                  ),
-                ),
-              ],
+            _BentoCard(
+              title: 'Ai Tutor',
+              subtitle: 'Master any subject',
+              icon: LucideIcons.graduationCap,
+              color: const Color(0xFF6366F1), // Indigo
+              onTap: () {
+                final notebooks = ref.read(notebookProvider);
+                if (notebooks.isNotEmpty) {
+                  final id = notebooks.first.id;
+                  context.push('/notebook/$id/tutor-sessions');
+                } else {
+                  showDialog(
+                    context: context,
+                    builder: (_) => const CreateNotebookDialog(),
+                  );
+                }
+              },
+              height: 120,
+              compact: true,
             ),
             const SizedBox(height: 12),
             Row(

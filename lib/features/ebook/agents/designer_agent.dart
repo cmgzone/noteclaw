@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/ai/gemini_image_service.dart';
-import '../../../core/security/global_credentials_service.dart';
+import '../../../core/security/ai_api_key_resolver.dart';
 import '../../../core/search/serper_service.dart';
 import '../models/ebook_project.dart';
 import '../models/ebook_chapter.dart';
@@ -17,19 +17,9 @@ class DesignerAgent {
       {required String? providerOverride}) async {
     final settings = await AISettingsService.getSettingsWithDefault(ref.read);
     final provider = providerOverride ?? settings.provider;
-    final creds = ref.read(globalCredentialsServiceProvider);
-
-    String? apiKey;
-    if (provider == 'openrouter') {
-      apiKey = await creds.getApiKey('openrouter');
-    } else {
-      apiKey = await creds.getApiKey('gemini');
-    }
-
-    if (apiKey == null || apiKey.isEmpty) {
-      throw Exception('API key not found for $provider');
-    }
-    return GeminiImageService(apiKey: apiKey);
+    final resolvedKey =
+        await ref.read(aiApiKeyResolverProvider).resolveForProvider(provider);
+    return GeminiImageService(apiKey: resolvedKey.apiKey);
   }
 
   /// Fallback: fetch a real image from web search when AI image gen is unavailable.

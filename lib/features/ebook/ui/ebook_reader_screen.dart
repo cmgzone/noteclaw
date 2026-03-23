@@ -82,8 +82,7 @@ class EbookReaderScreen extends ConsumerWidget {
                   ? AppNetworkImage(
                       imageUrl: project.coverImageUrl!,
                       fit: BoxFit.cover,
-                      errorWidget: (context) =>
-                          Container(color: primaryColor),
+                      errorWidget: (context) => Container(color: primaryColor),
                     )
                   : Container(color: primaryColor),
             ),
@@ -124,8 +123,7 @@ class EbookReaderScreen extends ConsumerWidget {
                             height: 200,
                             width: double.infinity,
                             fit: BoxFit.cover,
-                            errorWidget: (context) =>
-                                const SizedBox.shrink(),
+                            errorWidget: (context) => const SizedBox.shrink(),
                           ),
                         ),
                         const SizedBox(height: 24),
@@ -391,7 +389,8 @@ class _EbookMindMapSheetState extends ConsumerState<_EbookMindMapSheet> {
                 const SizedBox(height: 12),
                 if (notebooks.isNotEmpty)
                   DropdownButtonFormField<String>(
-                    key: ValueKey(effectiveNotebookId ?? 'ebook-mindmap-notebook'),
+                    key: ValueKey(
+                        effectiveNotebookId ?? 'ebook-mindmap-notebook'),
                     initialValue: effectiveNotebookId,
                     decoration: InputDecoration(
                       labelText: 'Save To Notebook',
@@ -465,7 +464,8 @@ class _EbookMindMapSheetState extends ConsumerState<_EbookMindMapSheet> {
                   width: double.infinity,
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: scheme.surfaceContainerHighest.withValues(alpha: 0.45),
+                    color:
+                        scheme.surfaceContainerHighest.withValues(alpha: 0.45),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
@@ -523,7 +523,7 @@ class _EbookMindMapSheetState extends ConsumerState<_EbookMindMapSheet> {
                     onPressed: _isGenerating || effectiveNotebookId == null
                         ? null
                         : () => _generateMindMap(
-                              notebookId: effectiveNotebookId!,
+                              notebookId: effectiveNotebookId,
                             ),
                     icon: _isGenerating
                         ? const SizedBox(

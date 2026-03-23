@@ -16,13 +16,16 @@ class ApiKeysScreen extends ConsumerStatefulWidget {
 class _ApiKeysScreenState extends ConsumerState<ApiKeysScreen> {
   final _geminiController = TextEditingController();
   final _openRouterController = TextEditingController();
+  final _elevenLabsController = TextEditingController();
 
   bool _loading = false;
   bool _hasGeminiKey = false;
   bool _hasOpenRouterKey = false;
+  bool _hasElevenLabsKey = false;
 
   bool _showGemini = false;
   bool _showOpenRouter = false;
+  bool _showElevenLabs = false;
 
   @override
   void initState() {
@@ -34,6 +37,7 @@ class _ApiKeysScreenState extends ConsumerState<ApiKeysScreen> {
   void dispose() {
     _geminiController.dispose();
     _openRouterController.dispose();
+    _elevenLabsController.dispose();
     super.dispose();
   }
 
@@ -43,10 +47,12 @@ class _ApiKeysScreenState extends ConsumerState<ApiKeysScreen> {
       final creds = ref.read(credentialsServiceProvider);
       final gemini = await creds.getApiKey('gemini');
       final openrouter = await creds.getApiKey('openrouter');
+      final elevenlabs = await creds.getApiKey('elevenlabs');
       if (!mounted) return;
       setState(() {
         _hasGeminiKey = (gemini ?? '').trim().isNotEmpty;
         _hasOpenRouterKey = (openrouter ?? '').trim().isNotEmpty;
+        _hasElevenLabsKey = (elevenlabs ?? '').trim().isNotEmpty;
       });
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -178,9 +184,23 @@ class _ApiKeysScreenState extends ConsumerState<ApiKeysScreen> {
                   : () => _saveKey('openrouter', _openRouterController.text),
               onDelete: _loading ? null : () => _deleteKey('openrouter'),
             ).animate().premiumFade(delay: 200.ms).premiumSlide(delay: 200.ms),
+            const SizedBox(height: 12),
+            _KeyCard(
+              title: 'ElevenLabs',
+              service: 'elevenlabs',
+              controller: _elevenLabsController,
+              hasKey: _hasElevenLabsKey,
+              showValue: _showElevenLabs,
+              onToggleShow: () =>
+                  setState(() => _showElevenLabs = !_showElevenLabs),
+              onSave: _loading
+                  ? null
+                  : () => _saveKey('elevenlabs', _elevenLabsController.text),
+              onDelete: _loading ? null : () => _deleteKey('elevenlabs'),
+            ).animate().premiumFade(delay: 280.ms).premiumSlide(delay: 280.ms),
             const SizedBox(height: 24),
             Text(
-              'Tip: If you save a key here, the app will automatically use it for AI calls and your provider will bill you directly.',
+              'Tip: Keys saved here are used automatically for supported AI and voice features, and your provider bills your own account directly.',
               style: TextStyle(
                 fontSize: 12,
                 color: scheme.onSurface.withValues(alpha: 0.6),

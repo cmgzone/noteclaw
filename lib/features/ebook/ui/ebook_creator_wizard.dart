@@ -15,7 +15,14 @@ import '../../../core/ai/ai_settings_service.dart';
 import '../../subscription/services/credit_manager.dart';
 
 class EbookCreatorWizard extends ConsumerStatefulWidget {
-  const EbookCreatorWizard({super.key});
+  const EbookCreatorWizard({
+    super.key,
+    this.initialNotebookId,
+    this.initialNotebookTitle,
+  });
+
+  final String? initialNotebookId;
+  final String? initialNotebookTitle;
 
   @override
   ConsumerState<EbookCreatorWizard> createState() => _EbookCreatorWizardState();
@@ -41,12 +48,12 @@ class _EbookCreatorWizardState extends ConsumerState<EbookCreatorWizard> {
   @override
   void initState() {
     super.initState();
+    _selectedNotebookId = widget.initialNotebookId;
     _loadGlobalAISettings();
   }
 
   Future<void> _loadGlobalAISettings() async {
-    final settings =
-        await AISettingsService.getSettingsWithDefault(ref.read);
+    final settings = await AISettingsService.getSettingsWithDefault(ref.read);
     final globalModel = settings.model;
     if (globalModel != null && globalModel.isNotEmpty && mounted) {
       setState(() => _selectedModel = globalModel);
@@ -136,6 +143,40 @@ class _EbookCreatorWizardState extends ConsumerState<EbookCreatorWizard> {
               content: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if (widget.initialNotebookId != null &&
+                      widget.initialNotebookId!.isNotEmpty) ...[
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: scheme.primary.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: scheme.primary.withValues(alpha: 0.14),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            LucideIcons.bookOpen,
+                            size: 16,
+                            color: scheme.primary,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Opened from Studio with notebook: ${widget.initialNotebookTitle ?? 'Selected notebook'}',
+                              style: text.bodySmall?.copyWith(
+                                color: scheme.onSurface,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
                   Text(
                     'Select a Notebook to ground your ebook in your own sources.',
                     style: text.bodySmall,
@@ -633,6 +674,8 @@ class _EbookCreatorWizardState extends ConsumerState<EbookCreatorWizard> {
       );
       return;
     }
+
+    if (!mounted) return;
 
     // Check and consume credits for ebook generation after the draft exists
     final hasCredits = await ref.tryUseCredits(

@@ -10,7 +10,7 @@ import '../notebook/notebook_chat_context_builder.dart';
 import '../../core/ai/gemini_image_service.dart';
 import '../../core/api/api_service.dart';
 import '../../core/ai/ai_settings_service.dart';
-import '../../core/security/global_credentials_service.dart';
+import '../../core/security/ai_api_key_resolver.dart';
 import '../../core/services/activity_logger_service.dart';
 
 /// Provider for managing infographics
@@ -133,16 +133,9 @@ Return ONLY the image generation prompt, no other text.
     final settings = await AISettingsService.getSettingsWithDefault(ref.read);
     final provider = settings.provider;
     final model = settings.model;
-    final creds = ref.read(globalCredentialsServiceProvider);
-
-    String? apiKey;
-    if (provider == 'openrouter') {
-      apiKey = await creds.getApiKey('openrouter');
-    } else {
-      apiKey = await creds.getApiKey('gemini');
-    }
-
-    final imageService = GeminiImageService(apiKey: apiKey);
+    final resolvedKey =
+        await ref.read(aiApiKeyResolverProvider).resolveForProvider(provider);
+    final imageService = GeminiImageService(apiKey: resolvedKey.apiKey);
     final generatedImage = await imageService.generateImage(
       prompt,
       provider: provider,

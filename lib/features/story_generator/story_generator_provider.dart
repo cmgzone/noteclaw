@@ -7,7 +7,7 @@ import 'story.dart';
 import '../../core/ai/gemini_image_service.dart';
 import '../../core/search/serper_service.dart';
 import '../../core/api/api_service.dart';
-import '../../core/security/global_credentials_service.dart';
+import '../../core/security/ai_api_key_resolver.dart';
 import '../../core/services/activity_logger_service.dart';
 
 class StoryGeneratorState {
@@ -291,15 +291,10 @@ class StoryGeneratorNotifier extends StateNotifier<StoryGeneratorState> {
       final settings = await AISettingsService.getSettingsWithDefault(ref.read);
 
       // Get correct API key
-      final creds = ref.read(globalCredentialsServiceProvider);
-      String? apiKey;
-      if (settings.provider == 'openrouter') {
-        apiKey = await creds.getApiKey('openrouter');
-      } else {
-        apiKey = await creds.getApiKey('gemini');
-      }
-
-      final imageService = GeminiImageService(apiKey: apiKey);
+      final resolvedKey = await ref
+          .read(aiApiKeyResolverProvider)
+          .resolveForProvider(settings.provider);
+      final imageService = GeminiImageService(apiKey: resolvedKey.apiKey);
 
       final imageUrls = <String>[];
 

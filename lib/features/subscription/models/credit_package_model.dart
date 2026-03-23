@@ -5,6 +5,7 @@ class CreditPackageModel {
   final int credits;
   final double price;
   final bool isActive;
+  final String? googlePlayProductId;
 
   CreditPackageModel({
     required this.id,
@@ -13,6 +14,7 @@ class CreditPackageModel {
     required this.credits,
     required this.price,
     required this.isActive,
+    this.googlePlayProductId,
   });
 
   factory CreditPackageModel.fromJson(Map<String, dynamic> json) {
@@ -23,6 +25,7 @@ class CreditPackageModel {
       credits: _parseInt(json['credits']) ?? 0,
       price: _parseDouble(json['price']) ?? 0.0,
       isActive: json['is_active'] as bool? ?? true,
+      googlePlayProductId: json['google_play_product_id'] as String?,
     );
   }
 
@@ -50,6 +53,7 @@ class CreditPackageModel {
       'credits': credits,
       'price': price,
       'is_active': isActive,
+      'google_play_product_id': googlePlayProductId,
     };
   }
 

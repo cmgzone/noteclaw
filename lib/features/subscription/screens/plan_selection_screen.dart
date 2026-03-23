@@ -312,32 +312,44 @@ class _PlanSelectionScreenState extends ConsumerState<PlanSelectionScreen> {
     return SizedBox(
       width: double.infinity,
       height: 56,
-      child: InkWell(
-        onTap: _submitting ? null : onTap,
+      child: Material(
+        color: Colors.transparent,
         borderRadius: BorderRadius.circular(16),
         child: Ink(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
             gradient: AppTheme.premiumGradient,
+            boxShadow: [
+              BoxShadow(
+                color:
+                    AppTheme.premiumGradient.colors.first.withValues(alpha: 0.24),
+                blurRadius: 16,
+                offset: const Offset(0, 8),
+              ),
+            ],
           ),
-          child: Center(
-            child: _submitting
-                ? const SizedBox(
-                    height: 24,
-                    width: 24,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2.5,
-                      color: Colors.white,
+          child: InkWell(
+            onTap: _submitting ? null : onTap,
+            borderRadius: BorderRadius.circular(16),
+            child: Center(
+              child: _submitting
+                  ? const SizedBox(
+                      height: 24,
+                      width: 24,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.5,
+                        color: Colors.white,
+                      ),
+                    )
+                  : Text(
+                      label,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
-                  )
-                : Text(
-                    label,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
+            ),
           ),
         ),
       ),

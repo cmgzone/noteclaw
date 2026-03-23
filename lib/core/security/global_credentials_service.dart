@@ -22,6 +22,14 @@ class GlobalCredentialsService {
 
   GlobalCredentialsService(this.ref);
 
+  String _storageKey(String userId, String service) {
+    return 'global_user_${userId}_$service';
+  }
+
+  String _legacyStorageKey(String userId, String service) {
+    return 'user_${userId}_$service';
+  }
+
   // Generate encryption key from fixed secret + user id
   encrypt.Key _getEncryptionKey(String userId) {
     final hash = sha256.convert(utf8.encode('$_encryptionSecret$userId'));
@@ -74,6 +82,38 @@ class GlobalCredentialsService {
     }
   }
 
+  bool _looksLikeEncryptedBlob(String value) {
+    final trimmed = value.trim();
+    if (trimmed.length < 48 || trimmed.length % 4 != 0) {
+      return false;
+    }
+
+    final base64Pattern = RegExp(r'^[A-Za-z0-9+/=]+$');
+    if (!base64Pattern.hasMatch(trimmed)) {
+      return false;
+    }
+
+    try {
+      final decoded = base64Decode(trimmed);
+      return decoded.length >= 32;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  String? _normalizeRetrievedValue(String stored, String decrypted) {
+    final trimmed = decrypted.trim();
+    if (trimmed.isEmpty) {
+      return null;
+    }
+
+    if (trimmed == stored && _looksLikeEncryptedBlob(stored)) {
+      return null;
+    }
+
+    return trimmed;
+  }
+
   // Store encrypted API key in secure storage
   Future<void> storeApiKey({
     required String service,
@@ -86,7 +126,7 @@ class GlobalCredentialsService {
 
     final encryptedKey = _encryptValue(apiKey, user.uid);
     await _storage.write(
-      key: 'user_${user.uid}_$service',
+      key: _storageKey(user.uid, service),
       value: encryptedKey,
     );
   }
@@ -97,9 +137,29 @@ class GlobalCredentialsService {
     final user = authState.user;
     if (user == null) return null;
 
-    final stored = await _storage.read(key: 'user_${user.uid}_$service');
+    final currentKey = _storageKey(user.uid, service);
+    final stored = await _storage.read(key: currentKey);
     if (stored != null && stored.isNotEmpty) {
-      return _decryptValue(stored, user.uid);
+      return _normalizeRetrievedValue(
+        stored,
+        _decryptValue(stored, user.uid),
+      );
+    }
+
+    final legacyKey = _legacyStorageKey(user.uid, service);
+    final legacyStored = await _storage.read(key: legacyKey);
+    if (legacyStored != null && legacyStored.isNotEmpty) {
+      final migrated = _normalizeRetrievedValue(
+        legacyStored,
+        _decryptValue(legacyStored, user.uid),
+      );
+      if (migrated != null) {
+        await _storage.write(
+          key: currentKey,
+          value: _encryptValue(migrated, user.uid),
+        );
+        return migrated;
+      }
     }
 
     return null;
@@ -110,7 +170,7 @@ class GlobalCredentialsService {
     final authState = ref.read(customAuthStateProvider);
     final user = authState.user;
     if (user == null) return;
-    await _storage.delete(key: 'user_${user.uid}_$service');
+    await _storage.delete(key: _storageKey(user.uid, service));
   }
 
   // List all stored services

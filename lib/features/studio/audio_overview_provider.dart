@@ -233,7 +233,7 @@ class AudioOverviewNotifier extends StateNotifier<AudioStudioState> {
     String title, {
     bool isPodcast = false,
     String? topic,
-    List<String> hosts = const ['Sarah', 'Adam'],
+    List<String> hosts = const ['Host 1', 'Host 2'],
     String? contentOverride,
     String? notebookId,
     String podcastType = 'deep_dive',
@@ -292,8 +292,8 @@ class AudioOverviewNotifier extends StateNotifier<AudioStudioState> {
         final topicInstruction = topic != null && topic.isNotEmpty
             ? 'Focus specifically on this topic: "$topic".'
             : '';
-        final host1 = hosts.isNotEmpty ? hosts[0] : 'Sarah';
-        final host2 = hosts.length > 1 ? hosts[1] : 'Adam';
+        final host1 = hosts.isNotEmpty ? hosts[0] : 'Host 1';
+        final host2 = hosts.length > 1 ? hosts[1] : 'Host 2';
         final podcastTypeLabel = _podcastTypeLabel(podcastType);
         final podcastTypeGuidance = _podcastTypeGuidance(
           podcastType,
@@ -335,7 +335,10 @@ Format:
 
         if (_shouldAbort) throw Exception('Cancelled');
 
-        podcastSegments = _parsePodcastJson(response);
+        podcastSegments = _parsePodcastJson(
+          response,
+          hosts: [host1, host2],
+        );
 
         if (podcastSegments.isEmpty) {
           throw Exception(
@@ -405,8 +408,8 @@ $context
         const gcVoiceAdam = 'en-US-Journey-D';
 
         // Map configured hosts
-        final host1Name = hosts.isNotEmpty ? hosts[0] : 'Sarah';
-        final host2Name = hosts.length > 1 ? hosts[1] : 'Adam';
+        final host1Name = hosts.isNotEmpty ? hosts[0] : 'Host 1';
+        final host2Name = hosts.length > 1 ? hosts[1] : 'Host 2';
 
         for (int i = 0; i < totalSegments; i++) {
           // Check for cancellation before each segment
@@ -429,12 +432,14 @@ $context
 
           // Determine Voice Preference (Gender detection logic)
           bool useMaleVoice = false;
-          if (speaker == host2Name) {
+          if (_normalizedSpeakerName(speaker) ==
+              _normalizedSpeakerName(host2Name)) {
             useMaleVoice = true;
-          } else if (speaker != host1Name) {
+          } else if (_normalizedSpeakerName(speaker) !=
+              _normalizedSpeakerName(host1Name)) {
             final lower = speaker.toLowerCase();
-            if (lower.contains('adam') ||
-                lower.contains('mike') ||
+            if (lower.contains('co-host') ||
+                lower.contains('guest') ||
                 lower.contains('male') ||
                 lower.contains('expert')) {
               useMaleVoice = true;
@@ -647,7 +652,10 @@ $context
     }
   }
 
-  List<Map<String, String>> _parsePodcastJson(String response) {
+  List<Map<String, String>> _parsePodcastJson(
+    String response, {
+    required List<String> hosts,
+  }) {
     debugPrint(
         '[AudioOverview] Parsing podcast response (${response.length} chars)');
 
@@ -718,18 +726,25 @@ $context
 
     // 2. Fallback: Parse using Regex if JSON failed or wasn't found
     debugPrint('[AudioOverview] Falling back to Regex parsing...');
-    return _parseScriptRegex(response);
+    return _parseScriptRegex(
+      response,
+      hosts: hosts,
+    );
   }
 
-  List<Map<String, String>> _parseScriptRegex(String text) {
+  List<Map<String, String>> _parseScriptRegex(
+    String text, {
+    required List<String> hosts,
+  }) {
     final segments = <Map<String, String>>[];
 
     // Matches lines like:
-    // **Sarah**: Hello world
-    // Adam: That's interesting
+    // **Host One**: Hello world
+    // Dr. Maya: That's interesting
     // Start of line, optional *, Name, optional *, :, text
     final regex =
-        RegExp(r'^[\*\-\s]*([A-Za-z0-9 ]+?)[\*\s]*:(.+)$', multiLine: true);
+        RegExp(r"^[\*\-\s]*([A-Za-z0-9 ._'-]+?)[\*\s]*:(.+)$",
+            multiLine: true);
 
     final matches = regex.allMatches(text);
     for (final match in matches) {
@@ -741,7 +756,8 @@ $context
     }
 
     if (segments.isEmpty) {
-      // Last resort: Treat whole text as Sarah, but try to strip common "Here is..." prefixes
+      final fallbackSpeaker = hosts.isNotEmpty ? hosts.first : 'Host 1';
+      // Last resort: Treat whole text as the first host, but try to strip common "Here is..." prefixes
       debugPrint('[AudioOverview] Regex parsing failed. Using raw text.');
       var cleanText = text;
       // Strip "Here is the script:" type intros
@@ -752,11 +768,20 @@ $context
       }
 
       return [
-        {'speaker': 'Sarah', 'text': cleanText}
+        {'speaker': fallbackSpeaker, 'text': cleanText}
       ];
     }
 
     return segments;
+  }
+
+  String _normalizedSpeakerName(String value) {
+    return value
+        .trim()
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
   }
 
   Future<void> toggleOffline(AudioOverview overview) async {

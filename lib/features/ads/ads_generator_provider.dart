@@ -133,6 +133,8 @@ ${state.selectedImageBytes != null ? '\nTarget Audience Analysis: Briefly analyz
           messages: messages,
           provider: provider,
           model: model,
+          billingFeature: 'image_chat',
+          hasImage: true,
         );
       } else {
         // Text-only generation - Use Backend Proxy
@@ -144,6 +146,7 @@ ${state.selectedImageBytes != null ? '\nTarget Audience Analysis: Briefly analyz
           messages: messages,
           provider: provider,
           model: model,
+          billingFeature: 'chat_message',
         );
       }
 

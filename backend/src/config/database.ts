@@ -178,6 +178,7 @@ export async function initializeDatabase() {
                 name TEXT NOT NULL,
                 credits_per_month INTEGER NOT NULL,
                 price DECIMAL NOT NULL,
+                google_play_product_id TEXT,
                 notes_limit INTEGER,
                 mcp_sources_limit INTEGER,
                 mcp_tokens_limit INTEGER,
@@ -222,6 +223,7 @@ export async function initializeDatabase() {
                 name TEXT NOT NULL,
                 credits INTEGER NOT NULL,
                 price DECIMAL NOT NULL,
+                google_play_product_id TEXT,
                 is_active BOOLEAN DEFAULT true,
                 created_at TIMESTAMPTZ DEFAULT NOW()
             );

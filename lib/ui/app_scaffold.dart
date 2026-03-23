@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:responsive_framework/responsive_framework.dart';
 import '../features/studio/mini_audio_player.dart';
-import 'quick_ai_model_selector.dart';
 
 class AppScaffold extends StatelessWidget {
   const AppScaffold({super.key, required this.child});
@@ -60,7 +59,6 @@ class AppScaffold extends StatelessWidget {
     final location = GoRouterState.of(context).uri.toString();
     final index = _indexForLocation(location);
     final isDesktop = ResponsiveBreakpoints.of(context).largerThan(TABLET);
-    final hideFloatingModelSelector = location.startsWith('/planning');
     final theme = Theme.of(context);
 
     if (isDesktop) {
@@ -87,10 +85,6 @@ class AppScaffold extends StatelessWidget {
               trailing: Column(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  const Padding(
-                    padding: EdgeInsets.only(bottom: 16),
-                    child: QuickAIModelSelector(compact: true),
-                  ),
                   IconButton(
                     icon: const Icon(Icons.settings),
                     tooltip: 'Settings',
@@ -125,26 +119,6 @@ class AppScaffold extends StatelessWidget {
       body: Stack(
         children: [
           child,
-          // Quick AI Model Selector (bottom-left, above nav bar)
-          if (!hideFloatingModelSelector)
-            const Positioned(
-              left: 8,
-              bottom: 80,
-              child: SafeArea(
-                child: QuickAIModelSelector(),
-              ),
-            ),
-          Positioned(
-            right: 8,
-            bottom: 80,
-            child: SafeArea(
-              child: FloatingActionButton.small(
-                heroTag: 'settings_fab',
-                onPressed: () => context.push('/settings'),
-                child: const Icon(Icons.settings),
-              ),
-            ),
-          ),
           const Positioned(
             left: 0,
             right: 0,

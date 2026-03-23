@@ -230,6 +230,7 @@ class WellnessNotifier extends StateNotifier<WellnessState> {
       messages: messages,
       provider: provider,
       model: model,
+      billingFeature: 'chat_message',
     );
   }
 }

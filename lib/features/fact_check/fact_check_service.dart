@@ -153,6 +153,7 @@ class FactCheckService {
       messages: messages,
       provider: settings.provider,
       model: model,
+      billingFeature: 'chat_message',
     );
   }
 

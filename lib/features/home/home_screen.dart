@@ -1,6 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -10,6 +11,7 @@ import 'dashboard_grid.dart';
 import '../../ui/widgets/notebook_card.dart';
 import '../../core/auth/custom_auth_service.dart';
 import 'create_notebook_dialog.dart';
+import '../notebook/notebook.dart';
 import '../notebook/notebook_provider.dart';
 import '../../core/theme/theme_provider.dart';
 import '../../theme/app_theme.dart';
@@ -17,15 +19,78 @@ import '../../core/extensions/color_compat.dart';
 import '../subscription/providers/subscription_provider.dart';
 import '../notifications/notification_provider.dart';
 
-class HomeScreen extends ConsumerWidget {
+const String _firstNotebookPromptKeyPrefix = 'first_notebook_prompt_seen_';
+
+class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends ConsumerState<HomeScreen> {
+  String? _promptHandledForUserId;
+  String? _promptInFlightForUserId;
+
+  void _maybePromptCreateNotebook({
+    required bool isLoggedIn,
+    required String? userId,
+    required bool notebooksLoaded,
+    required List<Notebook> notebooks,
+  }) {
+    if (!isLoggedIn || userId == null || !notebooksLoaded || notebooks.isNotEmpty) {
+      return;
+    }
+    if (_promptHandledForUserId == userId || _promptInFlightForUserId == userId) {
+      return;
+    }
+
+    _promptInFlightForUserId = userId;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final key = '$_firstNotebookPromptKeyPrefix$userId';
+        final hasSeenPrompt = prefs.getBool(key) ?? false;
+
+        if (hasSeenPrompt) {
+          _promptHandledForUserId = userId;
+          return;
+        }
+
+        final latestNotebooks = ref.read(notebookProvider);
+        if (!mounted || latestNotebooks.isNotEmpty) return;
+
+        await prefs.setBool(key, true);
+        _promptHandledForUserId = userId;
+        if (!mounted) return;
+
+        await showDialog<void>(
+          context: context,
+          builder: (_) => const CreateNotebookDialog(),
+        );
+      } finally {
+        if (_promptInFlightForUserId == userId) {
+          _promptInFlightForUserId = null;
+        }
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
-    final scheme = Theme.of(context).colorScheme;
     final authState = ref.watch(customAuthStateProvider);
     final isLoggedIn = authState.isAuthenticated;
+    final notebooks = ref.watch(notebookProvider);
+    final notebooksLoaded = ref.watch(notebookInitialLoadCompleteProvider);
+
+    _maybePromptCreateNotebook(
+      isLoggedIn: isLoggedIn,
+      userId: authState.user?.uid,
+      notebooksLoaded: notebooksLoaded,
+      notebooks: notebooks,
+    );
 
     return Scaffold(
       drawer: _AppDrawer(isLoggedIn: isLoggedIn),
@@ -123,13 +188,27 @@ class HomeScreen extends ConsumerWidget {
                         const Icon(LucideIcons.coins,
                             size: 16, color: Colors.white),
                         const SizedBox(width: 6),
-                        Text(
-                          '$credits',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
-                          ),
+                        Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'AI Credits',
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.82),
+                                fontWeight: FontWeight.w600,
+                                fontSize: 10,
+                              ),
+                            ),
+                            Text(
+                              '$credits balance',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
@@ -207,7 +286,7 @@ class HomeScreen extends ConsumerWidget {
             ),
           ),
           const DashboardGrid(),
-          if (ref.watch(notebookProvider).isEmpty)
+          if (notebooks.isEmpty)
             const SliverToBoxAdapter(child: _EmptyState()),
           ..._buildCategories(context, ref),
           const SliverToBoxAdapter(
@@ -215,13 +294,6 @@ class HomeScreen extends ConsumerWidget {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => context.push('/chat'),
-        icon: const Icon(Icons.chat),
-        label: const Text('AI Chat'),
-        backgroundColor: scheme.primary,
-        foregroundColor: scheme.onPrimary,
-      ).animate().scale(delay: 500.ms),
     );
   }
 
@@ -704,14 +776,6 @@ class _AppDrawer extends ConsumerWidget {
                         onTap: () {
                           Navigator.pop(context);
                           context.push('/ads-generator');
-                        },
-                      ),
-                      _DrawerItem(
-                        icon: LucideIcons.heartHandshake,
-                        label: 'Wellness AI',
-                        onTap: () {
-                          Navigator.pop(context);
-                          context.push('/wellness');
                         },
                       ),
                       */

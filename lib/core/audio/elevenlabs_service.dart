@@ -29,10 +29,11 @@ class ElevenLabsService {
 
   // Fallback models in order of preference
   static const List<String> _fallbackModels = [
-    'eleven_monolingual_v1',
-    'eleven_multilingual_v1',
     'eleven_multilingual_v2',
+    'eleven_flash_v2_5',
+    'eleven_turbo_v2_5',
     'eleven_turbo_v2',
+    'eleven_flash_v2',
   ];
 
   Future<Uint8List> textToSpeech(
@@ -52,7 +53,7 @@ class ElevenLabsService {
       final key = await apiKey;
       if (key.isEmpty) {
         throw Exception(
-            'Missing ELEVENLABS_API_KEY. Set it in .env or database');
+            'Missing ElevenLabs API key. Save your own key in Settings or configure an app key.');
       }
 
       if (showBubble) {
@@ -62,6 +63,8 @@ class ElevenLabsService {
 
       // Try the requested model first, then fallbacks
       final modelsToTry = [model, ..._fallbackModels.where((m) => m != model)];
+      String? lastErrorBody;
+      int? lastStatusCode;
 
       for (final tryModel in modelsToTry) {
         debugPrint('[ElevenLabs] Trying TTS with model: $tryModel');
@@ -96,8 +99,10 @@ class ElevenLabsService {
           }
           return response.bodyBytes;
         } else {
+          lastStatusCode = response.statusCode;
+          lastErrorBody = response.body;
           debugPrint(
-              '[ElevenLabs] Model $tryModel failed: ${response.statusCode}');
+              '[ElevenLabs] Model $tryModel failed: ${response.statusCode} ${response.body}');
           // Try next model
           continue;
         }
@@ -105,7 +110,10 @@ class ElevenLabsService {
 
       // All models failed
       throw Exception(
-          'All ElevenLabs models failed. Check your API key and quota.');
+        'All ElevenLabs models failed'
+        '${lastStatusCode != null ? ' ($lastStatusCode)' : ''}'
+        '${lastErrorBody != null && lastErrorBody.isNotEmpty ? ': $lastErrorBody' : '. Check your API key and quota.'}',
+      );
     } catch (e) {
       if (showBubble) {
         await overlayBubbleService.updateStatus('Error: Audio Failed');
@@ -132,34 +140,45 @@ class ElevenLabsService {
       throw Exception('Missing ELEVENLABS_API_KEY');
     }
 
-    // Request PCM format which can be concatenated
-    // pcm_22050 = 22050Hz, 16-bit signed little-endian, mono
-    final response = await http.post(
-      Uri.parse('$baseUrl/text-to-speech/$voiceId?output_format=pcm_22050'),
-      headers: {
-        'Content-Type': 'application/json',
-        'xi-api-key': key,
-      },
-      body: jsonEncode({
-        'text': text,
-        'model_id': model,
-        'voice_settings': {
-          'stability': stability,
-          'similarity_boost': similarityBoost,
-          'use_speaker_boost': true,
-        }
-      }),
-    );
+    final modelsToTry = [model, ..._fallbackModels.where((m) => m != model)];
+    String? lastErrorBody;
+    int? lastStatusCode;
 
-    debugPrint('[ElevenLabs PCM] Response status: ${response.statusCode}');
+    for (final tryModel in modelsToTry) {
+      final response = await http.post(
+        Uri.parse('$baseUrl/text-to-speech/$voiceId?output_format=pcm_22050'),
+        headers: {
+          'Content-Type': 'application/json',
+          'xi-api-key': key,
+        },
+        body: jsonEncode({
+          'text': text,
+          'model_id': tryModel,
+          'voice_settings': {
+            'stability': stability,
+            'similarity_boost': similarityBoost,
+            'use_speaker_boost': true,
+          }
+        }),
+      );
 
-    if (response.statusCode == 200) {
-      return response.bodyBytes;
-    } else {
-      debugPrint('[ElevenLabs PCM] Error: ${response.body}');
-      throw Exception(
-          'ElevenLabs PCM generation failed: ${response.statusCode}');
+      debugPrint(
+          '[ElevenLabs PCM] Model $tryModel response: ${response.statusCode}');
+
+      if (response.statusCode == 200) {
+        return response.bodyBytes;
+      }
+
+      lastStatusCode = response.statusCode;
+      lastErrorBody = response.body;
+      debugPrint('[ElevenLabs PCM] Model $tryModel failed: ${response.body}');
     }
+
+    throw Exception(
+      'ElevenLabs PCM generation failed'
+      '${lastStatusCode != null ? ' ($lastStatusCode)' : ''}'
+      '${lastErrorBody != null && lastErrorBody.isNotEmpty ? ': $lastErrorBody' : ''}',
+    );
   }
 
   /// Wrap raw PCM data with a WAV header to create a playable file

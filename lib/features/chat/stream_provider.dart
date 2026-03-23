@@ -470,6 +470,7 @@ Answer the user's question to the best of your ability.
           messages: messages,
           provider: provider,
           model: model,
+          billingFeature: featureName,
           useDeepSearch: useDeepSearch,
           hasImage: imageBytes != null,
         );
@@ -489,7 +490,7 @@ Answer the user's question to the best of your ability.
       } catch (streamErr) {
         final shouldFallback = kIsWeb || _isConnectivityIssue(streamErr);
 
-        if (shouldFallback) {
+        if (shouldFallback && shouldSkipCredits) {
           usedNonStreamingFallback = true;
           final full = await api.chatWithAI(
             messages: messages,
@@ -514,6 +515,9 @@ Answer the user's question to the best of your ability.
           if (mounted) state = [...state, doneToken];
           yield [doneToken];
         } else {
+          debugPrint(
+            '[StreamNotifier] Blocking non-streaming fallback for server-billed chat',
+          );
           rethrow;
         }
       }

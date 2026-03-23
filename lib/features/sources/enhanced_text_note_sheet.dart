@@ -215,6 +215,7 @@ class _EnhancedTextNoteSheetState extends ConsumerState<EnhancedTextNoteSheet>
       messages: messages,
       provider: settings.provider,
       model: model,
+      billingFeature: 'chat_message',
     );
   }
 

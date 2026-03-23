@@ -6,7 +6,7 @@ import '../ai/gemini_image_service.dart';
 import '../ai/openrouter_service.dart';
 import '../../features/sources/source_provider.dart';
 import '../../features/notebook/notebook_provider.dart';
-import '../../core/security/global_credentials_service.dart';
+import '../../core/security/ai_api_key_resolver.dart';
 import '../../features/ebook/ebook_provider.dart';
 import '../../features/ebook/models/ebook_project.dart';
 import '../../features/ebook/models/branding_config.dart';
@@ -45,10 +45,11 @@ class VoiceActionHandler {
           'No AI model selected. Please configure a model in settings.');
     }
 
-    final creds = ref.read(globalCredentialsServiceProvider);
-
     if (settings.provider == 'openrouter') {
-      final apiKey = await creds.getApiKey('openrouter');
+      final resolvedKey = await ref
+          .read(aiApiKeyResolverProvider)
+          .resolveForService('openrouter');
+      final apiKey = resolvedKey.apiKey;
       if (apiKey == null || apiKey.isEmpty) {
         throw Exception(
             'OpenRouter API key not configured. Please add it in settings.');
@@ -56,7 +57,10 @@ class VoiceActionHandler {
       return await OpenRouterService()
           .generateContent(prompt, model: model, apiKey: apiKey);
     } else {
-      final apiKey = await creds.getApiKey('gemini');
+      final resolvedKey = await ref
+          .read(aiApiKeyResolverProvider)
+          .resolveForService('gemini');
+      final apiKey = resolvedKey.apiKey;
       if (apiKey == null || apiKey.isEmpty) {
         throw Exception(
             'Gemini API key not configured. Please add it in settings.');
@@ -67,12 +71,11 @@ class VoiceActionHandler {
   }
 
   Future<GeminiImageService> _getImageService() async {
-    final creds = ref.read(globalCredentialsServiceProvider);
-    final apiKey = await creds.getApiKey('gemini');
-    if (apiKey == null || apiKey.isEmpty) {
-      throw Exception('Gemini API key not found');
-    }
-    return GeminiImageService(apiKey: apiKey);
+    final settings = await AISettingsService.getSettingsWithDefault(ref.read);
+    final resolvedKey = await ref
+        .read(aiApiKeyResolverProvider)
+        .resolveForProvider(settings.provider);
+    return GeminiImageService(apiKey: resolvedKey.apiKey);
   }
 
   Future<VoiceActionResult> processUserInput(
@@ -478,9 +481,13 @@ Convert this user request into a detailed, vivid image generation prompt (max 2 
 Return only the enhanced prompt, nothing else.
 ''');
 
-      // Generate image using Gemini Imagen (requires Gemini API key)
+      final settings = await AISettingsService.getSettingsWithDefault(ref.read);
       final imageGen = await _getImageService();
-      final imageUrl = await imageGen.generateImage(enhancedPrompt.trim());
+      final imageUrl = await imageGen.generateImage(
+        enhancedPrompt.trim(),
+        provider: settings.provider,
+        model: settings.model,
+      );
 
       return VoiceActionResult(
         response: 'I\'ve generated your image!',

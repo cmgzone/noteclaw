@@ -52,6 +52,25 @@ class CredentialsService {
     }
   }
 
+  bool _looksLikeEncryptedBlob(String value) {
+    final trimmed = value.trim();
+    if (trimmed.length < 48 || trimmed.length % 4 != 0) {
+      return false;
+    }
+
+    final base64Pattern = RegExp(r'^[A-Za-z0-9+/=]+$');
+    if (!base64Pattern.hasMatch(trimmed)) {
+      return false;
+    }
+
+    try {
+      final decoded = base64Decode(trimmed);
+      return decoded.length >= 32;
+    } catch (_) {
+      return false;
+    }
+  }
+
   // Store encrypted API key in secure storage
   Future<void> storeApiKey({
     required String service,
@@ -76,7 +95,16 @@ class CredentialsService {
     final stored = await _storage.read(key: 'user_${userId}_$service');
     if (stored == null || stored.isEmpty) return null;
 
-    return _decryptValue(stored, userId);
+    final decrypted = _decryptValue(stored, userId).trim();
+    if (decrypted.isEmpty) {
+      return null;
+    }
+
+    if (decrypted == stored && _looksLikeEncryptedBlob(stored)) {
+      return null;
+    }
+
+    return decrypted;
   }
 
   // Delete API key

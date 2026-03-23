@@ -4,6 +4,35 @@ import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:http/http.dart' as http;
 import 'gemini_config.dart';
 
+enum ImageGenerationBackend {
+  openRouter,
+  pollinations,
+  placeholder,
+}
+
+class ImageGenerationResult {
+  const ImageGenerationResult({
+    required this.imageUrl,
+    required this.backend,
+    this.note,
+  });
+
+  final String imageUrl;
+  final ImageGenerationBackend backend;
+  final String? note;
+
+  String get backendLabel {
+    switch (backend) {
+      case ImageGenerationBackend.openRouter:
+        return 'OpenRouter';
+      case ImageGenerationBackend.pollinations:
+        return 'Pollinations fallback';
+      case ImageGenerationBackend.placeholder:
+        return 'Placeholder fallback';
+    }
+  }
+}
+
 class GeminiImageService {
   final String apiKey;
 
@@ -12,33 +41,87 @@ class GeminiImageService {
   /// Generate an image using Nano Banana API
   Future<String> generateImage(String prompt,
       {String? model, String? provider}) async {
+    final result = await generateImageResult(
+      prompt,
+      model: model,
+      provider: provider,
+    );
+    return result.imageUrl;
+  }
+
+  Future<ImageGenerationResult> generateImageResult(
+    String prompt, {
+    String? model,
+    String? provider,
+  }) async {
     try {
-      if (apiKey.isEmpty) {
-        throw Exception('Missing API key.');
-      }
-
       if (provider == 'openrouter') {
-        if (model == null || model.isEmpty) {
-          throw Exception(
-              'No image model selected. Please select an AI model with image generation capabilities in Settings.');
+        if (apiKey.isEmpty) {
+          return _pollinationsResult(
+            prompt,
+            note:
+                'OpenRouter is selected, but no OpenRouter API key is available. Using the free fallback instead.',
+          );
         }
-        return _generateImageOpenRouter(prompt, model);
+        if (model == null || model.isEmpty) {
+          return _pollinationsResult(
+            prompt,
+            note:
+                'OpenRouter is selected, but no image-capable model is selected. Using the free fallback instead.',
+          );
+        }
+
+        final imageUrl = await _generateImageOpenRouter(prompt, model);
+        return ImageGenerationResult(
+          imageUrl: imageUrl,
+          backend: ImageGenerationBackend.openRouter,
+        );
       }
 
-      // Default to placeholder for Gemini until specialized Imagen API is implemented
-      // or if using Nano Banana (removing Nano Banana as it appears broken/fake)
       debugPrint(
-          '[GeminiImageService] Gemini Image Gen not fully implemented. Using placeholder.');
-      return _generatePlaceholderImage(prompt);
+          '[GeminiImageService] Falling back to Pollinations image generation.');
+      return _pollinationsResult(
+        prompt,
+        note:
+            'Image generation currently uses Pollinations when Gemini is selected.',
+      );
 
       /* 
       // Legacy Nano Banana implementation removed
       */
     } catch (e) {
       debugPrint(
-          '[GeminiImageService] Image generation failed: $e. Using placeholder.');
-      return _generatePlaceholderImage(prompt);
+          '[GeminiImageService] Image generation failed: $e. Trying Pollinations fallback.');
+      try {
+        return _pollinationsResult(
+          prompt,
+          note:
+              'Primary image generation failed, so the free fallback was used instead.',
+        );
+      } catch (_) {
+        return ImageGenerationResult(
+          imageUrl: _generatePlaceholderImage(prompt),
+          backend: ImageGenerationBackend.placeholder,
+          note: 'Image generation failed, so a local placeholder was used.',
+        );
+      }
     }
+  }
+
+  Future<ImageGenerationResult> _pollinationsResult(
+    String prompt, {
+    String? note,
+  }) async {
+    return ImageGenerationResult(
+      imageUrl: await _generateWithPollinations(prompt),
+      backend: ImageGenerationBackend.pollinations,
+      note: note,
+    );
+  }
+
+  Future<String> _generateWithPollinations(String prompt) async {
+    final encodedPrompt = Uri.encodeComponent(prompt);
+    return 'https://image.pollinations.ai/prompt/$encodedPrompt?width=1024&height=1024&nologo=true&model=flux';
   }
 
   /// Generate image using OpenRouter's chat completions with image-capable models

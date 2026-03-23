@@ -128,17 +128,24 @@ class ArtifactNotifier extends StateNotifier<List<Artifact>> {
           debugPrint('[ArtifactProvider] Added background-generated artifact');
         }
 
-        // Clear task
-        await prefs.remove('bg_task_status');
-        await prefs.remove('bg_task_result');
+        // Clear task metadata once the generated artifact is recovered.
+        await prefs.remove('background_task_status');
+        await prefs.remove('background_task_result');
+        await prefs.remove('background_task_progress');
+        await prefs.remove('background_task_error');
+        await prefs.remove('bg_task_type');
+        await prefs.remove('bg_task_id');
+        await prefs.remove('bg_task_title');
+        await prefs.remove('bg_artifact_type');
+        await prefs.remove('bg_notebook_id');
       }
     }
   }
 
   /// Start background generation (for when app may close)
-  /// Note: Background generation currently requires manual API key setup.
-  /// This feature may be deprecated in favor of standard generate() with Backend Proxy.
-  Future<void> generateInBackground(String type, {String? notebookId}) async {
+  /// Uses the same backend proxy flow as normal generation so tasks can
+  /// continue after the app is backgrounded.
+  Future<bool> generateInBackground(String type, {String? notebookId}) async {
     final provider = await _getSelectedProvider();
     final model = await _getSelectedModel();
 
@@ -156,19 +163,19 @@ class ArtifactNotifier extends StateNotifier<List<Artifact>> {
 
     // Save metadata for when task completes
     final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('bg_task_type', 'artifact');
+    await prefs.setString('bg_task_id', taskId);
     await prefs.setString('bg_task_title', _titleForType(type));
     await prefs.setString('bg_artifact_type', type);
     if (notebookId != null) {
       await prefs.setString('bg_notebook_id', notebookId);
     }
 
-    // Note: Background generation uses legacy API key approach
-    // This feature should be migrated to use Backend Proxy in future
-    await backgroundAIService.startGeneration(
+    final started = await backgroundAIService.startGeneration(
       taskType: 'artifact',
       taskId: taskId,
       params: {
-        'apiKey': '', // Backend proxy handles keys now
+        'apiKey': '', // Fallback only; backend proxy handles auth by default.
         'provider': provider,
         'model': model,
         'prompt': prompt,
@@ -176,7 +183,10 @@ class ArtifactNotifier extends StateNotifier<List<Artifact>> {
       },
     );
 
-    debugPrint('[ArtifactProvider] Started background generation: $taskId');
+    debugPrint(
+      '[ArtifactProvider] Background generation ${started ? 'started' : 'failed'}: $taskId',
+    );
+    return started;
   }
 
   String _buildPromptForType(String type, String sourceContent) {

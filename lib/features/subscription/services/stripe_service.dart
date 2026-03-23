@@ -51,15 +51,17 @@ class StripeService {
 
   Future<Map<String, dynamic>?> _createPaymentIntent({
     String? packageId,
+    String? planId,
     double? amount,
     required String currency,
     String? description,
   }) async {
     try {
-      if (packageId == null && amount == null) return null;
+      if (packageId == null && planId == null && amount == null) return null;
 
       final result = await _subscriptionService.createStripePaymentIntent(
         packageId: packageId,
+        planId: planId,
         amount: amount,
         currency: currency,
         description: description,
@@ -157,8 +159,9 @@ class StripeService {
   }
 
   /// Process a generic payment (for plan upgrades)
-  Future<bool> processPayment({
+  Future<String?> processPayment({
     required BuildContext context,
+    String? planId,
     required double amount,
     required String currency,
     required String description,
@@ -172,6 +175,7 @@ class StripeService {
     try {
       // Create payment intent
       final paymentIntent = await _createPaymentIntent(
+        planId: planId,
         currency: currency,
         amount: amount,
         description: description,
@@ -203,11 +207,11 @@ class StripeService {
       // Present payment sheet
       await Stripe.instance.presentPaymentSheet();
 
-      return true;
+      return paymentIntent['paymentIntentId'] as String?;
     } on StripeException catch (e) {
       developer.log('Stripe error: ${e.error.message}', name: 'StripeService');
       if (e.error.code == FailureCode.Canceled) {
-        return false;
+        return null;
       }
       throw Exception(e.error.message ?? 'Payment failed');
     }

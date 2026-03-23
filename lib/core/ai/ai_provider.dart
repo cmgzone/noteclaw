@@ -3,6 +3,7 @@ import 'gemini_service.dart';
 import 'openrouter_service.dart';
 import 'ai_settings_service.dart';
 import '../security/global_credentials_service.dart';
+import '../api/api_service.dart';
 
 enum AIStatus { idle, loading, success, error }
 
@@ -57,6 +58,7 @@ class AINotifier extends StateNotifier<AIState> {
     List<String> context = const [],
     ChatStyle style = ChatStyle.standard,
     List<AIPromptResponse>? externalHistory,
+    String? billingFeature,
   }) async {
     state = state.copyWith(status: AIStatus.loading, clearError: true);
 
@@ -285,21 +287,33 @@ $prompt
 ''';
 
       final Stream<String> stream;
-      if (provider == 'openrouter') {
-        final apiKey = await _getOpenRouterKey();
-        stream = await _openRouterService.generateStream(
-          fullPrompt,
+      if (billingFeature != null && billingFeature.isNotEmpty) {
+        final api = ref.read(apiServiceProvider);
+        stream = api.chatWithAIStream(
+          messages: [
+            {'role': 'user', 'content': fullPrompt}
+          ],
+          provider: provider,
           model: model,
-          apiKey: apiKey,
+          billingFeature: billingFeature,
         );
       } else {
-        // Use Gemini
-        final apiKey = await _getGeminiKey();
-        stream = _geminiService.streamContent(
-          fullPrompt,
-          model: model,
-          apiKey: apiKey,
-        );
+        if (provider == 'openrouter') {
+          final apiKey = await _getOpenRouterKey();
+          stream = await _openRouterService.generateStream(
+            fullPrompt,
+            model: model,
+            apiKey: apiKey,
+          );
+        } else {
+          // Use Gemini
+          final apiKey = await _getGeminiKey();
+          stream = _geminiService.streamContent(
+            fullPrompt,
+            model: model,
+            apiKey: apiKey,
+          );
+        }
       }
 
       final buffer = StringBuffer();

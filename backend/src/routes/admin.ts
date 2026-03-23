@@ -10,6 +10,9 @@ import {
     setPrivacyPolicyContent,
     setTermsOfServiceContent,
 } from '../services/appSettingsService.js';
+import {
+    ensureGooglePlayCatalogColumns,
+} from '../services/googlePlayBillingService.js';
 
 const router = express.Router();
 const SUPPORTED_ADMIN_NOTIFICATION_TYPES = new Set<NotificationType>(['system']);
@@ -27,6 +30,10 @@ function normalizeAdminNotificationType(rawType: unknown): NotificationType {
 // All admin routes require authentication AND admin role
 router.use(authenticateToken);
 router.use(requireAdmin);
+
+async function ensureGooglePlayCatalogReady(): Promise<void> {
+    await ensureGooglePlayCatalogColumns((sql, params) => pool.query(sql, params));
+}
 
 // ==================== AI MODELS ====================
 
@@ -234,6 +241,7 @@ router.delete('/api-keys/:service', async (req: AuthRequest, res: Response) => {
 
 router.get('/plans', async (req: AuthRequest, res: Response) => {
     try {
+        await ensureGooglePlayCatalogReady();
         const result = await pool.query(`
             SELECT sp.*, COUNT(us.id) as subscriber_count
             FROM subscription_plans sp
@@ -250,8 +258,18 @@ router.get('/plans', async (req: AuthRequest, res: Response) => {
 
 router.put('/plans/:id', async (req: AuthRequest, res: Response) => {
     try {
+        await ensureGooglePlayCatalogReady();
         const { id } = req.params;
-        const { name, description, creditsPerMonth, price, isActive, features } = req.body;
+        const {
+            name,
+            description,
+            creditsPerMonth,
+            price,
+            isActive,
+            features,
+            googlePlayProductId,
+            google_play_product_id,
+        } = req.body;
 
         const updates: string[] = [];
         const values: any[] = [];
@@ -263,6 +281,15 @@ router.put('/plans/:id', async (req: AuthRequest, res: Response) => {
         if (price !== undefined) { updates.push(`price = $${paramIndex++}`); values.push(price); }
         if (isActive !== undefined) { updates.push(`is_active = $${paramIndex++}`); values.push(isActive); }
         if (features !== undefined) { updates.push(`features = $${paramIndex++}`); values.push(JSON.stringify(features)); }
+        const playProductId = googlePlayProductId ?? google_play_product_id;
+        if (playProductId !== undefined) {
+            updates.push(`google_play_product_id = $${paramIndex++}`);
+            values.push(
+                typeof playProductId === 'string' && playProductId.trim().length > 0
+                    ? playProductId.trim()
+                    : null,
+            );
+        }
 
         if (updates.length === 0) {
             return res.status(400).json({ error: 'No updates provided' });
@@ -289,13 +316,34 @@ router.put('/plans/:id', async (req: AuthRequest, res: Response) => {
 
 router.post('/plans', async (req: AuthRequest, res: Response) => {
     try {
-        const { name, description, creditsPerMonth, price, isActive, isFreePlan } = req.body;
+        await ensureGooglePlayCatalogReady();
+        const {
+            name,
+            description,
+            creditsPerMonth,
+            price,
+            isActive,
+            isFreePlan,
+            googlePlayProductId,
+            google_play_product_id,
+        } = req.body;
+        const playProductId = googlePlayProductId ?? google_play_product_id;
 
         const result = await pool.query(`
-            INSERT INTO subscription_plans (name, description, credits_per_month, price, is_active, is_free_plan)
-            VALUES ($1, $2, $3, $4, $5, $6)
+            INSERT INTO subscription_plans (name, description, credits_per_month, price, is_active, is_free_plan, google_play_product_id)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
             RETURNING *
-        `, [name, description, creditsPerMonth || 30, price || 0, isActive ?? true, isFreePlan ?? false]);
+        `, [
+            name,
+            description,
+            creditsPerMonth || 30,
+            price || 0,
+            isActive ?? true,
+            isFreePlan ?? false,
+            typeof playProductId === 'string' && playProductId.trim().length > 0
+                ? playProductId.trim()
+                : null,
+        ]);
 
         res.json({ success: true, plan: result.rows[0] });
     } catch (error) {
@@ -543,6 +591,7 @@ router.get('/stats', async (req: AuthRequest, res: Response) => {
 
 router.get('/packages', async (req: AuthRequest, res: Response) => {
     try {
+        await ensureGooglePlayCatalogReady();
         const result = await pool.query('SELECT * FROM credit_packages ORDER BY price ASC');
         res.json({ success: true, packages: result.rows });
     } catch (error) {
@@ -553,13 +602,23 @@ router.get('/packages', async (req: AuthRequest, res: Response) => {
 
 router.post('/packages', async (req: AuthRequest, res: Response) => {
     try {
-        const { name, credits, price, isActive } = req.body;
+        await ensureGooglePlayCatalogReady();
+        const { name, credits, price, isActive, googlePlayProductId, google_play_product_id } = req.body;
+        const playProductId = googlePlayProductId ?? google_play_product_id;
 
         const result = await pool.query(`
-            INSERT INTO credit_packages (name, credits, price, is_active)
-            VALUES ($1, $2, $3, $4)
+            INSERT INTO credit_packages (name, credits, price, is_active, google_play_product_id)
+            VALUES ($1, $2, $3, $4, $5)
             RETURNING *
-        `, [name, credits, price, isActive ?? true]);
+        `, [
+            name,
+            credits,
+            price,
+            isActive ?? true,
+            typeof playProductId === 'string' && playProductId.trim().length > 0
+                ? playProductId.trim()
+                : null,
+        ]);
 
         res.json({ success: true, package: result.rows[0] });
     } catch (error) {
@@ -570,14 +629,25 @@ router.post('/packages', async (req: AuthRequest, res: Response) => {
 
 router.put('/packages/:id', async (req: AuthRequest, res: Response) => {
     try {
-        const { name, credits, price, isActive } = req.body;
+        await ensureGooglePlayCatalogReady();
+        const { name, credits, price, isActive, googlePlayProductId, google_play_product_id } = req.body;
+        const playProductId = googlePlayProductId ?? google_play_product_id;
 
         const result = await pool.query(`
             UPDATE credit_packages 
-            SET name = $1, credits = $2, price = $3, is_active = $4
-            WHERE id = $5
+            SET name = $1, credits = $2, price = $3, is_active = $4, google_play_product_id = $5
+            WHERE id = $6
             RETURNING *
-        `, [name, credits, price, isActive, req.params.id]);
+        `, [
+            name,
+            credits,
+            price,
+            isActive,
+            typeof playProductId === 'string' && playProductId.trim().length > 0
+                ? playProductId.trim()
+                : null,
+            req.params.id,
+        ]);
 
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Package not found' });

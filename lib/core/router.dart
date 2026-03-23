@@ -44,7 +44,6 @@ import '../features/infographics/infographics_list_screen.dart';
 import '../features/meal_planner/meal_planner_screen.dart';
 import '../features/story_generator/story_generator_screen.dart';
 import '../features/ads/ads_generator_screen.dart';
-import '../features/wellness/wellness_screen.dart';
 import '../features/tutor/tutor_sessions_screen.dart';
 import '../features/tutor/ai_tutor_screen.dart';
 import '../features/gamification/gamification_hub_screen.dart';
@@ -341,12 +340,6 @@ GoRouter createRouter(bool hasSeenOnboarding, ProviderContainer container) {
             pageBuilder: (context, state) =>
                 buildTransitionPage(child: const AdsGeneratorScreen()),
           ),
-          GoRoute(
-            path: '/wellness',
-            name: 'wellness',
-            pageBuilder: (context, state) =>
-                buildTransitionPage(child: const WellnessScreen()),
-          ),
           // Gamification routes
           GoRoute(
             path: '/progress',
@@ -611,8 +604,15 @@ GoRouter createRouter(bool hasSeenOnboarding, ProviderContainer container) {
       GoRoute(
         path: '/visual-studio',
         name: 'visual-studio',
-        pageBuilder: (context, state) =>
-            buildTransitionPage(child: const VisualStudioScreen()),
+        pageBuilder: (context, state) {
+          final extra = state.extra as Map<String, dynamic>?;
+          return buildTransitionPage(
+            child: VisualStudioScreen(
+              notebookId: extra?['notebookId'] as String?,
+              notebookTitle: extra?['notebookTitle'] as String?,
+            ),
+          );
+        },
       ),
       GoRoute(
         path: '/artifact',
@@ -630,8 +630,15 @@ GoRouter createRouter(bool hasSeenOnboarding, ProviderContainer container) {
       GoRoute(
         path: '/ebook-creator',
         name: 'ebook-creator',
-        pageBuilder: (context, state) =>
-            buildTransitionPage(child: const EbookCreatorWizard()),
+        pageBuilder: (context, state) {
+          final extra = state.extra as Map<String, dynamic>?;
+          return buildTransitionPage(
+            child: EbookCreatorWizard(
+              initialNotebookId: extra?['notebookId'] as String?,
+              initialNotebookTitle: extra?['notebookTitle'] as String?,
+            ),
+          );
+        },
       ),
       GoRoute(
         path: '/ebooks',

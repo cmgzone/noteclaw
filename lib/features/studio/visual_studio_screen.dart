@@ -1,17 +1,27 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:http/http.dart' as http;
 import '../../core/ai/gemini_image_service.dart';
-import '../../core/security/global_credentials_service.dart';
 import '../../core/ai/ai_settings_service.dart';
+import '../../core/security/ai_api_key_resolver.dart';
+import '../sources/source_provider.dart';
 
 class VisualStudioScreen extends ConsumerStatefulWidget {
-  const VisualStudioScreen({super.key});
+  const VisualStudioScreen({
+    super.key,
+    this.notebookId,
+    this.notebookTitle,
+  });
+
+  final String? notebookId;
+  final String? notebookTitle;
 
   @override
   ConsumerState<VisualStudioScreen> createState() => _VisualStudioScreenState();
@@ -20,11 +30,40 @@ class VisualStudioScreen extends ConsumerStatefulWidget {
 class _VisualStudioScreenState extends ConsumerState<VisualStudioScreen> {
   final _promptController = TextEditingController();
   String? _generatedImageUrl;
+  String? _providerLabel;
+  String? _modelLabel;
+  String? _backendLabel;
+  String? _backendNote;
+  String? _keySourceLabel;
   bool _isGenerating = false;
 
+  @override
+  void initState() {
+    super.initState();
+    _loadImageRoutePreview();
+  }
+
+  @override
+  void dispose() {
+    _promptController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadImageRoutePreview() async {
+    final route = await _resolveImageRoute();
+    if (!mounted) return;
+    setState(() {
+      _providerLabel = route.providerLabel;
+      _modelLabel = route.modelLabel;
+      _backendLabel = route.backendLabel;
+      _backendNote = route.note;
+      _keySourceLabel = route.keySourceLabel;
+    });
+  }
+
   void _generateImage() async {
-    final prompt = _promptController.text.trim();
-    if (prompt.isEmpty) return;
+    final rawPrompt = _promptController.text.trim();
+    if (rawPrompt.isEmpty) return;
 
     setState(() {
       _isGenerating = true;
@@ -32,32 +71,28 @@ class _VisualStudioScreenState extends ConsumerState<VisualStudioScreen> {
     });
 
     try {
-      final settings =
-          await AISettingsService.getSettingsWithDefault(ref.read);
-      final provider = settings.provider;
-      final model = settings.model;
-      final creds = ref.read(globalCredentialsServiceProvider);
+      final prompt = _buildPromptWithNotebookContext(rawPrompt);
+      final settings = await AISettingsService.getSettingsWithDefault(ref.read);
+      final route = await _resolveImageRoute(
+        providerOverride: settings.provider,
+        modelOverride: settings.model,
+      );
 
-      String? apiKey;
-      if (provider == 'openrouter') {
-        apiKey = await creds.getApiKey('openrouter');
-      } else {
-        apiKey = await creds.getApiKey('gemini');
-      }
-
-      if (apiKey == null || apiKey.isEmpty) {
-        throw Exception(
-            'API key not found for $provider. Please set it in Settings.');
-      }
-
-      final imageService = GeminiImageService(apiKey: apiKey);
-      // Pass provider and model to generateImage
-      final url = await imageService.generateImage(prompt,
-          provider: provider, model: model);
+      final imageService = GeminiImageService(apiKey: route.apiKey);
+      final result = await imageService.generateImageResult(
+        prompt,
+        provider: settings.provider,
+        model: settings.model,
+      );
 
       if (mounted) {
         setState(() {
-          _generatedImageUrl = url;
+          _generatedImageUrl = result.imageUrl;
+          _providerLabel = route.providerLabel;
+          _modelLabel = route.modelLabel;
+          _backendLabel = result.backendLabel;
+          _backendNote = result.note ?? route.note;
+          _keySourceLabel = route.displayKeySourceLabelFor(result.backend);
           _isGenerating = false;
         });
       }
@@ -71,13 +106,80 @@ class _VisualStudioScreenState extends ConsumerState<VisualStudioScreen> {
     }
   }
 
+  String _buildPromptWithNotebookContext(String prompt) {
+    final notebookId = widget.notebookId;
+    final notebookTitle = (widget.notebookTitle ?? '').trim();
+    if (notebookId == null || notebookId.isEmpty) {
+      return prompt;
+    }
+
+    final sources = ref
+        .read(sourceProvider)
+        .where((source) => source.notebookId == notebookId)
+        .take(4)
+        .toList();
+
+    if (sources.isEmpty) {
+      return 'Create an image for the notebook "$notebookTitle". User request: $prompt';
+    }
+
+    final contextLines = sources.map((source) {
+      final snippet = source.content.replaceAll(RegExp(r'\s+'), ' ').trim();
+      final preview = snippet.length > 180 ? '${snippet.substring(0, 180)}...' : snippet;
+      return '- ${source.title}: $preview';
+    }).join('\n');
+
+    return '''
+Create an image grounded in the notebook "$notebookTitle".
+Use the notebook context as inspiration, but follow the user's request closely.
+
+Notebook context:
+$contextLines
+
+User request:
+$prompt
+''';
+  }
+
+  bool _isRemoteImage(String value) {
+    return value.startsWith('http://') || value.startsWith('https://');
+  }
+
+  bool _isDataImage(String value) {
+    return value.startsWith('data:image/');
+  }
+
+  bool _isSvgDataImage(String value) {
+    return value.startsWith('data:image/svg+xml');
+  }
+
+  Future<Uint8List> _readGeneratedImageBytes(String imageValue) async {
+    if (_isDataImage(imageValue)) {
+      final parts = imageValue.split(',');
+      if (parts.length < 2) {
+        throw Exception('Invalid image data received');
+      }
+      return base64Decode(parts.last);
+    }
+
+    if (_isRemoteImage(imageValue)) {
+      final response = await http.get(Uri.parse(imageValue)).timeout(
+            const Duration(seconds: 60),
+          );
+      if (response.statusCode != 200) {
+        throw Exception('Failed to download generated image');
+      }
+      return response.bodyBytes;
+    }
+
+    throw Exception('Unsupported image format');
+  }
+
   Future<void> _saveAndShareImage() async {
     if (_generatedImageUrl == null) return;
 
     try {
-      // Extract base64 data from data URL
-      final base64Data = _generatedImageUrl!.split(',')[1];
-      final bytes = base64Decode(base64Data);
+      final bytes = await _readGeneratedImageBytes(_generatedImageUrl!);
 
       // Get temporary directory
       final tempDir = await getTemporaryDirectory();
@@ -122,12 +224,48 @@ class _VisualStudioScreenState extends ConsumerState<VisualStudioScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            if (widget.notebookTitle != null &&
+                widget.notebookTitle!.trim().isNotEmpty) ...[
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: scheme.primary.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: scheme.primary.withValues(alpha: 0.14),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      LucideIcons.bookOpen,
+                      size: 18,
+                      color: scheme.primary,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Using notebook: ${widget.notebookTitle}',
+                        style: text.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+            _buildRoutingCard(scheme, text),
+            const SizedBox(height: 16),
             // Prompt Input
             TextField(
               controller: _promptController,
               maxLines: 3,
               decoration: InputDecoration(
-                hintText: 'Describe the image you want to generate...',
+                hintText: widget.notebookTitle != null
+                    ? 'Describe the image you want to create from this notebook...'
+                    : 'Describe the image you want to generate...',
                 border:
                     OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                 filled: true,
@@ -183,19 +321,38 @@ class _VisualStudioScreenState extends ConsumerState<VisualStudioScreen> {
     }
 
     if (_generatedImageUrl != null) {
-      // Decode base64 image for display
-      final base64Data = _generatedImageUrl!.split(',')[1];
-      final bytes = base64Decode(base64Data);
-
       return ClipRRect(
         borderRadius: BorderRadius.circular(16),
         child: Stack(
           fit: StackFit.expand,
           children: [
-            Image.memory(
-              bytes,
-              fit: BoxFit.cover,
-            ),
+            if (_isRemoteImage(_generatedImageUrl!))
+              Image.network(
+                _generatedImageUrl!,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => _buildImageFallback(
+                  scheme,
+                  text,
+                  'Generated image preview is unavailable.',
+                ),
+              )
+            else if (_isDataImage(_generatedImageUrl!) &&
+                !_isSvgDataImage(_generatedImageUrl!))
+              Image.memory(
+                base64Decode(_generatedImageUrl!.split(',').last),
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => _buildImageFallback(
+                  scheme,
+                  text,
+                  'Generated image preview is unavailable.',
+                ),
+              )
+            else
+              _buildImageFallback(
+                scheme,
+                text,
+                'Image generated. Use share to export the result.',
+              ),
             Positioned(
               bottom: 16,
               right: 16,
@@ -219,6 +376,218 @@ class _VisualStudioScreenState extends ConsumerState<VisualStudioScreen> {
           style: text.titleMedium?.copyWith(color: scheme.outline),
         ),
       ],
+    );
+  }
+
+  Widget _buildImageFallback(
+    ColorScheme scheme,
+    TextTheme text,
+    String message,
+  ) {
+    return Container(
+      color: scheme.surfaceContainerHighest.withValues(alpha: 0.3),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(LucideIcons.image, size: 56, color: scheme.primary),
+          const SizedBox(height: 12),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Text(
+              message,
+              textAlign: TextAlign.center,
+              style: text.bodyMedium?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRoutingCard(ColorScheme scheme, TextTheme text) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.24),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: scheme.outline.withValues(alpha: 0.12),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                LucideIcons.sparkles,
+                size: 16,
+                color: scheme.primary,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Image generation path',
+                style: text.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _RouteChip(label: 'Provider', value: _providerLabel ?? 'Loading'),
+              _RouteChip(label: 'Model', value: _modelLabel ?? 'Loading'),
+              _RouteChip(label: 'Backend', value: _backendLabel ?? 'Loading'),
+              _RouteChip(label: 'Key', value: _keySourceLabel ?? 'Loading'),
+            ],
+          ),
+          if (_backendNote != null && _backendNote!.trim().isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Text(
+              _backendNote!,
+              style: text.bodySmall?.copyWith(
+                color: scheme.onSurfaceVariant,
+                height: 1.35,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Future<_VisualStudioImageRoute> _resolveImageRoute({
+    String? providerOverride,
+    String? modelOverride,
+  }) async {
+    final settings = await AISettingsService.getSettingsWithDefault(ref.read);
+    final provider = (providerOverride ?? settings.provider).trim();
+    final model = (modelOverride ?? settings.model ?? '').trim();
+    final resolvedKey =
+        await ref.read(aiApiKeyResolverProvider).resolveForProvider(provider);
+
+    final providerLabel = _formatProviderLabel(provider);
+    final modelLabel = model.isEmpty ? 'No model selected' : model;
+
+    if (provider == 'openrouter') {
+      if (model.isEmpty) {
+        return _VisualStudioImageRoute(
+          apiKey: resolvedKey.apiKey,
+          hasDirectApiKey: resolvedKey.hasKey,
+          providerLabel: providerLabel,
+          modelLabel: modelLabel,
+          backendLabel: 'Pollinations fallback',
+          keySourceLabel:
+              resolvedKey.hasKey ? resolvedKey.sourceLabel : 'No API key',
+          note:
+              'Select an image-capable OpenRouter model to use direct image generation here.',
+        );
+      }
+
+      return _VisualStudioImageRoute(
+        apiKey: resolvedKey.apiKey,
+        hasDirectApiKey: resolvedKey.hasKey,
+        providerLabel: providerLabel,
+        modelLabel: modelLabel,
+        backendLabel:
+            resolvedKey.hasKey ? 'OpenRouter' : 'Pollinations fallback',
+        keySourceLabel:
+            resolvedKey.hasKey ? resolvedKey.sourceLabel : 'No API key',
+        note: resolvedKey.hasKey
+            ? 'OpenRouter image generation will use ${resolvedKey.sourceLabel.toLowerCase()}.'
+            : 'No OpenRouter key is available, so the free fallback will be used for images.',
+      );
+    }
+
+    return _VisualStudioImageRoute(
+      apiKey: resolvedKey.apiKey,
+      hasDirectApiKey: false,
+      providerLabel: providerLabel,
+      modelLabel: modelLabel,
+      backendLabel: 'Pollinations fallback',
+      keySourceLabel: 'Not used',
+      note:
+          'Image generation currently uses Pollinations when Gemini is selected.',
+    );
+  }
+
+  String _formatProviderLabel(String provider) {
+    switch (provider) {
+      case 'openrouter':
+        return 'OpenRouter';
+      case 'gemini':
+        return 'Gemini';
+      default:
+        if (provider.isEmpty) {
+          return 'Unknown';
+        }
+        return '${provider[0].toUpperCase()}${provider.substring(1)}';
+    }
+  }
+}
+
+class _VisualStudioImageRoute {
+  const _VisualStudioImageRoute({
+    required this.providerLabel,
+    required this.modelLabel,
+    required this.backendLabel,
+    required this.keySourceLabel,
+    required this.hasDirectApiKey,
+    this.apiKey,
+    this.note,
+  });
+
+  final String? apiKey;
+  final String providerLabel;
+  final String modelLabel;
+  final String backendLabel;
+  final String keySourceLabel;
+  final bool hasDirectApiKey;
+  final String? note;
+
+  String displayKeySourceLabelFor(ImageGenerationBackend backend) {
+    if (backend == ImageGenerationBackend.openRouter) {
+      return keySourceLabel;
+    }
+    if (hasDirectApiKey) {
+      return keySourceLabel;
+    }
+    return keySourceLabel;
+  }
+}
+
+class _RouteChip extends StatelessWidget {
+  const _RouteChip({
+    required this.label,
+    required this.value,
+  });
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: scheme.surface.withValues(alpha: 0.9),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: scheme.outline.withValues(alpha: 0.12),
+        ),
+      ),
+      child: Text(
+        '$label: $value',
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+      ),
     );
   }
 }

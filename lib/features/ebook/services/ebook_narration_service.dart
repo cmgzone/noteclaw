@@ -137,53 +137,7 @@ class EbookNarrationService extends StateNotifier<NarrationStatus> {
   }
 
   String _cleanContentForNarration(String content) {
-    // Remove markdown formatting more thoroughly
-    String cleaned = content;
-
-    // Remove headers (lines starting with # symbols)
-    cleaned = cleaned.replaceAll(RegExp(r'^#{1,6}\s*', multiLine: true), '');
-
-    // Remove any remaining hash symbols that might be inline
-    cleaned = cleaned.replaceAll(RegExp(r'#'), '');
-
-    // Remove bold formatting
-    cleaned = cleaned.replaceAll(RegExp(r'\*\*(.+?)\*\*'), r'$1');
-
-    // Remove italic formatting
-    cleaned = cleaned.replaceAll(RegExp(r'\*(.+?)\*'), r'$1');
-    cleaned = cleaned.replaceAll(RegExp(r'_(.+?)_'), r'$1');
-
-    // Remove code blocks
-    cleaned = cleaned.replaceAll(RegExp(r'```[\s\S]*?```'), '');
-
-    // Remove inline code
-    cleaned = cleaned.replaceAll(RegExp(r'`(.+?)`'), r'$1');
-
-    // Remove links but keep text
-    cleaned = cleaned.replaceAll(RegExp(r'\[(.+?)\]\(.+?\)'), r'$1');
-
-    // Remove images
-    cleaned = cleaned.replaceAll(RegExp(r'!\[.*?\]\(.+?\)'), '');
-
-    // Remove horizontal rules
-    cleaned =
-        cleaned.replaceAll(RegExp(r'^[-*_]{3,}\s*$', multiLine: true), '');
-
-    // Remove list markers
-    cleaned = cleaned.replaceAll(RegExp(r'^\s*[-*+]\s+', multiLine: true), '');
-    cleaned = cleaned.replaceAll(RegExp(r'^\s*\d+\.\s+', multiLine: true), '');
-
-    // Remove blockquotes
-    cleaned = cleaned.replaceAll(RegExp(r'^\s*>\s*', multiLine: true), '');
-
-    // Remove remaining special characters that TTS might read literally
-    cleaned = cleaned.replaceAll(RegExp(r'[*_~`]'), '');
-
-    // Clean up excessive whitespace
-    cleaned = cleaned.replaceAll(RegExp(r'\n{3,}'), '\n\n');
-    cleaned = cleaned.replaceAll(RegExp(r' {2,}'), ' ');
-
-    return cleaned.trim();
+    return VoiceService.sanitizeNarrationText(content);
   }
 
   List<String> _splitIntoChunks(String text, int maxLength) {

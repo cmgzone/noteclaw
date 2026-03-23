@@ -881,6 +881,9 @@ class ApiService {
     required List<Map<String, dynamic>> messages,
     String provider = 'gemini',
     String? model,
+    String? billingFeature,
+    bool useDeepSearch = false,
+    bool hasImage = false,
     Duration receiveTimeout = _defaultChatTimeout,
     Duration sendTimeout = _defaultChatTimeout,
   }) async {
@@ -892,6 +895,9 @@ class ApiService {
         'messages': messages,
         'provider': provider,
         if (model != null) 'model': model,
+        if (billingFeature != null) 'billingFeature': billingFeature,
+        'useDeepSearch': useDeepSearch,
+        'hasImage': hasImage,
       },
       receiveTimeout: receiveTimeout,
       sendTimeout: sendTimeout,
@@ -930,6 +936,7 @@ class ApiService {
     required List<Map<String, dynamic>> messages,
     String provider = 'gemini',
     String? model,
+    String? billingFeature,
     bool useDeepSearch = false,
     bool hasImage = false,
   }) async* {
@@ -944,7 +951,9 @@ class ApiService {
           'messages': messages,
           'provider': provider,
           if (model != null) 'model': model,
+          if (billingFeature != null) 'billingFeature': billingFeature,
           'useDeepSearch': useDeepSearch,
+          'hasImage': hasImage,
         },
         options: Options(
           responseType: ResponseType.stream,
@@ -1321,8 +1330,25 @@ class ApiService {
     });
   }
 
+  Future<Map<String, dynamic>> verifyGooglePlayPurchase({
+    required String purchaseType,
+    required String internalId,
+    required String productId,
+    required String purchaseToken,
+    String? purchaseId,
+  }) async {
+    return await post<Map<String, dynamic>>('/subscriptions/google-play/verify', {
+      'purchaseType': purchaseType,
+      'internalId': internalId,
+      'productId': productId,
+      'purchaseToken': purchaseToken,
+      if (purchaseId != null) 'purchaseId': purchaseId,
+    });
+  }
+
   Future<Map<String, dynamic>> createStripePaymentIntent({
     String? packageId,
+    String? planId,
     double? amount,
     String currency = 'USD',
     String? description,
@@ -1331,6 +1357,7 @@ class ApiService {
       '/subscriptions/create-payment-intent',
       {
         if (packageId != null) 'packageId': packageId,
+        if (planId != null) 'planId': planId,
         if (amount != null) 'amount': amount,
         'currency': currency,
         if (description != null) 'description': description,
@@ -1775,6 +1802,53 @@ class ApiService {
   }
 
   // ============ ONBOARDING ============
+
+  Future<List<Map<String, dynamic>>> getAdminSubscriptionPlans() async {
+    final response = await get<Map<String, dynamic>>('/admin/plans');
+    return List<Map<String, dynamic>>.from(response['plans'] ?? []);
+  }
+
+  Future<Map<String, dynamic>> createAdminSubscriptionPlan(
+      Map<String, dynamic> data) async {
+    final response = await post<Map<String, dynamic>>('/admin/plans', data);
+    return Map<String, dynamic>.from(response['plan'] ?? {});
+  }
+
+  Future<Map<String, dynamic>> updateAdminSubscriptionPlan(
+    String id,
+    Map<String, dynamic> data,
+  ) async {
+    final response = await put<Map<String, dynamic>>('/admin/plans/$id', data);
+    return Map<String, dynamic>.from(response['plan'] ?? {});
+  }
+
+  Future<void> deleteAdminSubscriptionPlan(String id) async {
+    await delete('/admin/plans/$id');
+  }
+
+  Future<List<Map<String, dynamic>>> getAdminCreditPackages() async {
+    final response = await get<Map<String, dynamic>>('/admin/packages');
+    return List<Map<String, dynamic>>.from(response['packages'] ?? []);
+  }
+
+  Future<Map<String, dynamic>> createAdminCreditPackage(
+      Map<String, dynamic> data) async {
+    final response = await post<Map<String, dynamic>>('/admin/packages', data);
+    return Map<String, dynamic>.from(response['package'] ?? {});
+  }
+
+  Future<Map<String, dynamic>> updateAdminCreditPackage(
+    String id,
+    Map<String, dynamic> data,
+  ) async {
+    final response =
+        await put<Map<String, dynamic>>('/admin/packages/$id', data);
+    return Map<String, dynamic>.from(response['package'] ?? {});
+  }
+
+  Future<void> deleteAdminCreditPackage(String id) async {
+    await delete('/admin/packages/$id');
+  }
 
   Future<List<Map<String, dynamic>>> getOnboardingScreens() async {
     final response = await get<Map<String, dynamic>>('/admin/onboarding');

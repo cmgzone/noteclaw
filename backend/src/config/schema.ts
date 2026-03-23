@@ -250,12 +250,12 @@ export async function seedDefaultData() {
         if (parseInt(plansResult.rows[0].count) === 0) {
             await client.query(`
                 INSERT INTO subscription_plans (
-                  name, credits_per_month, price, is_free_plan, features,
+                  name, credits_per_month, price, is_free_plan, google_play_product_id, features,
                   notes_limit, mcp_sources_limit, mcp_tokens_limit, mcp_api_calls_per_day
                 ) VALUES
-                ('Free', 50, 0, true, '["Local API keys supported", "100 notes", "MCP: 10 sources, 3 tokens, 100 calls/day"]', 100, 10, 3, 100),
-                ('Pro', 1000, 9.99, false, '["More notes", "MCP: 200 sources, 10 tokens, 2000 calls/day"]', 1000, 200, 10, 2000),
-                ('Ultra', 5000, 29.99, false, '["Highest limits", "MCP: 1000 sources, 25 tokens, 10000 calls/day"]', 10000, 1000, 25, 10000)
+                ('Free', 50, 0, true, NULL, '["Local API keys supported", "100 notes", "MCP: 10 sources, 3 tokens, 100 calls/day"]', 100, 10, 3, 100),
+                ('Pro', 1000, 9.99, false, 'noteclaw_pro_monthly', '["More notes", "MCP: 200 sources, 10 tokens, 2000 calls/day"]', 1000, 200, 10, 2000),
+                ('Ultra', 5000, 29.99, false, 'noteclaw_ultra_monthly', '["Highest limits", "MCP: 1000 sources, 25 tokens, 10000 calls/day"]', 10000, 1000, 25, 10000)
             `);
             console.log('✅ Default subscription plans created');
         }
@@ -264,11 +264,11 @@ export async function seedDefaultData() {
         const packagesResult = await client.query('SELECT COUNT(*) FROM credit_packages');
         if (parseInt(packagesResult.rows[0].count) === 0) {
             await client.query(`
-                INSERT INTO credit_packages (name, credits, price) VALUES
-                ('Starter Pack', 100, 1.99),
-                ('Value Pack', 500, 7.99),
-                ('Pro Pack', 2000, 24.99),
-                ('Ultimate Pack', 10000, 99.99)
+                INSERT INTO credit_packages (name, credits, price, google_play_product_id) VALUES
+                ('Starter Pack', 100, 1.99, 'noteclaw_credits_starter'),
+                ('Value Pack', 500, 7.99, 'noteclaw_credits_value'),
+                ('Pro Pack', 2000, 24.99, 'noteclaw_credits_pro'),
+                ('Ultimate Pack', 10000, 99.99, 'noteclaw_credits_ultimate')
             `);
             console.log('✅ Default credit packages created');
         }

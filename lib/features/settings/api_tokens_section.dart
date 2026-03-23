@@ -515,7 +515,7 @@ class ApiTokensSection extends ConsumerWidget {
             alignment: WrapAlignment.center,
             spacing: 8,
             runSpacing: 8,
-            children: const [
+            children: [
               _McpTagChip(
                 icon: LucideIcons.download,
                 label: 'GitHub Install',
@@ -1422,7 +1422,8 @@ class McpUsageDashboard extends ConsumerWidget {
                 message: state.error!,
                 accentColor: const Color(0xFFF59E0B),
                 actionLabel: 'Retry',
-                onAction: () => ref.read(mcpInsightsProvider.notifier).refresh(),
+                onAction: () =>
+                    ref.read(mcpInsightsProvider.notifier).refresh(),
               ),
             ],
           ],
@@ -1893,7 +1894,7 @@ class _McpConfigInstructionsState extends State<McpConfigInstructions> {
                   const Wrap(
                     spacing: 8,
                     runSpacing: 8,
-                    children: const [
+                    children: [
                       _McpTagChip(
                         icon: Icons.cloud_download_outlined,
                         label: 'GitHub Release',

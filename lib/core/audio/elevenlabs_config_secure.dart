@@ -1,5 +1,6 @@
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../security/ai_api_key_resolver.dart';
 import '../security/global_credentials_service.dart';
 
 /// Secure ElevenLabs configuration that uses encrypted credentials from database
@@ -20,28 +21,30 @@ class ElevenLabsConfigSecure {
     'pNInz6obpgDQGcFmaJgB': 'Adam (Male)',
   };
 
-  // Default model - most reliable and widely supported
-  static const String freeModel = 'eleven_monolingual_v1';
+  // Default model tuned for stable long-form narration.
+  static const String freeModel = 'eleven_multilingual_v2';
 
-  // Available models (2025) - Verified working model IDs
-  // Note: Some models require paid plans or specific access
+  // Current model IDs from ElevenLabs docs.
   static const Map<String, String> models = {
-    'eleven_monolingual_v1': 'Monolingual v1 (English, Most Stable)',
-    'eleven_multilingual_v1': 'Multilingual v1 (29 Languages)',
     'eleven_multilingual_v2': 'Multilingual v2 (High Quality)',
-    'eleven_turbo_v2': 'Turbo v2 (Fast)',
+    'eleven_flash_v2_5': 'Flash v2.5 (Lowest Latency)',
+    'eleven_turbo_v2_5': 'Turbo v2.5 (Balanced)',
+    'eleven_turbo_v2': 'Turbo v2',
+    'eleven_flash_v2': 'Flash v2',
+    'eleven_v3': 'Eleven v3 (Expressive)',
   };
 
   /// Get API key - first try database (encrypted), then fall back to .env
   Future<String> getApiKey() async {
     try {
-      final credService = ref.read(globalCredentialsServiceProvider);
-      final dbKey = await credService.getApiKey('elevenlabs');
-      if (dbKey != null && dbKey.isNotEmpty) {
-        return dbKey;
+      final resolvedKey =
+          await ref.read(aiApiKeyResolverProvider).resolveForService('elevenlabs');
+      final apiKey = (resolvedKey.apiKey ?? '').trim();
+      if (apiKey.isNotEmpty) {
+        return apiKey;
       }
     } catch (e) {
-      // Fall back to .env if database fails
+      // Fall back to .env if credential lookup fails
     }
 
     return dotenv.env['ELEVENLABS_API_KEY'] ?? '';

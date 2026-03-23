@@ -22,12 +22,14 @@ class SubscriptionService {
 
   Future<Map<String, dynamic>> createStripePaymentIntent({
     String? packageId,
+    String? planId,
     double? amount,
     String currency = 'USD',
     String? description,
   }) async {
     return await _api.createStripePaymentIntent(
       packageId: packageId,
+      planId: planId,
       amount: amount,
       currency: currency,
       description: description,
@@ -115,6 +117,22 @@ class SubscriptionService {
       paymentMethod: paymentMethod,
     );
     return result['success'] == true;
+  }
+
+  Future<Map<String, dynamic>> verifyGooglePlayPurchase({
+    required String purchaseType,
+    required String internalId,
+    required String productId,
+    required String purchaseToken,
+    String? purchaseId,
+  }) async {
+    return await _api.verifyGooglePlayPurchase(
+      purchaseType: purchaseType,
+      internalId: internalId,
+      productId: productId,
+      purchaseToken: purchaseToken,
+      purchaseId: purchaseId,
+    );
   }
 
   /// Check and renew subscription if needed

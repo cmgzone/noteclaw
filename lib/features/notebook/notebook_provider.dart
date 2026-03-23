@@ -6,6 +6,8 @@ import '../../core/auth/custom_auth_service.dart';
 import '../../core/api/api_service.dart';
 import '../../core/services/activity_logger_service.dart';
 
+final notebookInitialLoadCompleteProvider = StateProvider<bool>((ref) => false);
+
 class NotebookNotifier extends StateNotifier<List<Notebook>> {
   NotebookNotifier(this.ref) : super([]) {
     _init();
@@ -24,9 +26,13 @@ class NotebookNotifier extends StateNotifier<List<Notebook>> {
       debugPrint(
           '🔔 isAuthenticated: ${next.isAuthenticated}, user: ${next.user?.uid}');
       if (next.isAuthenticated && !_isLoading) {
+        ref.read(notebookInitialLoadCompleteProvider.notifier).state = false;
         debugPrint(
             '🔄 Auth state changed to authenticated, reloading notebooks...');
         loadNotebooks();
+      } else if (!next.isAuthenticated) {
+        ref.read(notebookInitialLoadCompleteProvider.notifier).state = true;
+        if (mounted) state = [];
       }
     });
 
@@ -44,6 +50,7 @@ class NotebookNotifier extends StateNotifier<List<Notebook>> {
       // Don't load yet - wait for auth state change
     } else {
       debugPrint('❌ Not authenticated, skipping notebook load');
+      ref.read(notebookInitialLoadCompleteProvider.notifier).state = true;
     }
   }
 
@@ -54,6 +61,7 @@ class NotebookNotifier extends StateNotifier<List<Notebook>> {
     }
 
     _isLoading = true;
+    ref.read(notebookInitialLoadCompleteProvider.notifier).state = false;
 
     try {
       final authState = ref.read(customAuthStateProvider);
@@ -85,6 +93,7 @@ class NotebookNotifier extends StateNotifier<List<Notebook>> {
         if (!mounted) return; // Guard added
         state = [];
         _isLoading = false;
+        ref.read(notebookInitialLoadCompleteProvider.notifier).state = true;
         return;
       }
 
@@ -145,6 +154,7 @@ class NotebookNotifier extends StateNotifier<List<Notebook>> {
       // Don't reset state on error - keep existing notebooks
     } finally {
       _isLoading = false;
+      ref.read(notebookInitialLoadCompleteProvider.notifier).state = true;
     }
   }
 

@@ -440,6 +440,7 @@ class _EnhancedSourcesScreenState extends ConsumerState<EnhancedSourcesScreen> {
       await ref.read(aiProvider.notifier).generateContent(
             'Based on these sources, please provide a comprehensive research response to: $query',
             context: sourceContext,
+            billingFeature: 'chat_message',
           );
     } catch (e) {
       if (!mounted) return;

@@ -2,6 +2,7 @@ import 'dart:developer' as developer;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/auth/custom_auth_service.dart';
 import '../services/subscription_service.dart';
+import '../services/google_play_billing_service.dart';
 import '../models/subscription_model.dart';
 import '../models/credit_package_model.dart';
 import '../models/credit_transaction_model.dart';
@@ -104,4 +105,12 @@ final subscriptionPlansProvider =
     FutureProvider<List<Map<String, dynamic>>>((ref) async {
   final service = ref.watch(subscriptionServiceProvider);
   return await service.getPublicPlans();
+});
+
+final googlePlayCatalogProvider =
+    FutureProvider<GooglePlayBillingCatalog>((ref) async {
+  final billing = ref.watch(googlePlayBillingServiceProvider);
+  final plans = await ref.watch(subscriptionPlansProvider.future);
+  final packages = await ref.watch(creditPackagesProvider.future);
+  return billing.loadCatalog(plans: plans, packages: packages);
 });

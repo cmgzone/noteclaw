@@ -331,6 +331,7 @@ Return ONLY a JSON array with this format:
       messages: messages,
       provider: settings.provider,
       model: model,
+      billingFeature: 'meal_plan',
     );
   }
 

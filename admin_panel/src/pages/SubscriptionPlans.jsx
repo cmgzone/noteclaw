@@ -14,7 +14,8 @@ export default function SubscriptionPlans() {
         credits_per_month: 30,
         price: 0,
         is_active: true,
-        is_free_plan: false
+        is_free_plan: false,
+        google_play_product_id: ''
     });
 
     useEffect(() => {
@@ -44,7 +45,10 @@ export default function SubscriptionPlans() {
                     creditsPerMonth: formData.credits_per_month,
                     price: formData.price,
                     isActive: formData.is_active,
-                    isFreePlan: formData.is_free_plan
+                    isFreePlan: formData.is_free_plan,
+                    googlePlayProductId: formData.is_free_plan
+                        ? null
+                        : (formData.google_play_product_id?.trim() || null)
                 });
             } else {
                 await api.createPlan({
@@ -53,7 +57,10 @@ export default function SubscriptionPlans() {
                     creditsPerMonth: formData.credits_per_month,
                     price: formData.price,
                     isActive: formData.is_active,
-                    isFreePlan: formData.is_free_plan
+                    isFreePlan: formData.is_free_plan,
+                    googlePlayProductId: formData.is_free_plan
+                        ? null
+                        : (formData.google_play_product_id?.trim() || null)
                 });
             }
 
@@ -87,7 +94,8 @@ export default function SubscriptionPlans() {
             credits_per_month: plan.credits_per_month,
             price: plan.price,
             is_active: plan.is_active,
-            is_free_plan: plan.is_free_plan
+            is_free_plan: plan.is_free_plan,
+            google_play_product_id: plan.google_play_product_id || ''
         });
         setShowForm(true);
     };
@@ -99,7 +107,8 @@ export default function SubscriptionPlans() {
             credits_per_month: 30,
             price: 0,
             is_active: true,
-            is_free_plan: false
+            is_free_plan: false,
+            google_play_product_id: ''
         });
         setEditingPlan(null);
         setShowForm(false);
@@ -129,7 +138,9 @@ export default function SubscriptionPlans() {
                 <div className="flex items-center justify-between">
                     <div>
                         <h1 className="text-3xl font-bold mb-2">Subscription Plans</h1>
-                        <p className="text-muted-foreground">Manage subscription tiers and pricing</p>
+                        <p className="text-muted-foreground">
+                            Manage subscription tiers, pricing, and Google Play product mappings
+                        </p>
                     </div>
                     <button
                         onClick={() => setShowForm(!showForm)}
@@ -192,7 +203,13 @@ export default function SubscriptionPlans() {
                                     <input
                                         type="checkbox"
                                         checked={formData.is_free_plan}
-                                        onChange={(e) => setFormData({ ...formData, is_free_plan: e.target.checked })}
+                                        onChange={(e) => setFormData({
+                                            ...formData,
+                                            is_free_plan: e.target.checked,
+                                            google_play_product_id: e.target.checked
+                                                ? ''
+                                                : formData.google_play_product_id
+                                        })}
                                         className="rounded"
                                     />
                                     <span className="text-sm">Free Plan</span>
@@ -207,6 +224,22 @@ export default function SubscriptionPlans() {
                                 className="w-full rounded-md border border-border bg-background p-2"
                                 rows={3}
                             />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium mb-1">Google Play Product ID</label>
+                            <input
+                                type="text"
+                                value={formData.google_play_product_id}
+                                onChange={(e) => setFormData({ ...formData, google_play_product_id: e.target.value })}
+                                className="w-full rounded-md border border-border bg-background p-2 font-mono text-sm"
+                                placeholder={formData.is_free_plan ? 'Leave blank for free plan' : 'noteclaw_pro_monthly'}
+                                disabled={formData.is_free_plan}
+                            />
+                            <p className="mt-1 text-xs text-muted-foreground">
+                                {formData.is_free_plan
+                                    ? 'Free plans do not need a Google Play product.'
+                                    : 'Must match the subscription product ID created in Google Play Console.'}
+                            </p>
                         </div>
                         <div className="flex gap-2">
                             <button
@@ -259,6 +292,20 @@ export default function SubscriptionPlans() {
                             {plan.description && (
                                 <p className="text-sm text-muted-foreground">{plan.description}</p>
                             )}
+                            <div className="mt-3 space-y-1">
+                                {plan.google_play_product_id ? (
+                                    <div className="rounded-md bg-secondary/60 px-3 py-2">
+                                        <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                                            Google Play Product
+                                        </div>
+                                        <div className="font-mono text-sm">{plan.google_play_product_id}</div>
+                                    </div>
+                                ) : !plan.is_free_plan ? (
+                                    <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+                                        No Google Play product ID mapped yet. Android billing will not match this paid plan until you add one.
+                                    </div>
+                                ) : null}
+                            </div>
                         </div>
 
                         <div className="flex gap-2 pt-4 border-t border-border">

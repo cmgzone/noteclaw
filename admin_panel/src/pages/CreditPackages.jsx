@@ -13,7 +13,8 @@ export default function CreditPackages() {
         description: '',
         credits: 100,
         price: 4.99,
-        is_active: true
+        is_active: true,
+        google_play_product_id: ''
     });
 
     useEffect(() => {
@@ -42,7 +43,8 @@ export default function CreditPackages() {
                     description: formData.description,
                     credits: formData.credits,
                     price: formData.price,
-                    isActive: formData.is_active
+                    isActive: formData.is_active,
+                    googlePlayProductId: formData.google_play_product_id?.trim() || null
                 });
             } else {
                 await api.createCreditPackage({
@@ -50,7 +52,8 @@ export default function CreditPackages() {
                     description: formData.description,
                     credits: formData.credits,
                     price: formData.price,
-                    isActive: formData.is_active
+                    isActive: formData.is_active,
+                    googlePlayProductId: formData.google_play_product_id?.trim() || null
                 });
             }
 
@@ -83,7 +86,8 @@ export default function CreditPackages() {
             description: pkg.description || '',
             credits: pkg.credits,
             price: pkg.price,
-            is_active: pkg.is_active
+            is_active: pkg.is_active,
+            google_play_product_id: pkg.google_play_product_id || ''
         });
         setShowForm(true);
     };
@@ -94,7 +98,8 @@ export default function CreditPackages() {
             description: '',
             credits: 100,
             price: 4.99,
-            is_active: true
+            is_active: true,
+            google_play_product_id: ''
         });
         setEditingPackage(null);
         setShowForm(false);
@@ -129,7 +134,9 @@ export default function CreditPackages() {
                 <div className="flex items-center justify-between">
                     <div>
                         <h1 className="text-3xl font-bold mb-2">Credit Packages</h1>
-                        <p className="text-muted-foreground">Manage one-time credit purchase options</p>
+                        <p className="text-muted-foreground">
+                            Manage one-time credit purchase options and Google Play product mappings
+                        </p>
                     </div>
                     <button
                         onClick={() => setShowForm(!showForm)}
@@ -189,6 +196,19 @@ export default function CreditPackages() {
                             />
                         </div>
                         <div>
+                            <label className="block text-sm font-medium mb-1">Google Play Product ID</label>
+                            <input
+                                type="text"
+                                value={formData.google_play_product_id}
+                                onChange={(e) => setFormData({ ...formData, google_play_product_id: e.target.value })}
+                                className="w-full rounded-md border border-border bg-background p-2 font-mono text-sm"
+                                placeholder="noteclaw_credits_starter"
+                            />
+                            <p className="mt-1 text-xs text-muted-foreground">
+                                Must match the one-time in-app product ID created in Google Play Console.
+                            </p>
+                        </div>
+                        <div>
                             <label className="flex items-center gap-2">
                                 <input
                                     type="checkbox"
@@ -246,6 +266,20 @@ export default function CreditPackages() {
                             {pkg.description && (
                                 <p className="text-sm text-muted-foreground">{pkg.description}</p>
                             )}
+                            <div className="mt-3">
+                                {pkg.google_play_product_id ? (
+                                    <div className="rounded-md bg-secondary/60 px-3 py-2">
+                                        <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                                            Google Play Product
+                                        </div>
+                                        <div className="font-mono text-sm">{pkg.google_play_product_id}</div>
+                                    </div>
+                                ) : (
+                                    <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+                                        No Google Play product ID mapped yet. Android users will not be able to buy this package through Play Billing until you add one.
+                                    </div>
+                                )}
+                            </div>
                             <div className="mt-3 text-xs text-muted-foreground">
                                 ${(pkg.price / pkg.credits).toFixed(4)} per credit
                             </div>

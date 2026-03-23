@@ -1,5 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../core/security/global_credentials_service.dart';
+import '../../../core/security/ai_api_key_resolver.dart';
 import '../models/ebook_project.dart';
 
 class EbookAudiobookService {
@@ -8,9 +8,10 @@ class EbookAudiobookService {
   EbookAudiobookService(this.ref);
 
   Future<List<String>> generateAudiobook(EbookProject project) async {
-    final creds = ref.read(globalCredentialsServiceProvider);
-    final apiKey = await creds.getApiKey('elevenlabs');
-    if (apiKey == null || apiKey.isEmpty) {
+    final resolvedKey =
+        await ref.read(aiApiKeyResolverProvider).resolveForService('elevenlabs');
+    final apiKey = (resolvedKey.apiKey ?? '').trim();
+    if (apiKey.isEmpty) {
       throw Exception('ElevenLabs API key not found');
     }
 

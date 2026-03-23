@@ -1,15 +1,35 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:math';
 import 'dart:ui';
+import 'package:crypto/crypto.dart';
+import 'package:encrypt/encrypt.dart' as encrypt;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:record/record.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
-import 'dart:convert';
-import 'dart:math';
+
+const String _defaultApiBaseUrl = 'https://noteclaw.onrender.com/api/';
+const String _accessTokenKey = 'auth_token';
+const String _accessTokenBackupKey = 'auth_token_backup';
+const String _refreshTokenKey = 'refresh_token';
+const String _refreshTokenBackupKey = 'refresh_token_backup';
+const String _authUserDataKey = 'auth_user_data';
+const String _authUserDataBackupKey = 'auth_user_data_backup';
+const String _backgroundNotificationChannelId = 'noteclaw_background';
+const String _backgroundNotificationChannelName = 'Background Processing';
+const String _backgroundNotificationChannelDescription =
+    'Notifications for AI processing tasks';
+
+const FlutterSecureStorage _backgroundSecureStorage = FlutterSecureStorage(
+  aOptions: AndroidOptions(encryptedSharedPreferences: true),
+  iOptions: IOSOptions(accessibility: KeychainAccessibility.first_unlock),
+);
 
 /// Background AI Service for continuing generation when app is closed
 class BackgroundAIService {
@@ -94,14 +114,11 @@ class BackgroundAIService {
           onStart: onStart,
           isForegroundMode: true,
           autoStartOnBoot: false,
-          notificationChannelId: 'noteclaw_background',
+          notificationChannelId: _backgroundNotificationChannelId,
           initialNotificationTitle: 'NoteClaw',
           initialNotificationContent: 'AI processing in background',
           foregroundServiceNotificationId: 888,
-          foregroundServiceTypes: [
-            AndroidForegroundType.dataSync,
-            AndroidForegroundType.microphone,
-          ],
+          foregroundServiceTypes: [AndroidForegroundType.dataSync],
         ),
       );
 
@@ -127,9 +144,9 @@ class BackgroundAIService {
 
     // Create notification channel for Android
     const channel = AndroidNotificationChannel(
-      'notebook_llm_background',
-      'Background Processing',
-      description: 'Notifications for AI processing tasks',
+      _backgroundNotificationChannelId,
+      _backgroundNotificationChannelName,
+      description: _backgroundNotificationChannelDescription,
       importance: Importance.low,
       showBadge: false,
     );
@@ -152,6 +169,15 @@ class BackgroundAIService {
     }
 
     try {
+      if (!_isInitialized) {
+        await initialize();
+      }
+
+      if (!_isInitialized) {
+        _logError(taskType, 'Background service is not initialized');
+        return false;
+      }
+
       final prefs = await SharedPreferences.getInstance();
 
       // Clear previous task data
@@ -188,6 +214,12 @@ class BackgroundAIService {
     required bool alwaysListening,
     String? deepgramApiKey,
   }) async {
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+      debugPrint(
+          '[BackgroundAI] Background wake word mode is disabled in this Android build');
+      return false;
+    }
+
     if (!_isEnabled) {
       debugPrint('[BackgroundAI] Background execution disabled');
       return false;
@@ -262,9 +294,9 @@ class BackgroundAIService {
       content,
       NotificationDetails(
         android: AndroidNotificationDetails(
-          'notebook_llm_background',
-          'Background Processing',
-          channelDescription: 'AI processing tasks',
+          _backgroundNotificationChannelId,
+          _backgroundNotificationChannelName,
+          channelDescription: _backgroundNotificationChannelDescription,
           importance: Importance.low,
           priority: Priority.low,
           ongoing: true,
@@ -285,6 +317,31 @@ class BackgroundAIService {
       debugPrint('[BackgroundAI] Service stopped');
     } catch (e) {
       debugPrint('[BackgroundAI] Error stopping service: $e');
+    }
+  }
+
+  Future<void> cancelActiveTask() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_taskStatusKey, 'cancelled');
+      await prefs.setInt(_taskProgressKey, 0);
+      await prefs.remove(_taskErrorKey);
+      await prefs.remove('background_task_type');
+      await prefs.remove('background_task_id');
+      await prefs.remove('background_task_params');
+      await prefs.remove(_taskResultKey);
+      await prefs.remove('bg_task_type');
+      await prefs.remove('bg_task_id');
+      await prefs.remove('bg_task_title');
+      await prefs.remove('bg_artifact_type');
+      await prefs.remove('bg_notebook_id');
+      _service.invoke('stopService');
+      await _notifications.cancel(888);
+      await _notifications.cancel(889);
+      await _notifications.cancel(890);
+      debugPrint('[BackgroundAI] Active task cancelled');
+    } catch (e) {
+      debugPrint('[BackgroundAI] Error cancelling task: $e');
     }
   }
 
@@ -446,9 +503,9 @@ Future<void> _showCompletionNotification(
     content,
     const NotificationDetails(
       android: AndroidNotificationDetails(
-        'notebook_llm_background',
-        'Background Processing',
-        channelDescription: 'AI processing tasks',
+        _backgroundNotificationChannelId,
+        _backgroundNotificationChannelName,
+        channelDescription: _backgroundNotificationChannelDescription,
         importance: Importance.defaultImportance,
         priority: Priority.defaultPriority,
         icon: '@mipmap/ic_launcher',
@@ -468,9 +525,9 @@ Future<void> _showErrorNotification(
     content,
     const NotificationDetails(
       android: AndroidNotificationDetails(
-        'notebook_llm_background',
-        'Background Processing',
-        channelDescription: 'AI processing tasks',
+        _backgroundNotificationChannelId,
+        _backgroundNotificationChannelName,
+        channelDescription: _backgroundNotificationChannelDescription,
         importance: Importance.high,
         priority: Priority.high,
         icon: '@mipmap/ic_launcher',
@@ -490,9 +547,9 @@ Future<void> _showWakeWordNotification(
     'Listening for "$phrase"...',
     const NotificationDetails(
       android: AndroidNotificationDetails(
-        'notebook_llm_background',
-        'Background Processing',
-        channelDescription: 'AI processing tasks',
+        _backgroundNotificationChannelId,
+        _backgroundNotificationChannelName,
+        channelDescription: _backgroundNotificationChannelDescription,
         importance: Importance.low,
         priority: Priority.low,
         ongoing: true,
@@ -688,6 +745,275 @@ Future<bool> onIosBackground(ServiceInstance service) async {
   return true;
 }
 
+String _normalizeBackgroundApiBaseUrl(String url) {
+  final trimmed = url.trim();
+  return trimmed.endsWith('/') ? trimmed : '$trimmed/';
+}
+
+String _resolveBackgroundApiBaseUrl() {
+  final envUrl = dotenv.env['API_BASE_URL'];
+  if (envUrl != null && envUrl.trim().isNotEmpty) {
+    return _normalizeBackgroundApiBaseUrl(envUrl);
+  }
+  return _defaultApiBaseUrl;
+}
+
+encrypt.Key _backgroundEncryptionKey(String userId) {
+  final hash = sha256.convert(utf8.encode('${userId}notebook_llm_secret_salt'));
+  return encrypt.Key(Uint8List.fromList(hash.bytes));
+}
+
+String _decryptBackgroundCredential(String encryptedValue, String userId) {
+  try {
+    final key = _backgroundEncryptionKey(userId);
+    final combined = base64Decode(encryptedValue);
+    final iv = encrypt.IV(Uint8List.fromList(combined.sublist(0, 16)));
+    final encryptedBytes = Uint8List.fromList(combined.sublist(16));
+    final encrypter = encrypt.Encrypter(encrypt.AES(key));
+    return encrypter.decrypt(
+      encrypt.Encrypted(encryptedBytes),
+      iv: iv,
+    );
+  } catch (_) {
+    return encryptedValue;
+  }
+}
+
+Future<String?> _readSecureOrBackup({
+  required SharedPreferences prefs,
+  required String secureKey,
+  required String backupKey,
+}) async {
+  try {
+    final secureValue = await _backgroundSecureStorage.read(key: secureKey);
+    if (secureValue != null && secureValue.isNotEmpty) {
+      return secureValue;
+    }
+  } catch (_) {}
+
+  final backupValue = prefs.getString(backupKey);
+  if (backupValue != null && backupValue.isNotEmpty) {
+    return backupValue;
+  }
+  return null;
+}
+
+Future<String?> _getBackgroundAccessToken(SharedPreferences prefs) async {
+  return _readSecureOrBackup(
+    prefs: prefs,
+    secureKey: _accessTokenKey,
+    backupKey: _accessTokenBackupKey,
+  );
+}
+
+Future<String?> _getBackgroundRefreshToken(SharedPreferences prefs) async {
+  return _readSecureOrBackup(
+    prefs: prefs,
+    secureKey: _refreshTokenKey,
+    backupKey: _refreshTokenBackupKey,
+  );
+}
+
+Future<String?> _getBackgroundUserId(SharedPreferences prefs) async {
+  final rawUserData = await _readSecureOrBackup(
+    prefs: prefs,
+    secureKey: _authUserDataKey,
+    backupKey: _authUserDataBackupKey,
+  );
+  if (rawUserData == null || rawUserData.isEmpty) {
+    return null;
+  }
+
+  try {
+    final data = jsonDecode(rawUserData) as Map<String, dynamic>;
+    final id = (data['id'] ?? data['uid'])?.toString().trim();
+    return (id == null || id.isEmpty) ? null : id;
+  } catch (_) {
+    return null;
+  }
+}
+
+String _resolveBackgroundCredentialService({
+  required String provider,
+  String? modelId,
+}) {
+  final normalizedProvider = provider.trim().toLowerCase();
+  final normalizedModel = (modelId ?? '').trim().toLowerCase();
+
+  if (normalizedModel.startsWith('gemini')) {
+    return 'gemini';
+  }
+
+  if (normalizedModel.contains('/') ||
+      normalizedModel.startsWith('gpt-') ||
+      normalizedModel.startsWith('claude-') ||
+      normalizedModel.startsWith('meta-')) {
+    return 'openrouter';
+  }
+
+  if (normalizedProvider == 'openrouter' ||
+      normalizedProvider == 'openai' ||
+      normalizedProvider == 'anthropic') {
+    return 'openrouter';
+  }
+
+  return normalizedProvider;
+}
+
+Future<String?> _getBackgroundByokKey(
+  SharedPreferences prefs, {
+  required String provider,
+  String? model,
+}) async {
+  final userId = await _getBackgroundUserId(prefs);
+  if (userId == null || userId.isEmpty) {
+    return null;
+  }
+
+  final service = _resolveBackgroundCredentialService(
+    provider: provider,
+    modelId: model,
+  );
+
+  try {
+    final stored = await _backgroundSecureStorage.read(
+      key: 'user_${userId}_$service',
+    );
+    if (stored == null || stored.isEmpty) {
+      return null;
+    }
+    final decrypted = _decryptBackgroundCredential(stored, userId).trim();
+    return decrypted.isEmpty ? null : decrypted;
+  } catch (_) {
+    return null;
+  }
+}
+
+Future<String?> _refreshBackgroundAccessToken(SharedPreferences prefs) async {
+  final refreshToken = await _getBackgroundRefreshToken(prefs);
+  if (refreshToken == null || refreshToken.isEmpty) {
+    return null;
+  }
+
+  final response = await http
+      .post(
+        Uri.parse('${_resolveBackgroundApiBaseUrl()}auth/refresh'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'refreshToken': refreshToken}),
+      )
+      .timeout(const Duration(seconds: 30));
+
+  if (response.statusCode != 200 && response.statusCode != 201) {
+    return null;
+  }
+
+  final data = jsonDecode(response.body) as Map<String, dynamic>;
+  final accessToken = (data['accessToken'] ?? '').toString().trim();
+  if (accessToken.isEmpty) {
+    return null;
+  }
+
+  try {
+    await _backgroundSecureStorage.write(
+        key: _accessTokenKey, value: accessToken);
+  } catch (_) {}
+  await prefs.setString(_accessTokenBackupKey, accessToken);
+  return accessToken;
+}
+
+Future<String> _callBackendChatAPI({
+  required SharedPreferences prefs,
+  required String provider,
+  required String model,
+  required String prompt,
+  String? byokKey,
+}) async {
+  Future<http.Response> send(String token) {
+    return http
+        .post(
+          Uri.parse('${_resolveBackgroundApiBaseUrl()}ai/chat'),
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $token',
+            if (byokKey != null && byokKey.trim().isNotEmpty)
+              'X-User-Api-Key': byokKey.trim(),
+          },
+          body: jsonEncode({
+            'messages': [
+              {'role': 'user', 'content': prompt}
+            ],
+            'provider': provider,
+            'model': model,
+          }),
+        )
+        .timeout(const Duration(minutes: 5));
+  }
+
+  var token = await _getBackgroundAccessToken(prefs);
+  if (token == null || token.isEmpty) {
+    token = await _refreshBackgroundAccessToken(prefs);
+  }
+  if (token == null || token.isEmpty) {
+    throw Exception('Background AI requires an authenticated session');
+  }
+
+  var response = await send(token);
+  if (response.statusCode == 401) {
+    final refreshedToken = await _refreshBackgroundAccessToken(prefs);
+    if (refreshedToken != null && refreshedToken.isNotEmpty) {
+      response = await send(refreshedToken);
+    }
+  }
+
+  if (response.statusCode != 200) {
+    throw Exception(
+      'Background chat failed: ${response.statusCode} - ${response.body}',
+    );
+  }
+
+  final data = jsonDecode(response.body) as Map<String, dynamic>;
+  final result = data['response']?.toString() ?? '';
+  if (result.trim().isEmpty) {
+    throw Exception('Background chat returned an empty response');
+  }
+
+  return result;
+}
+
+Future<String> _runBackgroundGenerationRequest({
+  required SharedPreferences prefs,
+  required String provider,
+  required String model,
+  required String prompt,
+  String? directApiKey,
+}) async {
+  final byokKey = await _getBackgroundByokKey(
+    prefs,
+    provider: provider,
+    model: model,
+  );
+
+  try {
+    return await _callBackendChatAPI(
+      prefs: prefs,
+      provider: provider,
+      model: model,
+      prompt: prompt,
+      byokKey: byokKey,
+    );
+  } catch (error) {
+    final trimmedDirectKey = (directApiKey ?? '').trim();
+    if (trimmedDirectKey.isEmpty) {
+      rethrow;
+    }
+
+    if (provider == 'openrouter') {
+      return _callOpenRouterAPI(trimmedDirectKey, model, prompt);
+    }
+    return _callGeminiAPI(trimmedDirectKey, model, prompt);
+  }
+}
+
 /// Generate artifact in background
 Future<void> _generateArtifactInBackground(
   Map<String, dynamic> params,
@@ -700,18 +1026,19 @@ Future<void> _generateArtifactInBackground(
   final model = params['model'] as String?;
   final provider = params['provider'] as String? ?? 'gemini';
 
-  if (prompt == null || apiKey == null || model == null) {
-    throw Exception('Missing required parameters (prompt, apiKey, or model)');
+  if (prompt == null || prompt.trim().isEmpty || model == null) {
+    throw Exception('Missing required parameters (prompt or model)');
   }
 
   await _showProgressNotification(notifications, 'Generating artifact...', 30);
 
-  String result;
-  if (provider == 'openrouter') {
-    result = await _callOpenRouterAPI(apiKey, model, prompt);
-  } else {
-    result = await _callGeminiAPI(apiKey, model, prompt);
-  }
+  final result = await _runBackgroundGenerationRequest(
+    prefs: prefs,
+    provider: provider,
+    model: model,
+    prompt: prompt,
+    directApiKey: apiKey,
+  );
 
   await _showProgressNotification(notifications, 'Saving result...', 90);
   await prefs.setString('background_task_result', result);
@@ -727,16 +1054,23 @@ Future<void> _generateEbookChapterInBackground(
   final prompt = params['prompt'] as String?;
   final apiKey = params['apiKey'] as String?;
   final model = params['model'] as String?;
+  final provider = params['provider'] as String? ?? 'gemini';
   final chapterNumber = params['chapterNumber'] as int? ?? 1;
 
-  if (prompt == null || apiKey == null || model == null) {
-    throw Exception('Missing required parameters (prompt, apiKey, or model)');
+  if (prompt == null || prompt.trim().isEmpty || model == null) {
+    throw Exception('Missing required parameters (prompt or model)');
   }
 
   await _showProgressNotification(
       notifications, 'Writing chapter $chapterNumber...', 30);
 
-  final result = await _callGeminiAPI(apiKey, model, prompt);
+  final result = await _runBackgroundGenerationRequest(
+    prefs: prefs,
+    provider: provider,
+    model: model,
+    prompt: prompt,
+    directApiKey: apiKey,
+  );
 
   await _showProgressNotification(notifications, 'Saving chapter...', 90);
   await prefs.setString('background_task_result', result);
@@ -755,8 +1089,8 @@ Future<void> _runResearchInBackground(
   final model = params['model'] as String?;
   final provider = params['provider'] as String? ?? 'gemini';
 
-  if (query == null || apiKey == null || model == null) {
-    throw Exception('Missing required parameters (query, apiKey, or model)');
+  if (query == null || query.trim().isEmpty || model == null) {
+    throw Exception('Missing required parameters (query or model)');
   }
 
   await _showProgressNotification(notifications, 'Researching: $query', 30);
@@ -776,12 +1110,13 @@ Provide comprehensive information including:
 Format your response in clear, organized markdown.
 ''';
 
-  final String result;
-  if (provider == 'openrouter') {
-    result = await _callOpenRouterAPI(apiKey, model, prompt);
-  } else {
-    result = await _callGeminiAPI(apiKey, model, prompt);
-  }
+  final result = await _runBackgroundGenerationRequest(
+    prefs: prefs,
+    provider: provider,
+    model: model,
+    prompt: prompt,
+    directApiKey: apiKey,
+  );
 
   await _showProgressNotification(notifications, 'Saving research...', 90);
   await prefs.setString('background_task_result', result);

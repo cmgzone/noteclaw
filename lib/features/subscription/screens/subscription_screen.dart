@@ -1,9 +1,11 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/auth/custom_auth_service.dart';
 import '../../../core/security/global_credentials_service.dart';
 
 import '../providers/subscription_provider.dart';
+import '../services/google_play_billing_service.dart';
 import '../services/subscription_service.dart';
 import '../services/paypal_service.dart';
 import '../services/stripe_service.dart';
@@ -32,6 +34,10 @@ class SubscriptionScreen extends ConsumerStatefulWidget {
 class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
   bool _paypalInitialized = false;
   bool _stripeInitialized = false;
+  bool _googlePlayInitialized = false;
+
+  bool get _usesGooglePlayBilling =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
   @override
   void initState() {
@@ -40,6 +46,20 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
   }
 
   Future<void> _initPaymentServices() async {
+    if (_usesGooglePlayBilling) {
+      try {
+        await ref.read(googlePlayBillingServiceProvider).initialize();
+        if (mounted) {
+          setState(() => _googlePlayInitialized = true);
+        }
+      } catch (_) {
+        if (mounted) {
+          setState(() => _googlePlayInitialized = false);
+        }
+      }
+      return;
+    }
+
     // Initialize PayPal
     final paypal = ref.read(paypalServiceProvider);
     await paypal.initialize();
@@ -60,6 +80,8 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
   Widget build(BuildContext context) {
     final subscription = ref.watch(userSubscriptionProvider);
     final packages = ref.watch(creditPackagesProvider);
+    final googlePlayCatalog =
+        _usesGooglePlayBilling ? ref.watch(googlePlayCatalogProvider) : null;
     final authState = ref.watch(customAuthStateProvider);
     final user = authState.user;
 
@@ -164,26 +186,89 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
                         );
                       }
 
+                      final playCatalog = googlePlayCatalog?.valueOrNull;
+                      final playCanPurchase = !_usesGooglePlayBilling ||
+                          (_googlePlayInitialized &&
+                              playCatalog?.canPurchase == true);
+
                       return Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: Wrap(
-                          spacing: 12,
-                          runSpacing: 12,
-                          children: packageList
-                              .map((pkg) => _CreditPackageCard(
-                                    package: pkg,
-                                    paypalReady: _paypalInitialized &&
-                                        ref
-                                            .read(paypalServiceProvider)
-                                            .isConfigured,
-                                    onPurchase: () {
-                                      if (user != null) {
-                                        _purchasePackage(
-                                            context, pkg, user.uid);
-                                      }
-                                    },
-                                  ))
-                              .toList(),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (_usesGooglePlayBilling &&
+                                googlePlayCatalog != null &&
+                                googlePlayCatalog.hasError)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 12),
+                                child: Text(
+                                  'Google Play products are not ready yet: ${googlePlayCatalog.error}',
+                                  style: const TextStyle(color: Colors.red),
+                                ),
+                              ),
+                            if (_usesGooglePlayBilling)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 12),
+                                child: Text(
+                                  playCanPurchase
+                                      ? 'Android purchases are processed securely with Google Play.'
+                                      : 'Google Play products are still loading or not configured yet.',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .bodySmall
+                                      ?.copyWith(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onSurface
+                                            .withValues(alpha: 0.7),
+                                      ),
+                                ),
+                              ),
+                            Wrap(
+                              spacing: 12,
+                              runSpacing: 12,
+                              children: packageList
+                                  .map((pkg) => _CreditPackageCard(
+                                        package: pkg,
+                                        purchaseEnabled: _usesGooglePlayBilling
+                                            ? playCanPurchase &&
+                                                pkg.googlePlayProductId !=
+                                                    null &&
+                                                playCatalog?.productDetailsById[pkg
+                                                        .googlePlayProductId!] !=
+                                                    null
+                                            : (_paypalInitialized &&
+                                                    ref
+                                                        .read(
+                                                            paypalServiceProvider)
+                                                        .isConfigured) ||
+                                                (_stripeInitialized &&
+                                                    ref
+                                                        .read(
+                                                            stripeServiceProvider)
+                                                        .isConfigured),
+                                        priceLabel: _usesGooglePlayBilling
+                                            ? (pkg.googlePlayProductId == null
+                                                    ? null
+                                                    : playCatalog
+                                                        ?.productDetailsById[pkg
+                                                            .googlePlayProductId!]
+                                                        ?.price) ??
+                                                '\$${pkg.price.toStringAsFixed(2)}'
+                                            : '\$${pkg.price.toStringAsFixed(2)}',
+                                        buttonLabel: _usesGooglePlayBilling
+                                            ? 'Buy with Play'
+                                            : 'Buy',
+                                        onPurchase: () {
+                                          if (user != null) {
+                                            _purchasePackage(
+                                                context, pkg, user.uid);
+                                          }
+                                        },
+                                      ))
+                                  .toList(),
+                            ),
+                          ],
                         ),
                       );
                     },
@@ -218,6 +303,11 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
 
   void _purchasePackage(
       BuildContext context, CreditPackageModel package, String userId) {
+    if (_usesGooglePlayBilling) {
+      _processGooglePlayPackagePayment(context, package, userId);
+      return;
+    }
+
     final paypal = ref.read(paypalServiceProvider);
     final stripe = ref.read(stripeServiceProvider);
 
@@ -251,6 +341,42 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
       paypalAvailable: paypalAvailable,
       stripeAvailable: stripeAvailable,
     );
+  }
+
+  Future<void> _processGooglePlayPackagePayment(
+    BuildContext context,
+    CreditPackageModel package,
+    String userId,
+  ) async {
+    try {
+      final billing = ref.read(googlePlayBillingServiceProvider);
+      final result = await billing.purchaseCreditPackage(
+        package: package,
+        userId: userId,
+      );
+
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            result.alreadyProcessed
+                ? '${package.credits} credits were already applied to your account.'
+                : 'Successfully purchased ${package.credits} credits with Google Play!',
+          ),
+          backgroundColor: Colors.green,
+        ),
+      );
+      ref.invalidate(userSubscriptionProvider);
+      ref.invalidate(transactionHistoryProvider(userId));
+    } catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Google Play purchase failed: $error'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   void _showPaymentMethodDialog(
@@ -700,12 +826,16 @@ class _CurrentPlanCard extends StatelessWidget {
 
 class _CreditPackageCard extends StatelessWidget {
   final CreditPackageModel package;
-  final bool paypalReady;
+  final bool purchaseEnabled;
+  final String priceLabel;
+  final String buttonLabel;
   final VoidCallback onPurchase;
 
   const _CreditPackageCard({
     required this.package,
-    required this.paypalReady,
+    required this.purchaseEnabled,
+    required this.priceLabel,
+    required this.buttonLabel,
     required this.onPurchase,
   });
 
@@ -743,7 +873,7 @@ class _CreditPackageCard extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              '\$${package.price.toStringAsFixed(2)}',
+              priceLabel,
               style: const TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.w600,
@@ -761,16 +891,16 @@ class _CreditPackageCard extends StatelessWidget {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: onPurchase,
+                onPressed: purchaseEnabled ? onPurchase : null,
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 12),
                 ),
-                child: const Row(
+                child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(Icons.payment, size: 18),
-                    SizedBox(width: 6),
-                    Text('Buy'),
+                    const Icon(Icons.payment, size: 18),
+                    const SizedBox(width: 6),
+                    Text(buttonLabel),
                   ],
                 ),
               ),
@@ -952,6 +1082,8 @@ class _AvailablePlansSection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final plansAsync = ref.watch(subscriptionPlansProvider);
+    final googlePlayCatalog =
+        supportsGooglePlayBilling ? ref.watch(googlePlayCatalogProvider) : null;
     final scheme = Theme.of(context).colorScheme;
 
     return Column(
@@ -1001,6 +1133,18 @@ class _AvailablePlansSection extends ConsumerWidget {
               );
             }
 
+            String? currentPlanProductId;
+            for (final plan in plans) {
+              if (plan['id'].toString() == currentPlanId) {
+                currentPlanProductId =
+                    plan['google_play_product_id'] as String?;
+                break;
+              }
+            }
+            final playCatalog = googlePlayCatalog?.valueOrNull;
+            final canUseGooglePlay =
+                !supportsGooglePlayBilling || playCatalog?.canPurchase == true;
+
             return SizedBox(
               height: 220,
               child: ListView.builder(
@@ -1029,6 +1173,14 @@ class _AvailablePlansSection extends ConsumerWidget {
                   } else if (plan['price'] is String) {
                     price = double.tryParse(plan['price']) ?? 0.0;
                   }
+                  final playProductId =
+                      plan['google_play_product_id'] as String?;
+                  final playStorePrice = playProductId == null
+                      ? null
+                      : playCatalog?.productDetailsById[playProductId]?.price;
+                  final displayPrice = supportsGooglePlayBilling
+                      ? playStorePrice ?? '\$${price.toStringAsFixed(2)}/mo'
+                      : '\$${price.toStringAsFixed(2)}/mo';
 
                   return Container(
                     width: 180,
@@ -1088,9 +1240,7 @@ class _AvailablePlansSection extends ConsumerWidget {
                             ),
                             const Spacer(),
                             Text(
-                              isFree
-                                  ? 'FREE'
-                                  : '\$${price.toStringAsFixed(2)}/mo',
+                              isFree ? 'FREE' : displayPrice,
                               style: TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w600,
@@ -1120,20 +1270,27 @@ class _AvailablePlansSection extends ConsumerWidget {
                               SizedBox(
                                 width: double.infinity,
                                 child: ElevatedButton(
-                                  onPressed: () => _showUpgradeDialog(
-                                    context,
-                                    ref,
-                                    planId,
-                                    plan['name'] as String? ?? 'Plan',
-                                    price,
-                                    creditsPerMonth,
-                                    userId,
-                                  ),
+                                  onPressed: supportsGooglePlayBilling &&
+                                          !canUseGooglePlay
+                                      ? null
+                                      : () => _showUpgradeDialog(
+                                            context,
+                                            ref,
+                                            plan,
+                                            price,
+                                            creditsPerMonth,
+                                            userId,
+                                            currentPlanProductId,
+                                          ),
                                   style: ElevatedButton.styleFrom(
                                     padding:
                                         const EdgeInsets.symmetric(vertical: 8),
                                   ),
-                                  child: const Text('Upgrade'),
+                                  child: Text(
+                                    supportsGooglePlayBilling
+                                        ? 'Upgrade with Play'
+                                        : 'Upgrade',
+                                  ),
                                 ),
                               ),
                           ],
@@ -1153,11 +1310,11 @@ class _AvailablePlansSection extends ConsumerWidget {
   void _showUpgradeDialog(
     BuildContext context,
     WidgetRef ref,
-    String planId,
-    String planName,
+    Map<String, dynamic> plan,
     double price,
     int creditsPerMonth,
     String? userId,
+    String? currentPlanProductId,
   ) {
     if (userId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1167,6 +1324,14 @@ class _AvailablePlansSection extends ConsumerWidget {
     }
 
     final scheme = Theme.of(context).colorScheme;
+    final planId = plan['id'].toString();
+    final planName = plan['name'] as String? ?? 'Plan';
+    final playProductId = plan['google_play_product_id'] as String?;
+    final playCatalog =
+        supportsGooglePlayBilling ? ref.read(googlePlayCatalogProvider) : null;
+    final playPrice = playProductId == null
+        ? null
+        : playCatalog?.valueOrNull?.productDetailsById[playProductId]?.price;
 
     showModalBottomSheet(
       context: context,
@@ -1210,7 +1375,7 @@ class _AvailablePlansSection extends ConsumerWidget {
                     children: [
                       const Text('Price'),
                       Text(
-                        '\$${price.toStringAsFixed(2)}/month',
+                        playPrice ?? '\$${price.toStringAsFixed(2)}/month',
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
                           color: scheme.primary,
@@ -1222,39 +1387,97 @@ class _AvailablePlansSection extends ConsumerWidget {
               ),
             ),
             const SizedBox(height: 24),
-            Text(
-              'Select Payment Method',
-              style: Theme.of(ctx).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 12),
-            // Stripe Option
-            _PaymentMethodTile(
-              icon: Icons.credit_card,
-              title: 'Credit/Debit Card',
-              subtitle: 'Pay securely with Stripe',
-              color: const Color(0xFF635BFF),
-              onTap: () {
-                Navigator.pop(ctx);
-                _processStripeUpgrade(context, ref, planId, price, userId);
-              },
-            ),
-            const SizedBox(height: 12),
-            // PayPal Option
-            _PaymentMethodTile(
-              icon: Icons.account_balance_wallet,
-              title: 'PayPal',
-              subtitle: 'Pay with your PayPal account',
-              color: const Color(0xFF003087),
-              onTap: () {
-                Navigator.pop(ctx);
-                _processPayPalUpgrade(context, ref, planId, price, userId);
-              },
-            ),
+            if (supportsGooglePlayBilling) ...[
+              Text(
+                'Billing Provider',
+                style: Theme.of(ctx).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 12),
+              _PaymentMethodTile(
+                icon: Icons.play_circle_fill_rounded,
+                title: 'Google Play',
+                subtitle: 'Purchase and manage this plan through Google Play',
+                color: const Color(0xFF34A853),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _processGooglePlayUpgrade(
+                    context,
+                    ref,
+                    plan,
+                    userId,
+                    currentPlanProductId,
+                  );
+                },
+              ),
+            ] else ...[
+              Text(
+                'Select Payment Method',
+                style: Theme.of(ctx).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 12),
+              _PaymentMethodTile(
+                icon: Icons.credit_card,
+                title: 'Credit/Debit Card',
+                subtitle: 'Pay securely with Stripe',
+                color: const Color(0xFF635BFF),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _processStripeUpgrade(context, ref, planId, price, userId);
+                },
+              ),
+              const SizedBox(height: 12),
+              _PaymentMethodTile(
+                icon: Icons.account_balance_wallet,
+                title: 'PayPal',
+                subtitle: 'Pay with your PayPal account',
+                color: const Color(0xFF003087),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _processPayPalUpgrade(context, ref, planId, price, userId);
+                },
+              ),
+            ],
             const SizedBox(height: 16),
           ],
         ),
       ),
     );
+  }
+
+  Future<void> _processGooglePlayUpgrade(
+    BuildContext context,
+    WidgetRef ref,
+    Map<String, dynamic> plan,
+    String userId,
+    String? currentPlanProductId,
+  ) async {
+    try {
+      final billing = ref.read(googlePlayBillingServiceProvider);
+      await billing.purchaseSubscription(
+        plan: plan,
+        userId: userId,
+        currentPlanProductId: currentPlanProductId,
+      );
+
+      if (!context.mounted) return;
+      ref.invalidate(userSubscriptionProvider);
+      ref.invalidate(subscriptionPlansProvider);
+      ref.invalidate(transactionHistoryProvider(userId));
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Successfully upgraded to ${plan['name'] ?? 'your new plan'} with Google Play!',
+          ),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Upgrade failed: $error')),
+      );
+    }
   }
 
   Future<void> _processStripeUpgrade(
@@ -1282,8 +1505,9 @@ class _AvailablePlansSection extends ConsumerWidget {
       );
 
       // Process payment
-      final success = await stripe.processPayment(
+      final transactionId = await stripe.processPayment(
         context: context,
+        planId: planId,
         amount: price,
         currency: 'USD',
         description: 'Plan Upgrade',
@@ -1291,14 +1515,13 @@ class _AvailablePlansSection extends ConsumerWidget {
 
       if (context.mounted) Navigator.pop(context); // Close loading
 
-      if (success) {
+      if (transactionId != null) {
         // Upgrade the plan
         final service = ref.read(subscriptionServiceProvider);
         await service.upgradePlan(
           userId: userId,
           newPlanId: planId,
-          paymentTransactionId:
-              'stripe_${DateTime.now().millisecondsSinceEpoch}',
+          paymentTransactionId: transactionId,
         );
 
         ref.invalidate(userSubscriptionProvider);

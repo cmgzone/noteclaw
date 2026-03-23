@@ -312,9 +312,22 @@ class VoiceService {
   bool get isListening =>
       _speechToText.isListening || _deepgramService.isListening;
 
-  /// Sanitize text for TTS - removes symbols and formatting that sound unprofessional
-  String _sanitizeTextForTts(String text) {
+  /// Sanitize text for TTS - removes symbols and formatting that sound unprofessional.
+  static String sanitizeTextForTts(String text) {
     String cleaned = text;
+
+    // Decode common HTML entities before stripping markup.
+    cleaned = cleaned.replaceAll('&nbsp;', ' ');
+    cleaned = cleaned.replaceAll('&amp;', ' and ');
+    cleaned = cleaned.replaceAll('&quot;', '"');
+    cleaned = cleaned.replaceAll('&#39;', '\'');
+    cleaned = cleaned.replaceAll('&lt;', ' less than ');
+    cleaned = cleaned.replaceAll('&gt;', ' greater than ');
+    cleaned = cleaned.replaceAll('&mdash;', ', ');
+    cleaned = cleaned.replaceAll('&ndash;', ', ');
+
+    // Remove HTML tags.
+    cleaned = cleaned.replaceAll(RegExp(r'<[^>]+>'), ' ');
 
     // Remove markdown code blocks (```code```)
     cleaned = cleaned.replaceAll(RegExp(r'```[\s\S]*?```'), ' code block ');
@@ -335,12 +348,26 @@ class VoiceService {
     cleaned =
         cleaned.replaceAllMapped(RegExp(r'_([^_]+)_'), (m) => m.group(1) ?? '');
 
+    // Remove markdown images before links so image syntax does not leave behind stray punctuation.
+    cleaned = cleaned.replaceAll(RegExp(r'!\[[^\]]*\]\([^)]+\)'), ' ');
+    cleaned = cleaned.replaceAll(RegExp(r'!\[[^\]]*\]\[[^\]]*\]'), ' ');
+
     // Remove markdown links [text](url) -> just text
     cleaned = cleaned.replaceAllMapped(
         RegExp(r'\[([^\]]+)\]\([^)]+\)'), (m) => m.group(1) ?? '');
 
+    // Remove reference-style links and footnotes.
+    cleaned = cleaned.replaceAllMapped(
+        RegExp(r'\[([^\]]+)\]\[[^\]]*\]'), (m) => m.group(1) ?? '');
+    cleaned = cleaned.replaceAll(RegExp(r'\[\^[^\]]+\]'), ' ');
+
     // Remove URLs
     cleaned = cleaned.replaceAll(RegExp(r'https?://[^\s]+'), ' link ');
+
+    // Remove markdown table separators and convert table pipes into short pauses.
+    cleaned = cleaned.replaceAll(
+        RegExp(r'^\s*\|?[:\- ]+\|[:\-\| ]*$', multiLine: true), '');
+    cleaned = cleaned.replaceAll('|', ', ');
 
     // Remove bullet points and list markers
     cleaned =
@@ -361,7 +388,7 @@ class VoiceService {
 
     // Remove standalone currency and special symbols (not followed by digits)
     cleaned = cleaned.replaceAll(RegExp(r'[\$€£¥₹](?!\d)'), ' ');
-    cleaned = cleaned.replaceAll(RegExp(r'[#@&|\\<>{}[\]^~]'), ' ');
+    cleaned = cleaned.replaceAll(RegExp(r'[#@&\\<>{}[\]^~]'), ' ');
 
     // Convert dashes to natural pauses (remove them, TTS handles pauses naturally)
     cleaned = cleaned.replaceAll('--', ', '); // Double dash to comma pause
@@ -377,15 +404,28 @@ class VoiceService {
     cleaned = cleaned.replaceAll(' => ', ' results in ');
     cleaned = cleaned.replaceAll(' / ', ' or ');
     cleaned = cleaned.replaceAll(' % ', ' percent ');
+    cleaned = cleaned.replaceAllMapped(
+        RegExp(r'(?<=[A-Za-z0-9])/(?=[A-Za-z0-9])'), (_) => ' or ');
 
     // Handle percentages (50%)
     cleaned = cleaned.replaceAllMapped(
         RegExp(r'(\d+)%'), (m) => '${m.group(1)} percent');
 
+    // Remove symbol-heavy lines and stray decorative glyphs that sound bad in TTS.
+    cleaned = cleaned.replaceAll(
+      RegExp(r'^[\s\W_]{3,}$', multiLine: true),
+      ' ',
+    );
+    cleaned = cleaned.replaceAll(
+      RegExp(r'[•▪◦●○■□◆◇▶►✓✔✗✘※©®™§¶†‡¤¢]'),
+      ' ',
+    );
+
     // Remove excessive punctuation
     cleaned = cleaned.replaceAll(RegExp(r'[!]{2,}'), '!');
     cleaned = cleaned.replaceAll(RegExp(r'[?]{2,}'), '?');
     cleaned = cleaned.replaceAll(RegExp(r'[.]{3,}'), '...');
+    cleaned = cleaned.replaceAll(RegExp(r',{2,}'), ',');
 
     // Remove emoji (basic range)
     cleaned = cleaned.replaceAll(
@@ -394,6 +434,7 @@ class VoiceService {
     // Clean up multiple spaces and newlines
     cleaned = cleaned.replaceAll(RegExp(r'\n{3,}'), '\n\n');
     cleaned = cleaned.replaceAll(RegExp(r'[ \t]{2,}'), ' ');
+    cleaned = cleaned.replaceAll(RegExp(r' *([,.;!?]) *'), r'$1 ');
 
     // Trim and clean
     cleaned = cleaned.trim();
@@ -401,11 +442,141 @@ class VoiceService {
     return cleaned;
   }
 
+  static String sanitizeNarrationText(String text) {
+    String cleaned = text;
+
+    cleaned = cleaned.replaceAll('&nbsp;', ' ');
+    cleaned = cleaned.replaceAll('&amp;', ' and ');
+    cleaned = cleaned.replaceAll('&quot;', '"');
+    cleaned = cleaned.replaceAll('&#39;', '\'');
+    cleaned = cleaned.replaceAll('&lt;', ' less than ');
+    cleaned = cleaned.replaceAll('&gt;', ' greater than ');
+    cleaned = cleaned.replaceAll('&mdash;', ', ');
+    cleaned = cleaned.replaceAll('&ndash;', ', ');
+
+    cleaned = cleaned.replaceAll(RegExp(r'<[^>]+>'), ' ');
+    cleaned = cleaned.replaceAll(RegExp(r'```[\s\S]*?```'), ' code block ');
+    cleaned = cleaned.replaceAll(RegExp(r'`[^`]+`'), ' code ');
+    cleaned = cleaned.replaceAll(RegExp(r'^#{1,6}\s*', multiLine: true), '');
+
+    cleaned = cleaned.replaceAllMapped(
+      RegExp(r'\*\*([^*]+)\*\*'),
+      (m) => m.group(1) ?? '',
+    );
+    cleaned = cleaned.replaceAllMapped(
+      RegExp(r'\*([^*]+)\*'),
+      (m) => m.group(1) ?? '',
+    );
+    cleaned = cleaned.replaceAllMapped(
+      RegExp(r'__([^_]+)__'),
+      (m) => m.group(1) ?? '',
+    );
+    cleaned = cleaned.replaceAllMapped(
+      RegExp(r'_([^_]+)_'),
+      (m) => m.group(1) ?? '',
+    );
+
+    cleaned = cleaned.replaceAll(RegExp(r'!\[[^\]]*\]\([^)]+\)'), ' ');
+    cleaned = cleaned.replaceAll(RegExp(r'!\[[^\]]*\]\[[^\]]*\]'), ' ');
+    cleaned = cleaned.replaceAllMapped(
+      RegExp(r'\[([^\]]+)\]\([^)]+\)'),
+      (m) => m.group(1) ?? '',
+    );
+    cleaned = cleaned.replaceAllMapped(
+      RegExp(r'\[([^\]]+)\]\[[^\]]*\]'),
+      (m) => m.group(1) ?? '',
+    );
+    cleaned = cleaned.replaceAll(RegExp(r'\[\^[^\]]+\]'), ' ');
+    cleaned = cleaned.replaceAll(RegExp(r'https?://[^\s]+'), ' link ');
+
+    cleaned = cleaned.replaceAll(
+      RegExp(r'^\s*\|?[:\- ]+\|[:\-\| ]*$', multiLine: true),
+      '',
+    );
+    cleaned = cleaned.replaceAll('|', ', ');
+
+    cleaned = cleaned.replaceAll(
+      RegExp('^[\\s]*[-*+\\u2022]\\s*', multiLine: true),
+      '',
+    );
+    cleaned = cleaned.replaceAll(
+      RegExp(r'^[\s]*\d+\.\s*', multiLine: true),
+      '',
+    );
+
+    cleaned = cleaned.replaceAllMapped(
+      RegExp(r'\$(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)'),
+      (m) => '${m.group(1)} dollars',
+    );
+    cleaned = cleaned.replaceAllMapped(
+      RegExp('\u20AC(\\d{1,3}(?:,\\d{3})*(?:\\.\\d{2})?)'),
+      (m) => '${m.group(1)} euros',
+    );
+    cleaned = cleaned.replaceAllMapped(
+      RegExp('\u00A3(\\d{1,3}(?:,\\d{3})*(?:\\.\\d{2})?)'),
+      (m) => '${m.group(1)} pounds',
+    );
+
+    cleaned = cleaned.replaceAll(
+      RegExp('[\$\u20AC\u00A3\u00A5\u20B9](?!\\d)'),
+      ' ',
+    );
+    cleaned = cleaned.replaceAll(RegExp(r'[#@&\\<>{}\[\]^~]'), ' ');
+
+    cleaned = cleaned.replaceAll('--', ', ');
+    cleaned = cleaned.replaceAll('\u2014', ', ');
+    cleaned = cleaned.replaceAll('\u2013', ', ');
+    cleaned = cleaned.replaceAll(' - ', ', ');
+    cleaned = cleaned.replaceAll(' & ', ' and ');
+    cleaned = cleaned.replaceAll(' + ', ' plus ');
+    cleaned = cleaned.replaceAll(' = ', ' equals ');
+    cleaned = cleaned.replaceAll(' -> ', ' to ');
+    cleaned = cleaned.replaceAll(' => ', ' results in ');
+    cleaned = cleaned.replaceAll(' / ', ' or ');
+    cleaned = cleaned.replaceAll(' % ', ' percent ');
+    cleaned = cleaned.replaceAllMapped(
+      RegExp(r'(?<=[A-Za-z0-9])/(?=[A-Za-z0-9])'),
+      (_) => ' or ',
+    );
+    cleaned = cleaned.replaceAllMapped(
+      RegExp(r'(\d+)%'),
+      (m) => '${m.group(1)} percent',
+    );
+
+    cleaned = cleaned.replaceAll(
+      RegExp(r'^[\s\W_]{3,}$', multiLine: true),
+      ' ',
+    );
+    cleaned = cleaned.replaceAll(
+      RegExp(
+        '[\u2022\u25AA\u25E6\u25CF\u25CB\u25A0\u25A1\u25C6\u25C7\u25B6'
+        '\u25BA\u2713\u2714\u2717\u2718\u203B\u00A9\u00AE\u2122\u00A7'
+        '\u00B6\u2020\u2021\u00A4\u00A2]',
+      ),
+      ' ',
+    );
+
+    cleaned = cleaned.replaceAll(RegExp(r'[!]{2,}'), '!');
+    cleaned = cleaned.replaceAll(RegExp(r'[?]{2,}'), '?');
+    cleaned = cleaned.replaceAll(RegExp(r'[.]{3,}'), '...');
+    cleaned = cleaned.replaceAll(RegExp(r',{2,}'), ',');
+    cleaned = cleaned.replaceAll(
+      RegExp(r'[\u{1F300}-\u{1F9FF}]', unicode: true),
+      ' ',
+    );
+
+    cleaned = cleaned.replaceAll(RegExp(r'\n{3,}'), '\n\n');
+    cleaned = cleaned.replaceAll(RegExp(r'[ \t]{2,}'), ' ');
+    cleaned = cleaned.replaceAll(RegExp(r' *([,.;!?]) *'), r'$1 ');
+
+    return cleaned.trim();
+  }
+
   Future<void> speak(String text,
       {double speed = 1.0, bool interrupt = false}) async {
     try {
       // Sanitize text for professional TTS output
-      final cleanedText = _sanitizeTextForTts(text);
+      final cleanedText = sanitizeNarrationText(text);
 
       // Skip empty text
       if (cleanedText.trim().isEmpty) {
