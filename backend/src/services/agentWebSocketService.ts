@@ -8,10 +8,24 @@
 import { WebSocket, WebSocketServer } from 'ws';
 import { IncomingMessage } from 'http';
 import { parse } from 'url';
+import jwt from 'jsonwebtoken';
 import pool from '../config/database.js';
-import { tokenService } from './tokenService.js';
-import { ImageAttachmentPayload } from './webhookService.js';
-import { sourceConversationService } from './sourceConversationService.js';
+import { getJwtSecret } from '../config/secrets.js';
+import {
+  agentSessionService,
+  type AgentSession,
+} from './agentSessionService.js';
+import { githubWebhookBuilder } from './githubWebhookBuilder.js';
+import { TOKEN_PREFIX, tokenService } from './tokenService.js';
+import {
+  ImageAttachmentPayload,
+  type WebhookPayload,
+  webhookService,
+} from './webhookService.js';
+import {
+  sourceConversationService,
+  type SourceMessage,
+} from './sourceConversationService.js';
 
 // ==================== INTERFACES ====================
 
@@ -30,17 +44,9 @@ interface WebSocketMessage {
   messageId?: string;
 }
 
-interface FollowupPayload {
-  sourceId: string;
-  sourceTitle: string;
-  sourceCode: string;
-  sourceLanguage: string;
-  message: string;
+interface FollowupPayload extends WebhookPayload {
   messageId: string;
-  conversationHistory: any[];
-  imageAttachments?: ImageAttachmentPayload[];
-  userId: string;
-  timestamp: string;
+  githubContext?: Record<string, unknown>;
 }
 
 // ==================== SERVICE CLASS ====================
@@ -79,7 +85,12 @@ class AgentWebSocketService {
   private async handleConnection(ws: WebSocket, req: IncomingMessage): Promise<void> {
     const url = parse(req.url || '', true);
     const token = url.query.token as string;
-    const agentSessionId = url.query.sessionId as string;
+    const requestedSessionId =
+      typeof url.query.sessionId === 'string' ? url.query.sessionId.trim() : '';
+    const requestedAgentIdentifier =
+      typeof url.query.agentIdentifier === 'string'
+        ? url.query.agentIdentifier.trim()
+        : '';
 
     // Authenticate the connection
     if (!token) {
@@ -88,45 +99,54 @@ class AgentWebSocketService {
     }
 
     try {
-      // Validate the API token
-      const tokenData = await tokenService.validateToken(token);
-      if (!tokenData) {
+      const auth = await this.verifyConnectionAuth(token);
+      if (!auth) {
         ws.close(4002, 'Invalid authentication token');
         return;
       }
 
-      // Get or validate the agent session
-      let sessionId: string = agentSessionId || '';
-      let agentIdentifier = 'unknown';
-
-      if (sessionId) {
-        const sessionResult = await pool.query(
-          `SELECT * FROM agent_sessions WHERE id = $1 AND user_id = $2`,
-          [sessionId, tokenData.userId]
-        );
-
-        if (sessionResult.rows.length === 0) {
+      let session: AgentSession | null = null;
+      if (requestedSessionId) {
+        session = await agentSessionService.getSession(requestedSessionId);
+        if (!session || session.userId !== auth.userId) {
           ws.close(4003, 'Invalid agent session');
           return;
         }
-
-        agentIdentifier = sessionResult.rows[0].agent_identifier;
+      } else if (requestedAgentIdentifier) {
+        session = await agentSessionService.getSessionByAgent(
+          auth.userId,
+          requestedAgentIdentifier,
+        );
+        if (!session) {
+          ws.close(4003, 'Agent session not found for this identifier');
+          return;
+        }
       } else {
-        // Create a temporary session ID for this connection
-        sessionId = `ws_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        ws.close(4003, 'sessionId or agentIdentifier is required');
+        return;
+      }
+
+      const sessionId = session.id;
+      const agentIdentifier = session.agentIdentifier;
+      const existingConnection = this.connections.get(sessionId);
+      if (existingConnection && existingConnection.ws !== ws) {
+        existingConnection.ws.close(4005, 'Superseded by a newer connection');
       }
 
       // Store the connection
       const connection: AgentConnection = {
         ws,
         agentSessionId: sessionId,
-        userId: tokenData.userId || '',
+        userId: auth.userId,
         agentIdentifier,
         connectedAt: new Date(),
         lastPing: new Date(),
       };
 
       this.connections.set(sessionId, connection);
+      await agentSessionService.updateActivity(sessionId).catch((error) => {
+        console.error(`[Agent WS] Failed to update activity for ${sessionId}:`, error);
+      });
 
       console.log(`🔌 Agent connected: ${agentIdentifier} (session: ${sessionId})`);
 
@@ -135,8 +155,7 @@ class AgentWebSocketService {
 
       // Set up close handler
       ws.on('close', () => {
-        this.connections.delete(sessionId);
-        console.log(`🔌 Agent disconnected: ${agentIdentifier} (session: ${sessionId})`);
+        this.handleDisconnect(sessionId, ws);
       });
 
       // Set up error handler
@@ -149,14 +168,47 @@ class AgentWebSocketService {
         type: 'subscribe',
         payload: {
           sessionId,
+          agentIdentifier,
           message: 'Connected to NoteClaw WebSocket',
           timestamp: new Date().toISOString(),
         },
       });
 
+      await this.deliverPendingFollowups(sessionId, auth.userId);
+
     } catch (error) {
       console.error('WebSocket authentication error:', error);
       ws.close(4000, 'Authentication failed');
+    }
+  }
+
+  private async verifyConnectionAuth(
+    token: string,
+  ): Promise<{ userId: string; authMethod: 'api_token' | 'jwt' } | null> {
+    if (token.startsWith(TOKEN_PREFIX)) {
+      const result = await tokenService.validateToken(token);
+      if (!result.valid || !result.userId) {
+        return null;
+      }
+
+      return {
+        userId: result.userId,
+        authMethod: 'api_token',
+      };
+    }
+
+    try {
+      const decoded = jwt.verify(token, getJwtSecret()) as { userId?: string };
+      if (!decoded.userId) {
+        return null;
+      }
+
+      return {
+        userId: decoded.userId,
+        authMethod: 'jwt',
+      };
+    } catch {
+      return null;
     }
   }
 
@@ -258,9 +310,119 @@ class AgentWebSocketService {
       }
 
       console.log(`✅ Agent response stored for message ${messageId}`);
+      await agentSessionService.updateActivity(sessionId).catch((activityError) => {
+        console.error(`[Agent WS] Failed to update activity for ${sessionId}:`, activityError);
+      });
     } catch (error) {
       console.error('Error storing agent response:', error);
     }
+  }
+
+  private async deliverPendingFollowups(
+    sessionId: string,
+    userId: string,
+  ): Promise<void> {
+    try {
+      const pendingMessages =
+        await sourceConversationService.getPendingUserMessages(sessionId);
+
+      if (pendingMessages.length === 0) {
+        return;
+      }
+
+      let deliveredCount = 0;
+      for (const pendingMessage of pendingMessages) {
+        const payload = await this.buildFollowupPayload(pendingMessage, userId);
+        if (!payload) {
+          continue;
+        }
+
+        const sent = this.sendToAgent(sessionId, {
+          type: 'followup_message',
+          messageId: pendingMessage.id,
+          payload,
+        });
+
+        if (!sent) {
+          break;
+        }
+
+        deliveredCount += 1;
+      }
+
+      if (deliveredCount > 0) {
+        console.log(
+          `[Agent WS] Replayed ${deliveredCount} pending follow-up(s) for session ${sessionId}`,
+        );
+      }
+    } catch (error) {
+      console.error(`[Agent WS] Failed to deliver pending follow-ups for ${sessionId}:`, error);
+    }
+  }
+
+  private async buildFollowupPayload(
+    message: SourceMessage,
+    userId: string,
+  ): Promise<FollowupPayload | null> {
+    const sourceResult = await pool.query(
+      `SELECT type, metadata FROM sources WHERE id = $1 LIMIT 1`,
+      [message.sourceId],
+    );
+
+    if (sourceResult.rows.length === 0) {
+      return null;
+    }
+
+    const source = sourceResult.rows[0];
+    const metadata =
+      typeof source.metadata === 'string'
+        ? JSON.parse(source.metadata)
+        : (source.metadata || {});
+    const imageAttachments = Array.isArray(message.metadata?.imageAttachments)
+      ? (message.metadata.imageAttachments as ImageAttachmentPayload[])
+      : undefined;
+    const conversation = await sourceConversationService.getConversation(
+      message.sourceId,
+    );
+    const conversationHistory = conversation?.messages ?? [message];
+    const isGitHubSource = source.type === 'github' || metadata.type === 'github';
+
+    const basePayload = isGitHubSource
+      ? await githubWebhookBuilder.buildPayload({
+          sourceId: message.sourceId,
+          message: message.content,
+          conversationHistory,
+          imageAttachments,
+          userId,
+        })
+      : await webhookService.buildPayload(
+          message.sourceId,
+          message.content,
+          conversationHistory,
+          userId,
+          imageAttachments,
+        );
+
+    return {
+      ...basePayload,
+      messageId: message.id,
+    };
+  }
+
+  private handleDisconnect(sessionId: string, ws?: WebSocket): void {
+    const connection = this.connections.get(sessionId);
+    if (!connection) {
+      return;
+    }
+
+    if (ws && connection.ws !== ws) {
+      return;
+    }
+
+    this.connections.delete(sessionId);
+    console.log(
+      `🔌 Agent disconnected: ${connection.agentIdentifier} (session: ${sessionId})`,
+    );
   }
 
   /**
@@ -289,11 +451,19 @@ class AgentWebSocketService {
     sessionId: string,
     payload: FollowupPayload
   ): Promise<boolean> {
-    return this.sendToAgent(sessionId, {
+    const sent = this.sendToAgent(sessionId, {
       type: 'followup_message',
       messageId: payload.messageId,
       payload,
     });
+
+    if (sent) {
+      await agentSessionService.updateActivity(sessionId).catch((error) => {
+        console.error(`[Agent WS] Failed to update activity for ${sessionId}:`, error);
+      });
+    }
+
+    return sent;
   }
 
   /**

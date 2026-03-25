@@ -638,6 +638,62 @@ class ApiService {
     return await get<Map<String, dynamic>>('/coding-agent/memory?$query');
   }
 
+  Future<Map<String, dynamic>> updateAgentMemory({
+    String? agentSessionId,
+    String? agentIdentifier,
+    String namespace = 'default',
+    String mode = 'merge',
+    Map<String, dynamic>? memory,
+    String historyField = 'history',
+    dynamic item,
+    List<dynamic>? items,
+    int? maxHistoryItems,
+    int? keepRecent,
+    int? summaryMaxItems,
+    String? compactToNamespace,
+    String? dedupeKey,
+  }) async {
+    return await put<Map<String, dynamic>>('/coding-agent/memory', {
+      if (agentSessionId != null && agentSessionId.isNotEmpty)
+        'agentSessionId': agentSessionId,
+      if (agentIdentifier != null && agentIdentifier.isNotEmpty)
+        'agentIdentifier': agentIdentifier,
+      'namespace': namespace,
+      'mode': mode,
+      if (memory != null) 'memory': memory,
+      'historyField': historyField,
+      if (item != null) 'item': item,
+      if (items != null) 'items': items,
+      if (maxHistoryItems != null) 'maxHistoryItems': maxHistoryItems,
+      if (keepRecent != null) 'keepRecent': keepRecent,
+      if (summaryMaxItems != null) 'summaryMaxItems': summaryMaxItems,
+      if (compactToNamespace != null) 'compactToNamespace': compactToNamespace,
+      if (dedupeKey != null) 'dedupeKey': dedupeKey,
+    });
+  }
+
+  Future<Map<String, dynamic>> compactAgentMemory({
+    String? agentSessionId,
+    String? agentIdentifier,
+    String namespace = 'default',
+    String historyField = 'history',
+    String? targetNamespace,
+    int keepRecent = 20,
+    int summaryMaxItems = 50,
+  }) async {
+    return await post<Map<String, dynamic>>('/coding-agent/memory/compact', {
+      if (agentSessionId != null && agentSessionId.isNotEmpty)
+        'agentSessionId': agentSessionId,
+      if (agentIdentifier != null && agentIdentifier.isNotEmpty)
+        'agentIdentifier': agentIdentifier,
+      'namespace': namespace,
+      'historyField': historyField,
+      if (targetNamespace != null) 'targetNamespace': targetNamespace,
+      'keepRecent': keepRecent,
+      'summaryMaxItems': summaryMaxItems,
+    });
+  }
+
   // ============ SOURCES ============
 
   Future<List<Map<String, dynamic>>> getSourcesForNotebook(

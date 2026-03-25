@@ -47,6 +47,9 @@ class CodeReview {
   final List<CodeReviewIssue> issues;
   final List<String> suggestions;
   final List<String>? relatedFilesUsed;
+  final Map<String, dynamic>? metadata;
+  final String source;
+  final String? toolName;
   final DateTime createdAt;
 
   CodeReview({
@@ -59,10 +62,19 @@ class CodeReview {
     required this.issues,
     required this.suggestions,
     this.relatedFilesUsed,
+    this.metadata,
+    required this.source,
+    this.toolName,
     required this.createdAt,
   });
 
   factory CodeReview.fromJson(Map<String, dynamic> json) {
+    final metadata = json['metadata'] is Map<String, dynamic>
+        ? json['metadata'] as Map<String, dynamic>
+        : json['metadata'] is Map
+            ? Map<String, dynamic>.from(json['metadata'] as Map)
+            : null;
+
     return CodeReview(
       id: json['id'] ?? '',
       code: json['code'] ?? '',
@@ -81,6 +93,10 @@ class CodeReview {
       relatedFilesUsed: (json['relatedFilesUsed'] as List<dynamic>?)
           ?.map((e) => e.toString())
           .toList(),
+      metadata: metadata,
+      source: json['source']?.toString() ?? metadata?['source']?.toString() ?? 'app',
+      toolName:
+          json['toolName']?.toString() ?? metadata?['toolName']?.toString(),
       createdAt: json['createdAt'] != null
           ? DateTime.parse(json['createdAt'])
           : DateTime.now(),
@@ -88,7 +104,9 @@ class CodeReview {
   }
 
   bool get isContextAware =>
-      relatedFilesUsed != null && relatedFilesUsed!.isNotEmpty;
+      (relatedFilesUsed != null && relatedFilesUsed!.isNotEmpty) ||
+      metadata?['isContextAware'] == true;
+  bool get isMcp => source == 'mcp';
   int get errorCount => issues.where((i) => i.severity == 'error').length;
   int get warningCount => issues.where((i) => i.severity == 'warning').length;
   int get infoCount => issues.where((i) => i.severity == 'info').length;
@@ -100,9 +118,14 @@ class CodeReviewHistoryItem {
   final String language;
   final String reviewType;
   final int score;
+  final String summary;
   final int errorCount;
   final int warningCount;
   final int infoCount;
+  final int relatedFileCount;
+  final Map<String, dynamic>? metadata;
+  final String source;
+  final String? toolName;
   final DateTime createdAt;
 
   CodeReviewHistoryItem({
@@ -111,28 +134,48 @@ class CodeReviewHistoryItem {
     required this.language,
     required this.reviewType,
     required this.score,
+    required this.summary,
     required this.errorCount,
     required this.warningCount,
     required this.infoCount,
+    required this.relatedFileCount,
+    this.metadata,
+    required this.source,
+    this.toolName,
     required this.createdAt,
   });
 
   factory CodeReviewHistoryItem.fromJson(Map<String, dynamic> json) {
     final issueCount = json['issueCount'] as Map<String, dynamic>? ?? {};
+    final metadata = json['metadata'] is Map<String, dynamic>
+        ? json['metadata'] as Map<String, dynamic>
+        : json['metadata'] is Map
+            ? Map<String, dynamic>.from(json['metadata'] as Map)
+            : null;
     return CodeReviewHistoryItem(
       id: json['id'] ?? '',
       codePreview: json['codePreview'] ?? '',
       language: json['language'] ?? '',
       reviewType: json['reviewType'] ?? 'comprehensive',
       score: json['score'] ?? 0,
+      summary: json['summary'] ?? '',
       errorCount: issueCount['errors'] ?? 0,
       warningCount: issueCount['warnings'] ?? 0,
       infoCount: issueCount['info'] ?? 0,
+      relatedFileCount: json['relatedFileCount'] ?? 0,
+      metadata: metadata,
+      source: json['source']?.toString() ?? metadata?['source']?.toString() ?? 'app',
+      toolName:
+          json['toolName']?.toString() ?? metadata?['toolName']?.toString(),
       createdAt: json['createdAt'] != null
           ? DateTime.parse(json['createdAt'])
           : DateTime.now(),
     );
   }
+
+  bool get isMcp => source == 'mcp';
+  bool get isContextAware =>
+      relatedFileCount > 0 || metadata?['isContextAware'] == true;
 }
 
 class CodeComparisonResult {
@@ -275,7 +318,7 @@ class CodeReviewNotifier extends StateNotifier<CodeReviewState> {
 
   Future<void> loadHistory({
     String? language,
-    int limit = 20,
+    int limit = 50,
     int? minScore,
     int? maxScore,
   }) async {

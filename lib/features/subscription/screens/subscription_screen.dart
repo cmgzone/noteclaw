@@ -390,60 +390,58 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
 
     showModalBottomSheet(
       context: context,
+      backgroundColor: scheme.surface,
+      showDragHandle: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (ctx) => Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Select Payment Method',
-              style: Theme.of(ctx).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Purchase ${package.credits} credits for \$${package.price.toStringAsFixed(2)}',
-              style: Theme.of(ctx).textTheme.bodyMedium?.copyWith(
-                    color: scheme.onSurface.withValues(alpha: 0.7),
-                  ),
-            ),
-            const SizedBox(height: 24),
-
-            // Stripe Option
-            if (stripeAvailable)
-              _PaymentMethodTile(
-                icon: Icons.credit_card,
-                title: 'Credit/Debit Card',
-                subtitle: 'Pay securely with Stripe',
-                color: const Color(0xFF635BFF),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _processStripePayment(context, package, userId);
-                },
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Select Payment Method',
+                style: Theme.of(ctx).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
               ),
-
-            if (stripeAvailable && paypalAvailable) const SizedBox(height: 12),
-
-            // PayPal Option
-            if (paypalAvailable)
-              _PaymentMethodTile(
-                icon: Icons.account_balance_wallet,
-                title: 'PayPal',
-                subtitle: 'Pay with your PayPal account',
-                color: const Color(0xFF003087),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _processPayPalPayment(context, package, userId);
-                },
+              const SizedBox(height: 8),
+              Text(
+                'Purchase ${package.credits} credits for \$${package.price.toStringAsFixed(2)}',
+                style: Theme.of(ctx).textTheme.bodyMedium?.copyWith(
+                      color: scheme.onSurface.withValues(alpha: 0.7),
+                    ),
               ),
-
-            const SizedBox(height: 16),
-          ],
+              const SizedBox(height: 24),
+              if (stripeAvailable)
+                _PaymentMethodTile(
+                  icon: Icons.credit_card,
+                  title: 'Credit/Debit Card',
+                  subtitle: 'Pay securely with Stripe',
+                  color: const Color(0xFF635BFF),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _processStripePayment(context, package, userId);
+                  },
+                ),
+              if (stripeAvailable && paypalAvailable) const SizedBox(height: 12),
+              if (paypalAvailable)
+                _PaymentMethodTile(
+                  icon: Icons.account_balance_wallet,
+                  title: 'PayPal',
+                  subtitle: 'Pay with your PayPal account',
+                  color: const Color(0xFF003087),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _processPayPalPayment(context, package, userId);
+                  },
+                ),
+              const SizedBox(height: 16),
+            ],
+          ),
         ),
       ),
     );
@@ -929,6 +927,8 @@ class _PaymentMethodTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -937,9 +937,9 @@ class _PaymentMethodTile extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
+            color: scheme.surfaceContainerHighest,
             border: Border.all(
-              color:
-                  Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
+              color: scheme.outline.withValues(alpha: 0.3),
             ),
             borderRadius: BorderRadius.circular(12),
           ),
@@ -969,10 +969,7 @@ class _PaymentMethodTile extends StatelessWidget {
                     Text(
                       subtitle,
                       style: TextStyle(
-                        color: Theme.of(context)
-                            .colorScheme
-                            .onSurface
-                            .withValues(alpha: 0.6),
+                        color: scheme.onSurface.withValues(alpha: 0.72),
                         fontSize: 13,
                       ),
                     ),
@@ -981,10 +978,7 @@ class _PaymentMethodTile extends StatelessWidget {
               ),
               Icon(
                 Icons.chevron_right,
-                color: Theme.of(context)
-                    .colorScheme
-                    .onSurface
-                    .withValues(alpha: 0.4),
+                color: scheme.onSurface.withValues(alpha: 0.45),
               ),
             ],
           ),
@@ -1335,110 +1329,115 @@ class _AvailablePlansSection extends ConsumerWidget {
 
     showModalBottomSheet(
       context: context,
+      backgroundColor: scheme.surface,
+      showDragHandle: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (ctx) => Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Upgrade to $planName',
-              style: Theme.of(ctx).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-            ),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: scheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(12),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Upgrade to $planName',
+                style: Theme.of(ctx).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
               ),
-              child: Column(
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('Credits per month'),
-                      Text(
-                        '$creditsPerMonth',
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('Price'),
-                      Text(
-                        playPrice ?? '\$${price.toStringAsFixed(2)}/month',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: scheme.primary,
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: scheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Credits per month'),
+                        Text(
+                          '$creditsPerMonth',
+                          style: const TextStyle(fontWeight: FontWeight.bold),
                         ),
-                      ),
-                    ],
-                  ),
-                ],
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Price'),
+                        Text(
+                          playPrice ?? '\$${price.toStringAsFixed(2)}/month',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: scheme.primary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(height: 24),
-            if (supportsGooglePlayBilling) ...[
-              Text(
-                'Billing Provider',
-                style: Theme.of(ctx).textTheme.titleMedium,
-              ),
-              const SizedBox(height: 12),
-              _PaymentMethodTile(
-                icon: Icons.play_circle_fill_rounded,
-                title: 'Google Play',
-                subtitle: 'Purchase and manage this plan through Google Play',
-                color: const Color(0xFF34A853),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _processGooglePlayUpgrade(
-                    context,
-                    ref,
-                    plan,
-                    userId,
-                    currentPlanProductId,
-                  );
-                },
-              ),
-            ] else ...[
-              Text(
-                'Select Payment Method',
-                style: Theme.of(ctx).textTheme.titleMedium,
-              ),
-              const SizedBox(height: 12),
-              _PaymentMethodTile(
-                icon: Icons.credit_card,
-                title: 'Credit/Debit Card',
-                subtitle: 'Pay securely with Stripe',
-                color: const Color(0xFF635BFF),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _processStripeUpgrade(context, ref, planId, price, userId);
-                },
-              ),
-              const SizedBox(height: 12),
-              _PaymentMethodTile(
-                icon: Icons.account_balance_wallet,
-                title: 'PayPal',
-                subtitle: 'Pay with your PayPal account',
-                color: const Color(0xFF003087),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _processPayPalUpgrade(context, ref, planId, price, userId);
-                },
-              ),
+              const SizedBox(height: 24),
+              if (supportsGooglePlayBilling) ...[
+                Text(
+                  'Billing Provider',
+                  style: Theme.of(ctx).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 12),
+                _PaymentMethodTile(
+                  icon: Icons.play_circle_fill_rounded,
+                  title: 'Google Play',
+                  subtitle:
+                      'Purchase and manage this plan through Google Play',
+                  color: const Color(0xFF34A853),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _processGooglePlayUpgrade(
+                      context,
+                      ref,
+                      plan,
+                      userId,
+                      currentPlanProductId,
+                    );
+                  },
+                ),
+              ] else ...[
+                Text(
+                  'Select Payment Method',
+                  style: Theme.of(ctx).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 12),
+                _PaymentMethodTile(
+                  icon: Icons.credit_card,
+                  title: 'Credit/Debit Card',
+                  subtitle: 'Pay securely with Stripe',
+                  color: const Color(0xFF635BFF),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _processStripeUpgrade(context, ref, planId, price, userId);
+                  },
+                ),
+                const SizedBox(height: 12),
+                _PaymentMethodTile(
+                  icon: Icons.account_balance_wallet,
+                  title: 'PayPal',
+                  subtitle: 'Pay with your PayPal account',
+                  color: const Color(0xFF003087),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _processPayPalUpgrade(context, ref, planId, price, userId);
+                  },
+                ),
+              ],
+              const SizedBox(height: 16),
             ],
-            const SizedBox(height: 16),
-          ],
+          ),
         ),
       ),
     );

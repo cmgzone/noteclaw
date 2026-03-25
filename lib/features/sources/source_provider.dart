@@ -62,6 +62,10 @@ class SourceNotifier extends StateNotifier<List<Source>> {
         if (sourceData['metadata'] != null && sourceData['metadata'] is Map) {
           metadata = Map<String, dynamic>.from(sourceData['metadata'] as Map);
         }
+        final mimeType = sourceData['mime_type'] ?? sourceData['mimeType'];
+        if (mimeType is String && mimeType.trim().isNotEmpty) {
+          metadata['mimeType'] = mimeType.trim();
+        }
 
         return Source(
           id: sourceData['id'] as String,
@@ -242,7 +246,17 @@ class SourceNotifier extends StateNotifier<List<Source>> {
         imageUrl: sourceData['imageUrl'] as String?,
         metadata:
             sourceData['metadata'] != null && sourceData['metadata'] is Map
-                ? Map<String, dynamic>.from(sourceData['metadata'] as Map)
+                ? () {
+                    final metadata = Map<String, dynamic>.from(
+                      sourceData['metadata'] as Map,
+                    );
+                    final mimeType =
+                        sourceData['mime_type'] ?? sourceData['mimeType'];
+                    if (mimeType is String && mimeType.trim().isNotEmpty) {
+                      metadata['mimeType'] = mimeType.trim();
+                    }
+                    return metadata;
+                  }()
                 : {},
       );
 

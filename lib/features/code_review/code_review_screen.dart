@@ -102,6 +102,8 @@ class _CodeReviewScreenState extends ConsumerState<CodeReviewScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          _buildReviewIntro(theme),
+          const SizedBox(height: 16),
           // Language selector
           Row(
             children: [
@@ -222,90 +224,176 @@ class _CodeReviewScreenState extends ConsumerState<CodeReviewScreen>
   }
 
   Widget _buildReviewResults(CodeReview review, ThemeData theme) {
+    final scheme = theme.colorScheme;
+    final sourceColor = _sourceColor(review.source, theme);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // Score card
-        Card(
+        Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(28),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                scheme.surfaceContainerHighest,
+                scheme.surface,
+              ],
+            ),
+            border: Border.all(
+              color: sourceColor.withValues(alpha: 0.22),
+            ),
+          ),
           child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildScoreIndicator(review.score, theme),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildScoreIndicator(review.score, theme, size: 92),
+                    const SizedBox(width: 18),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('Quality Score',
-                              style: theme.textTheme.titleMedium),
-                          if (review.isContextAware) ...[
-                            const SizedBox(width: 8),
-                            Tooltip(
-                              message:
-                                  'Review used ${review.relatedFilesUsed!.length} related file(s) for context',
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: theme.colorScheme.primaryContainer,
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(Icons.auto_awesome,
-                                        size: 12,
-                                        color: theme
-                                            .colorScheme.onPrimaryContainer),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      'Context-Aware',
-                                      style: TextStyle(
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.bold,
-                                        color: theme
-                                            .colorScheme.onPrimaryContainer,
-                                      ),
-                                    ),
-                                  ],
-                                ),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              _buildMetaChip(
+                                label: _sourceLabel(review.source),
+                                icon: review.isMcp
+                                    ? Icons.memory_rounded
+                                    : Icons.rate_review_rounded,
+                                color: sourceColor,
+                                theme: theme,
                               ),
+                              _buildMetaChip(
+                                label: _reviewTypeLabel(
+                                  review.reviewType,
+                                  toolName: review.toolName,
+                                ),
+                                icon: _reviewTypeIcon(
+                                  review.reviewType,
+                                  toolName: review.toolName,
+                                ),
+                                color: scheme.primary,
+                                theme: theme,
+                              ),
+                              _buildMetaChip(
+                                label: review.language.toUpperCase(),
+                                icon: Icons.code_rounded,
+                                color: scheme.secondary,
+                                theme: theme,
+                              ),
+                              if (review.isContextAware)
+                                _buildMetaChip(
+                                  label: review.relatedFilesUsed?.isNotEmpty ==
+                                          true
+                                      ? '${review.relatedFilesUsed!.length} related files'
+                                      : 'Context-aware',
+                                  icon: Icons.auto_awesome_rounded,
+                                  color: scheme.tertiary,
+                                  theme: theme,
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            _reviewHeadline(
+                              review.reviewType,
+                              toolName: review.toolName,
                             ),
-                          ],
+                            style: theme.textTheme.headlineSmall?.copyWith(
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            review.summary,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              height: 1.45,
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            'Saved ${_formatDate(review.createdAt)}',
+                            style: theme.textTheme.labelMedium?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
                         ],
                       ),
-                      const SizedBox(height: 4),
-                      Text(review.summary, style: theme.textTheme.bodySmall),
-                    ],
-                  ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 18),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  children: [
+                    _buildMetricCard(
+                      label: 'Errors',
+                      value: review.errorCount,
+                      icon: Icons.error_outline_rounded,
+                      color: Colors.red,
+                      theme: theme,
+                    ),
+                    _buildMetricCard(
+                      label: 'Warnings',
+                      value: review.warningCount,
+                      icon: Icons.warning_amber_rounded,
+                      color: Colors.orange,
+                      theme: theme,
+                    ),
+                    _buildMetricCard(
+                      label: 'Info',
+                      value: review.infoCount,
+                      icon: Icons.info_outline_rounded,
+                      color: Colors.blue,
+                      theme: theme,
+                    ),
+                    _buildMetricCard(
+                      label: 'Suggestions',
+                      value: review.suggestions.length,
+                      icon: Icons.lightbulb_outline_rounded,
+                      color: Colors.amber.shade800,
+                      theme: theme,
+                    ),
+                  ],
                 ),
               ],
             ),
           ),
         ),
-
-        // Context files used
-        if (review.isContextAware && review.relatedFilesUsed!.isNotEmpty) ...[
-          const SizedBox(height: 8),
-          Card(
-            color: theme.colorScheme.primaryContainer.withValues(alpha: 0.3),
+        if (review.relatedFilesUsed?.isNotEmpty ?? false) ...[
+          const SizedBox(height: 12),
+          Container(
+            decoration: BoxDecoration(
+              color: scheme.primaryContainer.withValues(alpha: 0.28),
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(
+                color: scheme.primary.withValues(alpha: 0.14),
+              ),
+            ),
             child: Padding(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(14),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     children: [
-                      Icon(Icons.folder_open,
-                          size: 16, color: theme.colorScheme.primary),
+                      Icon(Icons.folder_open, size: 16, color: scheme.primary),
                       const SizedBox(width: 8),
                       Text(
-                        'Related Files Used for Context',
+                        'Repository context used in this review',
                         style: theme.textTheme.labelMedium?.copyWith(
-                          color: theme.colorScheme.primary,
+                          color: scheme.primary,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
                     ],
@@ -313,17 +401,33 @@ class _CodeReviewScreenState extends ConsumerState<CodeReviewScreen>
                   const SizedBox(height: 8),
                   Wrap(
                     spacing: 8,
-                    runSpacing: 4,
+                    runSpacing: 6,
                     children: review.relatedFilesUsed!.map((file) {
                       return Tooltip(
                         message: file,
-                        child: Chip(
-                          avatar: const Icon(Icons.insert_drive_file, size: 14),
-                          label: Text(
-                            file.split('/').last,
-                            style: const TextStyle(fontSize: 11),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 8,
                           ),
-                          visualDensity: VisualDensity.compact,
+                          decoration: BoxDecoration(
+                            color: scheme.surface.withValues(alpha: 0.9),
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(
+                              color: scheme.outlineVariant,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.insert_drive_file, size: 14),
+                              const SizedBox(width: 6),
+                              Text(
+                                file.split('/').last,
+                                style: theme.textTheme.labelSmall,
+                              ),
+                            ],
+                          ),
                         ),
                       );
                     }).toList(),
@@ -333,47 +437,76 @@ class _CodeReviewScreenState extends ConsumerState<CodeReviewScreen>
             ),
           ),
         ],
-        const SizedBox(height: 16),
-
-        // Issue counts
-        Row(
-          children: [
-            _buildIssueCountChip(
-                review.errorCount, 'Errors', Colors.red, theme),
-            const SizedBox(width: 8),
-            _buildIssueCountChip(
-                review.warningCount, 'Warnings', Colors.orange, theme),
-            const SizedBox(width: 8),
-            _buildIssueCountChip(review.infoCount, 'Info', Colors.blue, theme),
-          ],
-        ),
-        const SizedBox(height: 16),
-
-        // Issues list
         if (review.issues.isNotEmpty) ...[
-          Text('Issues Found', style: theme.textTheme.titleMedium),
-          const SizedBox(height: 8),
+          const SizedBox(height: 20),
+          _buildSectionHeader(
+            title: 'Issues Found',
+            subtitle:
+                'Each issue includes severity, category, and suggested next action.',
+            theme: theme,
+          ),
+          const SizedBox(height: 10),
           ...review.issues.map((issue) => _buildIssueCard(issue, theme)),
         ],
-
-        // Suggestions
         if (review.suggestions.isNotEmpty) ...[
-          const SizedBox(height: 16),
-          Text('Suggestions', style: theme.textTheme.titleMedium),
-          const SizedBox(height: 8),
-          ...review.suggestions.map((s) => Card(
-                child: ListTile(
-                  leading:
-                      const Icon(Icons.lightbulb_outline, color: Colors.amber),
-                  title: Text(s),
+          const SizedBox(height: 20),
+          _buildSectionHeader(
+            title: 'Recommended Improvements',
+            subtitle:
+                'Fast follow-ups you can apply after this review pass.',
+            theme: theme,
+          ),
+          const SizedBox(height: 10),
+          ...review.suggestions.map(
+            (suggestion) => Container(
+              margin: const EdgeInsets.only(bottom: 10),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.amber.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: Colors.amber.withValues(alpha: 0.28),
                 ),
-              )),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: Colors.amber.withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(
+                      Icons.lightbulb_outline_rounded,
+                      size: 18,
+                      color: Colors.amber.shade900,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      suggestion,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        height: 1.4,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ],
       ],
     );
   }
 
-  Widget _buildScoreIndicator(int score, ThemeData theme) {
+  Widget _buildScoreIndicator(
+    int score,
+    ThemeData theme, {
+    double size = 80,
+  }) {
     Color color;
     if (score >= 90) {
       color = Colors.green;
@@ -386,14 +519,14 @@ class _CodeReviewScreenState extends ConsumerState<CodeReviewScreen>
     }
 
     return SizedBox(
-      width: 80,
-      height: 80,
+      width: size,
+      height: size,
       child: Stack(
         alignment: Alignment.center,
         children: [
           CircularProgressIndicator(
             value: score / 100,
-            strokeWidth: 8,
+            strokeWidth: size * 0.1,
             backgroundColor: theme.colorScheme.surfaceContainerHighest,
             valueColor: AlwaysStoppedAnimation(color),
           ),
@@ -402,6 +535,7 @@ class _CodeReviewScreenState extends ConsumerState<CodeReviewScreen>
             style: theme.textTheme.headlineMedium?.copyWith(
               fontWeight: FontWeight.bold,
               color: color,
+              fontSize: size * 0.28,
             ),
           ),
         ],
@@ -409,19 +543,8 @@ class _CodeReviewScreenState extends ConsumerState<CodeReviewScreen>
     );
   }
 
-  Widget _buildIssueCountChip(
-      int count, String label, Color color, ThemeData theme) {
-    return Chip(
-      avatar: CircleAvatar(
-        backgroundColor: color,
-        child: Text('$count',
-            style: const TextStyle(color: Colors.white, fontSize: 12)),
-      ),
-      label: Text(label),
-    );
-  }
-
   Widget _buildIssueCard(CodeReviewIssue issue, ThemeData theme) {
+    final scheme = theme.colorScheme;
     Color severityColor;
     IconData severityIcon;
     switch (issue.severity) {
@@ -438,70 +561,127 @@ class _CodeReviewScreenState extends ConsumerState<CodeReviewScreen>
         severityIcon = Icons.info;
     }
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      child: ExpansionTile(
-        leading: Icon(severityIcon, color: severityColor),
-        title: Text(issue.message),
-        subtitle: Row(
-          children: [
-            Chip(
-              label: Text(issue.category, style: const TextStyle(fontSize: 10)),
-              padding: EdgeInsets.zero,
-              visualDensity: VisualDensity.compact,
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: severityColor.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(
+          color: severityColor.withValues(alpha: 0.2),
+        ),
+      ),
+      child: Theme(
+        data: theme.copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          childrenPadding:
+              const EdgeInsets.only(left: 16, right: 16, bottom: 16),
+          leading: Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: severityColor.withValues(alpha: 0.14),
+              borderRadius: BorderRadius.circular(14),
             ),
-            if (issue.line != null) ...[
-              const SizedBox(width: 8),
-              Text('Line ${issue.line}', style: theme.textTheme.bodySmall),
+            child: Icon(severityIcon, color: severityColor),
+          ),
+          title: Text(
+            issue.message,
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          subtitle: Padding(
+            padding: const EdgeInsets.only(top: 10),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _buildMetaChip(
+                  label: issue.severity.toUpperCase(),
+                  icon: severityIcon,
+                  color: severityColor,
+                  theme: theme,
+                  compact: true,
+                ),
+                _buildMetaChip(
+                  label: _titleCase(issue.category),
+                  icon: Icons.sell_outlined,
+                  color: scheme.secondary,
+                  theme: theme,
+                  compact: true,
+                ),
+                if (issue.line != null)
+                  _buildMetaChip(
+                    label: issue.column != null
+                        ? 'Line ${issue.line}, Col ${issue.column}'
+                        : 'Line ${issue.line}',
+                    icon: Icons.segment_rounded,
+                    color: scheme.tertiary,
+                    theme: theme,
+                    compact: true,
+                  ),
+              ],
+            ),
+          ),
+          children: [
+            if (issue.suggestion != null) ...[
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Suggested next step',
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                issue.suggestion!,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  height: 1.45,
+                ),
+              ),
+            ],
+            if (issue.codeExample != null) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: scheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        issue.codeExample!,
+                        style: const TextStyle(
+                          fontFamily: 'monospace',
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.copy_rounded, size: 18),
+                      onPressed: () {
+                        Clipboard.setData(
+                          ClipboardData(text: issue.codeExample!),
+                        );
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Copied to clipboard'),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ),
             ],
           ],
         ),
-        children: [
-          if (issue.suggestion != null)
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Suggestion:', style: theme.textTheme.titleSmall),
-                  const SizedBox(height: 4),
-                  Text(issue.suggestion!),
-                  if (issue.codeExample != null) ...[
-                    const SizedBox(height: 8),
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.surfaceContainerHighest,
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              issue.codeExample!,
-                              style: const TextStyle(
-                                  fontFamily: 'monospace', fontSize: 12),
-                            ),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.copy, size: 16),
-                            onPressed: () {
-                              Clipboard.setData(
-                                  ClipboardData(text: issue.codeExample!));
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                    content: Text('Copied to clipboard')),
-                              );
-                            },
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-        ],
       ),
     );
   }
@@ -520,7 +700,7 @@ class _CodeReviewScreenState extends ConsumerState<CodeReviewScreen>
             const SizedBox(height: 16),
             Text('No review history yet', style: theme.textTheme.titleMedium),
             const SizedBox(height: 8),
-            Text('Submit your first code review to get started',
+            Text('Run an in-app review or an MCP verification to get started',
                 style: theme.textTheme.bodySmall),
           ],
         ),
@@ -529,81 +709,176 @@ class _CodeReviewScreenState extends ConsumerState<CodeReviewScreen>
 
     return RefreshIndicator(
       onRefresh: () => ref.read(codeReviewProvider.notifier).loadHistory(),
-      child: ListView.builder(
+      child: ListView(
         padding: const EdgeInsets.all(16),
-        itemCount: state.history.length,
-        itemBuilder: (context, index) {
-          final item = state.history[index];
-          return _buildHistoryCard(item, theme);
-        },
+        children: [
+          _buildHistoryOverview(state.history, theme),
+          const SizedBox(height: 14),
+          ...state.history.map((item) => _buildHistoryCard(item, theme)),
+        ],
       ),
     );
   }
 
   Widget _buildHistoryCard(CodeReviewHistoryItem item, ThemeData theme) {
-    return Card(
+    final scheme = theme.colorScheme;
+    final sourceColor = _sourceColor(item.source, theme);
+
+    return Container(
       margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: scheme.surface,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: sourceColor.withValues(alpha: 0.18),
+        ),
+      ),
       child: InkWell(
         onTap: () => _viewReviewDetail(item.id),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(24),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _buildScoreIndicator(item.score, theme),
+                  _buildScoreIndicator(item.score, theme, size: 72),
                   const SizedBox(width: 16),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
                           children: [
-                            Chip(
-                              label: Text(item.language),
-                              visualDensity: VisualDensity.compact,
+                            _buildMetaChip(
+                              label: _sourceLabel(item.source),
+                              icon: item.isMcp
+                                  ? Icons.memory_rounded
+                                  : Icons.rate_review_rounded,
+                              color: sourceColor,
+                              theme: theme,
+                              compact: true,
                             ),
-                            const SizedBox(width: 8),
-                            Chip(
-                              label: Text(item.reviewType),
-                              visualDensity: VisualDensity.compact,
+                            _buildMetaChip(
+                              label: item.language.toUpperCase(),
+                              icon: Icons.code_rounded,
+                              color: scheme.secondary,
+                              theme: theme,
+                              compact: true,
                             ),
+                            _buildMetaChip(
+                              label: _reviewTypeLabel(
+                                item.reviewType,
+                                toolName: item.toolName,
+                              ),
+                              icon: _reviewTypeIcon(
+                                item.reviewType,
+                                toolName: item.toolName,
+                              ),
+                              color: scheme.primary,
+                              theme: theme,
+                              compact: true,
+                            ),
+                            if (item.isContextAware)
+                              _buildMetaChip(
+                                label: item.relatedFileCount > 0
+                                    ? '${item.relatedFileCount} related files'
+                                    : 'Context-aware',
+                                icon: Icons.auto_awesome_rounded,
+                                color: scheme.tertiary,
+                                theme: theme,
+                                compact: true,
+                              ),
                           ],
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          item.codePreview,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontFamily: 'monospace',
-                            fontSize: 11,
-                            color: theme.colorScheme.onSurfaceVariant,
+                          _reviewHeadline(
+                            item.reviewType,
+                            toolName: item.toolName,
+                          ),
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w800,
                           ),
                         ),
+                        if (item.summary.isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            item.summary,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                              height: 1.35,
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),
+                  const SizedBox(width: 8),
+                  Icon(
+                    Icons.arrow_forward_ios_rounded,
+                    size: 16,
+                    color: scheme.outline,
+                  ),
                 ],
+              ),
+              const SizedBox(height: 14),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: scheme.surfaceContainerHighest.withValues(alpha: 0.45),
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: Text(
+                  item.codePreview,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontFamily: 'monospace',
+                    fontSize: 11,
+                    color: scheme.onSurfaceVariant,
+                    height: 1.45,
+                  ),
+                ),
               ),
               const SizedBox(height: 12),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Row(
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
                     children: [
-                      _buildSmallIssueChip(item.errorCount, Colors.red),
-                      const SizedBox(width: 4),
-                      _buildSmallIssueChip(item.warningCount, Colors.orange),
-                      const SizedBox(width: 4),
-                      _buildSmallIssueChip(item.infoCount, Colors.blue),
+                      _buildSmallIssueChip(
+                        label: 'Errors',
+                        count: item.errorCount,
+                        color: Colors.red,
+                      ),
+                      _buildSmallIssueChip(
+                        label: 'Warnings',
+                        count: item.warningCount,
+                        color: Colors.orange,
+                      ),
+                      _buildSmallIssueChip(
+                        label: 'Info',
+                        count: item.infoCount,
+                        color: Colors.blue,
+                      ),
                     ],
                   ),
                   Text(
                     _formatDate(item.createdAt),
-                    style: theme.textTheme.bodySmall,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
                   ),
                 ],
               ),
@@ -614,24 +889,352 @@ class _CodeReviewScreenState extends ConsumerState<CodeReviewScreen>
     );
   }
 
-  Widget _buildSmallIssueChip(int count, Color color) {
+  Widget _buildHistoryOverview(
+    List<CodeReviewHistoryItem> history,
+    ThemeData theme,
+  ) {
+    final mcpCount = history.where((item) => item.isMcp).length;
+    final contextCount = history.where((item) => item.isContextAware).length;
+
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.2),
-        borderRadius: BorderRadius.circular(4),
+        borderRadius: BorderRadius.circular(24),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            theme.colorScheme.secondaryContainer,
+            theme.colorScheme.surface,
+          ],
+        ),
+        border: Border.all(
+          color: theme.colorScheme.secondary.withValues(alpha: 0.16),
+        ),
       ),
-      child: Text(
-        '$count',
-        style:
-            TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.bold),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Review timeline',
+            style: theme.textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'A combined stream of manual reviews, MCP verification runs, and context-aware analysis.',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              _buildMetricCard(
+                label: 'Total',
+                value: history.length,
+                icon: Icons.history_toggle_off_rounded,
+                color: theme.colorScheme.primary,
+                theme: theme,
+              ),
+              _buildMetricCard(
+                label: 'MCP',
+                value: mcpCount,
+                icon: Icons.memory_rounded,
+                color: theme.colorScheme.tertiary,
+                theme: theme,
+              ),
+              _buildMetricCard(
+                label: 'Context-aware',
+                value: contextCount,
+                icon: Icons.auto_awesome_rounded,
+                color: theme.colorScheme.secondary,
+                theme: theme,
+              ),
+            ],
+          ),
+        ],
       ),
     );
+  }
+
+  Widget _buildSmallIssueChip({
+    required String label,
+    required int count,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        '$label $count',
+        style: TextStyle(
+          color: color,
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildReviewIntro(ThemeData theme) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(28),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            theme.colorScheme.primaryContainer,
+            theme.colorScheme.surface,
+          ],
+        ),
+        border: Border.all(
+          color: theme.colorScheme.primary.withValues(alpha: 0.16),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Ship cleaner reviews faster',
+            style: theme.textTheme.headlineSmall?.copyWith(
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Run focused reviews, compare manual and MCP-generated feedback, and keep the strongest findings in one history stream.',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              height: 1.45,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _buildMetaChip(
+                label: 'App reviews',
+                icon: Icons.rate_review_rounded,
+                color: theme.colorScheme.primary,
+                theme: theme,
+              ),
+              _buildMetaChip(
+                label: 'MCP history',
+                icon: Icons.memory_rounded,
+                color: theme.colorScheme.tertiary,
+                theme: theme,
+              ),
+              _buildMetaChip(
+                label: 'Repo context',
+                icon: Icons.auto_awesome_rounded,
+                color: theme.colorScheme.secondary,
+                theme: theme,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMetricCard({
+    required String label,
+    required int value,
+    required IconData icon,
+    required Color color,
+    required ThemeData theme,
+  }) {
+    return Container(
+      constraints: const BoxConstraints(minWidth: 120),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: color.withValues(alpha: 0.14),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 18, color: color),
+          const SizedBox(width: 10),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                '$value',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  color: color,
+                ),
+              ),
+              Text(
+                label,
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSectionHeader({
+    required String title,
+    required String subtitle,
+    required ThemeData theme,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: theme.textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          subtitle,
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMetaChip({
+    required String label,
+    required IconData icon,
+    required Color color,
+    required ThemeData theme,
+    bool compact = false,
+  }) {
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 10 : 12,
+        vertical: compact ? 6 : 8,
+      ),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: compact ? 14 : 16, color: color),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: theme.textTheme.labelMedium?.copyWith(
+              color: color,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Color _sourceColor(String source, ThemeData theme) {
+    return source == 'mcp'
+        ? theme.colorScheme.tertiary
+        : theme.colorScheme.primary;
+  }
+
+  String _sourceLabel(String source) {
+    return source == 'mcp' ? 'MCP Review' : 'App Review';
+  }
+
+  String _reviewHeadline(String reviewType, {String? toolName}) {
+    switch (toolName ?? reviewType) {
+      case 'verify_code':
+        return 'MCP verification pass';
+      case 'verify_and_save':
+        return 'Verified and saved source review';
+      case 'analyze_code':
+        return 'MCP deep analysis';
+      default:
+        return '${_reviewTypeLabel(reviewType, toolName: toolName)} review';
+    }
+  }
+
+  String _reviewTypeLabel(String reviewType, {String? toolName}) {
+    switch (toolName ?? reviewType) {
+      case 'verify_code':
+        return 'Verify';
+      case 'verify_and_save':
+        return 'Verify + Save';
+      case 'analyze_code':
+        return 'Analyze';
+      case 'comprehensive':
+        return 'Comprehensive';
+      case 'security':
+        return 'Security';
+      case 'performance':
+        return 'Performance';
+      case 'readability':
+        return 'Readability';
+      default:
+        return _titleCase(reviewType);
+    }
+  }
+
+  IconData _reviewTypeIcon(String reviewType, {String? toolName}) {
+    switch (toolName ?? reviewType) {
+      case 'verify_code':
+      case 'verify_and_save':
+        return Icons.verified_outlined;
+      case 'analyze_code':
+        return Icons.analytics_outlined;
+      case 'security':
+        return Icons.security_rounded;
+      case 'performance':
+        return Icons.speed_rounded;
+      case 'readability':
+        return Icons.visibility_rounded;
+      default:
+        return Icons.rate_review_rounded;
+    }
+  }
+
+  String _titleCase(String value) {
+    return value
+        .split(RegExp(r'[_\s-]+'))
+        .where((part) => part.isNotEmpty)
+        .map(
+          (part) =>
+              '${part[0].toUpperCase()}${part.substring(1).toLowerCase()}',
+        )
+        .join(' ');
   }
 
   String _formatDate(DateTime date) {
     final now = DateTime.now();
     final diff = now.difference(date);
+    if (diff.inMinutes < 60) {
+      final minutes = diff.inMinutes.clamp(1, 59);
+      return '$minutes min ago';
+    }
+    if (diff.inHours < 24) {
+      return '${diff.inHours}h ago';
+    }
     if (diff.inDays == 0) {
       return 'Today';
     } else if (diff.inDays == 1) {

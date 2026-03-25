@@ -1,10 +1,11 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:video_player/video_player.dart';
 import 'package:lucide_icons/lucide_icons.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 import '../../core/media/media_service.dart';
 import '../../core/api/api_service.dart';
-import 'dart:typed_data';
 import 'source.dart';
 import 'source_provider.dart';
 import 'source_chat_sheet.dart';
@@ -190,6 +191,8 @@ class SourceDetailScreen extends ConsumerWidget {
   }
 }
 
+enum _SourceViewMode { preview, code }
+
 class _ChunkItem {
   _ChunkItem({required this.id, required this.text, required this.index});
   final String id;
@@ -212,11 +215,58 @@ class _DetailBodyState extends ConsumerState<_DetailBody> {
   final ScrollController _scroll = ScrollController();
   List<_ChunkItem> _chunks = [];
   int _highlightIndex = -1;
+  WebViewController? _htmlPreviewController;
+  String? _htmlPreviewDocument;
+  _SourceViewMode _viewMode = _SourceViewMode.code;
+  bool _isHtmlPreviewLoading = false;
+  bool _htmlPreviewError = false;
 
   @override
   void initState() {
     super.initState();
+    _initializeHtmlPreview();
     _loadChunks();
+  }
+
+  void _initializeHtmlPreview() {
+    _htmlPreviewDocument = widget.source.renderableHtmlDocument;
+    if (_htmlPreviewDocument == null || _htmlPreviewDocument!.isEmpty) {
+      _viewMode = _SourceViewMode.code;
+      _htmlPreviewController = null;
+      _isHtmlPreviewLoading = false;
+      _htmlPreviewError = false;
+      return;
+    }
+
+    if (kIsWeb) {
+      _viewMode = _SourceViewMode.code;
+      _htmlPreviewController = null;
+      _isHtmlPreviewLoading = false;
+      _htmlPreviewError = false;
+      return;
+    }
+
+    _viewMode = _SourceViewMode.preview;
+    _isHtmlPreviewLoading = true;
+    _htmlPreviewError = false;
+    _htmlPreviewController = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setNavigationDelegate(
+        NavigationDelegate(
+          onPageFinished: (_) {
+            if (!mounted) return;
+            setState(() => _isHtmlPreviewLoading = false);
+          },
+          onWebResourceError: (_) {
+            if (!mounted) return;
+            setState(() {
+              _htmlPreviewError = true;
+              _isHtmlPreviewLoading = false;
+            });
+          },
+        ),
+      )
+      ..loadHtmlString(_htmlPreviewDocument!);
   }
 
   Future<void> _loadChunks() async {
@@ -277,6 +327,9 @@ class _DetailBodyState extends ConsumerState<_DetailBody> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final isMediaSource =
+        widget.source.type == 'image' || widget.source.type == 'video';
+    final supportsHtmlPreview = _htmlPreviewDocument != null;
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(12),
@@ -285,44 +338,279 @@ class _DetailBodyState extends ConsumerState<_DetailBody> {
           color: scheme.surface,
           borderRadius: BorderRadius.circular(12),
         ),
-        child: (widget.source.type == 'image' || widget.source.type == 'video')
-            ? Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: _MediaViewer(source: widget.source),
+        child: isMediaSource
+            ? _buildMediaSourceBody(context)
+            : supportsHtmlPreview
+                ? _buildHtmlCapableSourceBody(context)
+                : _buildStandardSourceBody(context),
+      ),
+    );
+  }
+
+  Widget _buildMediaSourceBody(BuildContext context) {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: _MediaViewer(source: widget.source),
+        ),
+        if (widget.highlightSnippet != null &&
+            widget.highlightSnippet!.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: _buildMatchesPanel(context),
+          ),
+        const SizedBox(height: 8),
+        Flexible(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: _buildChunkList(context),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStandardSourceBody(BuildContext context) {
+    return Column(
+      children: [
+        if (widget.highlightSnippet != null && widget.highlightSnippet!.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: _buildMatchesPanel(context),
+          ),
+        Flexible(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: _buildChunkList(context),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildHtmlCapableSourceBody(BuildContext context) {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+          child: _buildHtmlSourceToolbar(context),
+        ),
+        const SizedBox(height: 12),
+        if (_viewMode == _SourceViewMode.code &&
+            widget.highlightSnippet != null &&
+            widget.highlightSnippet!.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: _buildMatchesPanel(context),
+          ),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: _viewMode == _SourceViewMode.preview
+                ? _buildHtmlPreviewPanel(context)
+                : _buildChunkList(context),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildHtmlSourceToolbar(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    const previewAvailable = !kIsWeb;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: scheme.outline.withValues(alpha: 0.12),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: scheme.primary.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(
+              Icons.web_asset_outlined,
+              size: 18,
+              color: scheme.primary,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Website Source',
+                  style: textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
                   ),
-                  if (widget.highlightSnippet != null &&
-                      widget.highlightSnippet!.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: _buildMatchesPanel(context),
-                    ),
-                  const SizedBox(height: 8),
-                  Flexible(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                      child: _buildChunkList(context),
-                    ),
+                ),
+                Text(
+                  previewAvailable
+                      ? 'Switch between a live preview and the saved code.'
+                      : 'Preview is not available on this platform, so code view is shown.',
+                  style: textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurface.withValues(alpha: 0.65),
                   ),
-                ],
-              )
-            : Column(
-                children: [
-                  if (widget.highlightSnippet != null &&
-                      widget.highlightSnippet!.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: _buildMatchesPanel(context),
-                    ),
-                  Flexible(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: _buildChunkList(context),
-                    ),
-                  ),
-                ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          Wrap(
+            spacing: 8,
+            children: [
+              ChoiceChip(
+                label: const Text('Preview'),
+                selected: _viewMode == _SourceViewMode.preview,
+                onSelected: previewAvailable
+                    ? (selected) {
+                        if (!selected) return;
+                        setState(() => _viewMode = _SourceViewMode.preview);
+                      }
+                    : null,
               ),
+              ChoiceChip(
+                label: const Text('Code'),
+                selected: _viewMode == _SourceViewMode.code,
+                onSelected: (selected) {
+                  if (!selected) return;
+                  setState(() => _viewMode = _SourceViewMode.code);
+                },
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHtmlPreviewPanel(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    if (_htmlPreviewDocument == null || _htmlPreviewDocument!.isEmpty) {
+      return _buildHtmlPreviewUnavailableCard(
+        context,
+        message: 'This source does not contain a renderable HTML document yet.',
+      );
+    }
+
+    if (kIsWeb || _htmlPreviewController == null) {
+      return _buildHtmlPreviewUnavailableCard(
+        context,
+        message:
+            'HTML preview is only available on app builds with WebView support. Switch to Code to inspect the source.',
+      );
+    }
+
+    if (_htmlPreviewError) {
+      return _buildHtmlPreviewUnavailableCard(
+        context,
+        message:
+            'The preview could not be rendered, but the saved code is still available.',
+        actionLabel: 'Retry Preview',
+        onAction: () {
+          setState(() {
+            _htmlPreviewError = false;
+            _isHtmlPreviewLoading = true;
+          });
+          _htmlPreviewController!.loadHtmlString(_htmlPreviewDocument!);
+        },
+      );
+    }
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        decoration: BoxDecoration(
+          color: scheme.surface,
+          border: Border.all(
+            color: scheme.outline.withValues(alpha: 0.12),
+          ),
+        ),
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: WebViewWidget(controller: _htmlPreviewController!),
+            ),
+            if (_isHtmlPreviewLoading)
+              Positioned.fill(
+                child: ColoredBox(
+                  color: scheme.surface.withValues(alpha: 0.86),
+                  child: const Center(
+                    child: CircularProgressIndicator(),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHtmlPreviewUnavailableCard(
+    BuildContext context, {
+    required String message,
+    String? actionLabel,
+    VoidCallback? onAction,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: scheme.outline.withValues(alpha: 0.12),
+        ),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.web_asset_off_outlined,
+            size: 34,
+            color: scheme.outline,
+          ),
+          const SizedBox(height: 14),
+          Text(
+            'Preview Unavailable',
+            style: textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: textTheme.bodyMedium?.copyWith(
+              color: scheme.onSurface.withValues(alpha: 0.7),
+              height: 1.5,
+            ),
+          ),
+          if (actionLabel != null && onAction != null) ...[
+            const SizedBox(height: 16),
+            FilledButton(
+              onPressed: onAction,
+              child: Text(actionLabel),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -541,13 +829,18 @@ class _DetailBodyState extends ConsumerState<_DetailBody> {
               // Content
               Padding(
                 padding: const EdgeInsets.all(16),
-                child: widget.source.type == 'report' ||
-                        widget.source.type == 'code'
+                child: widget.source.type == 'report'
                     ? MarkdownBody(
                         data: c.text,
                         selectable: true,
                         styleSheet: _buildMarkdownStyleSheet(context),
                       )
+                    : widget.source.type == 'code'
+                        ? _buildCodeBlockText(
+                            context,
+                            contentSpan,
+                            isChunkCard: true,
+                          )
                     : Text.rich(
                         contentSpan,
                         style: textTheme.bodyLarge?.copyWith(
@@ -570,14 +863,17 @@ class _DetailBodyState extends ConsumerState<_DetailBody> {
     ColorScheme scheme,
     TextTheme textTheme,
   ) {
+    if (widget.source.type == 'code') {
+      return _buildCodeBlockContainer(context, text);
+    }
+
     // Check if content looks like markdown
     final hasMarkdown = text.contains('# ') ||
         text.contains('## ') ||
         text.contains('**') ||
         text.contains('- ') ||
         text.contains('```') ||
-        widget.source.type == 'report' ||
-        widget.source.type == 'code';
+        widget.source.type == 'report';
 
     if (hasMarkdown) {
       return Container(
@@ -627,6 +923,60 @@ class _DetailBodyState extends ConsumerState<_DetailBody> {
             ),
           );
         }).toList(),
+      ),
+    );
+  }
+
+  Widget _buildCodeBlockContainer(BuildContext context, String text) {
+    final scheme = Theme.of(context).colorScheme;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: scheme.outline.withValues(alpha: 0.12),
+        ),
+      ),
+      child: SelectableText(
+        text,
+        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              fontFamily: 'monospace',
+              height: 1.55,
+              color: scheme.onSurface.withValues(alpha: 0.9),
+            ),
+      ),
+    );
+  }
+
+  Widget _buildCodeBlockText(
+    BuildContext context,
+    InlineSpan contentSpan, {
+    bool isChunkCard = false,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+
+    return Container(
+      width: double.infinity,
+      padding: isChunkCard ? EdgeInsets.zero : const EdgeInsets.all(16),
+      decoration: isChunkCard
+          ? null
+          : BoxDecoration(
+              color: scheme.surfaceContainerLowest,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: scheme.outline.withValues(alpha: 0.12),
+              ),
+            ),
+      child: SelectableText.rich(
+        TextSpan(children: [contentSpan]),
+        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              fontFamily: 'monospace',
+              height: 1.55,
+              color: scheme.onSurface.withValues(alpha: 0.9),
+            ),
       ),
     );
   }

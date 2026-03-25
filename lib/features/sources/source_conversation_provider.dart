@@ -420,17 +420,27 @@ class SourceConversationNotifier
 
       final apiUri = Uri.parse(_apiService.baseUrl);
       final scheme = apiUri.scheme == 'https' ? 'wss' : 'ws';
-      final host = apiUri.host;
-      final port = apiUri.hasPort ? ':${apiUri.port}' : '';
-      final wsUrl =
-          '$scheme://$host$port/ws/source-conversations?token=$token';
+      final normalizedApiPath =
+          apiUri.path.endsWith('/') ? apiUri.path.substring(0, apiUri.path.length - 1) : apiUri.path;
+      final websocketBasePath = normalizedApiPath.endsWith('/api')
+          ? normalizedApiPath.substring(0, normalizedApiPath.length - 4)
+          : normalizedApiPath;
+      final websocketPath =
+          '${websocketBasePath.isEmpty ? '' : websocketBasePath}/ws/source-conversations';
+      final wsUri = Uri(
+        scheme: scheme,
+        host: apiUri.host,
+        port: apiUri.hasPort ? apiUri.port : null,
+        path: websocketPath,
+        queryParameters: {'token': token},
+      );
 
       developer.log(
-        '[SOURCE_CONVERSATION] Connecting websocket for $sourceId',
+        '[SOURCE_CONVERSATION] Connecting websocket for $sourceId -> $wsUri',
         name: 'SourceConversationProvider',
       );
 
-      _wsChannel = WebSocketChannel.connect(Uri.parse(wsUrl));
+      _wsChannel = WebSocketChannel.connect(wsUri);
       _wsSubscription = _wsChannel!.stream.listen(
         _handleWebSocketMessage,
         onError: (error, stackTrace) {

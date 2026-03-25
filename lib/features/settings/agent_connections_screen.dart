@@ -29,6 +29,12 @@ class AgentSession {
   final List<String> memoryNamespaces;
   final DateTime? memoryUpdatedAt;
   final bool hasMemory;
+  final int totalHistoryItems;
+  final int totalCheckpoints;
+  final int totalStructuredItems;
+  final bool hasLongTermMemory;
+  final String memoryLongTermStatus;
+  final List<Map<String, dynamic>> namespaceStats;
 
   const AgentSession({
     required this.id,
@@ -43,6 +49,12 @@ class AgentSession {
     this.memoryNamespaces = const [],
     this.memoryUpdatedAt,
     this.hasMemory = false,
+    this.totalHistoryItems = 0,
+    this.totalCheckpoints = 0,
+    this.totalStructuredItems = 0,
+    this.hasLongTermMemory = false,
+    this.memoryLongTermStatus = 'empty',
+    this.namespaceStats = const [],
   });
 
   factory AgentSession.fromJson(Map<String, dynamic> json) {
@@ -78,7 +90,36 @@ class AgentSession {
           : json['memoryUpdatedAt'] != null
               ? DateTime.tryParse(json['memoryUpdatedAt'] as String)
               : null,
-      hasMemory: json['has_memory'] as bool? ?? json['hasMemory'] as bool? ?? false,
+      hasMemory:
+          json['has_memory'] as bool? ?? json['hasMemory'] as bool? ?? false,
+      totalHistoryItems: json['total_history_items'] as int? ??
+          json['totalHistoryItems'] as int? ??
+          0,
+      totalCheckpoints: json['total_checkpoint_count'] as int? ??
+          json['totalCheckpointCount'] as int? ??
+          0,
+      totalStructuredItems: json['total_structured_items'] as int? ??
+          json['totalStructuredItems'] as int? ??
+          0,
+      hasLongTermMemory: json['has_long_term_memory'] as bool? ??
+          json['hasLongTermMemory'] as bool? ??
+          false,
+      memoryLongTermStatus: json['long_term_status'] as String? ??
+          json['longTermStatus'] as String? ??
+          'empty',
+      namespaceStats: json['namespace_stats'] is List
+          ? List<Map<String, dynamic>>.from(
+              (json['namespace_stats'] as List).map(
+                (item) => Map<String, dynamic>.from(item as Map),
+              ),
+            )
+          : json['namespaceStats'] is List
+              ? List<Map<String, dynamic>>.from(
+                  (json['namespaceStats'] as List).map(
+                    (item) => Map<String, dynamic>.from(item as Map),
+                  ),
+                )
+              : const [],
     );
   }
 
@@ -114,6 +155,13 @@ class AgentConnectionsState {
   int get activeCount => sessions.where((s) => s.isActive).length;
   int get expiredCount => sessions.where((s) => s.isExpired).length;
   int get disconnectedCount => sessions.where((s) => s.isDisconnected).length;
+  int get sessionsWithMemory => sessions.where((s) => s.hasMemory).length;
+  int get totalHistoryItems =>
+      sessions.fold(0, (count, session) => count + session.totalHistoryItems);
+  int get totalCheckpoints =>
+      sessions.fold(0, (count, session) => count + session.totalCheckpoints);
+  int get sessionsWithLongTermMemory =>
+      sessions.where((s) => s.hasLongTermMemory).length;
 }
 
 /// Provider for managing agent connections
@@ -153,9 +201,31 @@ class AgentConnectionsNotifier extends StateNotifier<AgentConnectionsState> {
           'memoryNamespaces': memoryData['namespaces'] is List
               ? List<String>.from(memoryData['namespaces'])
               : const <String>[],
+          'namespaceStats': memoryData['namespaceStats'] is List
+              ? List<Map<String, dynamic>>.from(
+                  (memoryData['namespaceStats'] as List).map(
+                    (item) => Map<String, dynamic>.from(item as Map),
+                  ),
+                )
+              : const <Map<String, dynamic>>[],
           'memoryUpdatedAt': memoryUpdatedAtRaw is String
               ? DateTime.tryParse(memoryUpdatedAtRaw)
               : null,
+          'totalHistoryItems': memoryData['totalHistoryItems'] as int? ??
+              memoryData['total_history_items'] as int? ??
+              0,
+          'totalCheckpoints': memoryData['totalCheckpointCount'] as int? ??
+              memoryData['total_checkpoint_count'] as int? ??
+              0,
+          'totalStructuredItems': memoryData['totalStructuredItems'] as int? ??
+              memoryData['total_structured_items'] as int? ??
+              0,
+          'hasLongTermMemory': memoryData['hasLongTermMemory'] as bool? ??
+              memoryData['has_long_term_memory'] as bool? ??
+              false,
+          'memoryLongTermStatus': memoryData['longTermStatus'] as String? ??
+              memoryData['long_term_status'] as String? ??
+              'empty',
         };
       }
 
@@ -198,6 +268,15 @@ class AgentConnectionsNotifier extends StateNotifier<AgentConnectionsState> {
               ? List<String>.from(memoryInfo['memoryNamespaces'])
               : const [],
           memoryUpdatedAt: memoryInfo['memoryUpdatedAt'] as DateTime?,
+          totalHistoryItems: memoryInfo['totalHistoryItems'] as int? ?? 0,
+          totalCheckpoints: memoryInfo['totalCheckpoints'] as int? ?? 0,
+          totalStructuredItems: memoryInfo['totalStructuredItems'] as int? ?? 0,
+          hasLongTermMemory: memoryInfo['hasLongTermMemory'] as bool? ?? false,
+          memoryLongTermStatus:
+              memoryInfo['memoryLongTermStatus'] as String? ?? 'empty',
+          namespaceStats: memoryInfo['namespaceStats'] is List
+              ? List<Map<String, dynamic>>.from(memoryInfo['namespaceStats'])
+              : const [],
         );
       }).toList();
 
@@ -236,6 +315,12 @@ class AgentConnectionsNotifier extends StateNotifier<AgentConnectionsState> {
             memoryNamespaces: s.memoryNamespaces,
             memoryUpdatedAt: s.memoryUpdatedAt,
             hasMemory: s.hasMemory,
+            totalHistoryItems: s.totalHistoryItems,
+            totalCheckpoints: s.totalCheckpoints,
+            totalStructuredItems: s.totalStructuredItems,
+            hasLongTermMemory: s.hasLongTermMemory,
+            memoryLongTermStatus: s.memoryLongTermStatus,
+            namespaceStats: s.namespaceStats,
           );
         }
         return s;
@@ -261,10 +346,61 @@ final agentConnectionsProvider =
   (ref) => AgentConnectionsNotifier(ref),
 );
 
+class _AgentMemorySnapshot {
+  final Map<String, dynamic> memoryByNamespace;
+  final Map<String, Map<String, dynamic>> memoryStatsByNamespace;
+  final String? memoryUpdatedAt;
+
+  const _AgentMemorySnapshot({
+    required this.memoryByNamespace,
+    required this.memoryStatsByNamespace,
+    required this.memoryUpdatedAt,
+  });
+}
+
 /// Screen showing all connected coding agents
 /// Requirements: 4.1, 4.4
 class AgentConnectionsScreen extends ConsumerWidget {
   const AgentConnectionsScreen({super.key});
+
+  Future<_AgentMemorySnapshot> _loadMemorySnapshot(
+    WidgetRef ref,
+    AgentSession session,
+  ) async {
+    final apiService = ref.read(apiServiceProvider);
+    final first = await apiService.getAgentMemory(
+      agentSessionId: session.id,
+      namespace: 'default',
+    );
+
+    final namespacesRaw = first['availableNamespaces'];
+    final namespaces = namespacesRaw is List
+        ? List<String>.from(namespacesRaw)
+        : <String>[];
+    final namespaceList = namespaces.isEmpty ? <String>['default'] : namespaces;
+
+    final memoryByNamespace = <String, dynamic>{};
+    final statsByNamespace = <String, Map<String, dynamic>>{};
+    for (final namespace in namespaceList) {
+      final response = namespace == 'default'
+          ? first
+          : await apiService.getAgentMemory(
+              agentSessionId: session.id,
+              namespace: namespace,
+            );
+      memoryByNamespace[namespace] = response['memory'];
+      final stats = response['memoryStats'];
+      if (stats is Map) {
+        statsByNamespace[namespace] = Map<String, dynamic>.from(stats);
+      }
+    }
+
+    return _AgentMemorySnapshot(
+      memoryByNamespace: memoryByNamespace,
+      memoryStatsByNamespace: statsByNamespace,
+      memoryUpdatedAt: first['memoryUpdatedAt'] as String?,
+    );
+  }
 
   Future<void> _refreshAll(WidgetRef ref) async {
     await Future.wait([
@@ -423,8 +559,9 @@ class AgentConnectionsScreen extends ConsumerWidget {
                 'To connect a coding agent:\n\n'
                 '1. Configure the MCP server in your coding agent (Codex, Claude Code, OpenClaw, Kiro, etc.)\n\n'
                 '2. Use the create_agent_notebook tool to create a dedicated notebook\n\n'
-                '3. Save verified code using save_code_with_context\n\n'
-                '4. Your agent will appear here once connected!',
+                '3. Save verified code using save_code_with_context and keep working memory synced with memory_put\n\n'
+                '4. Use append mode plus memory_compact to roll recent history into long-term checkpoints\n\n'
+                '5. Your agent will appear here once connected!',
               ),
             ],
           ),
@@ -489,30 +626,57 @@ class AgentConnectionsScreen extends ConsumerWidget {
           color: scheme.outline.withValues(alpha: 0.1),
         ),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: _StatItem(
-              icon: LucideIcons.checkCircle,
-              label: 'Active',
-              value: state.activeCount.toString(),
-              color: const Color(0xFF22C55E),
-            ),
+          Text(
+            'Agent Memory Network',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
           ),
-          Expanded(
-            child: _StatItem(
-              icon: LucideIcons.clock,
-              label: 'Expired',
-              value: state.expiredCount.toString(),
-              color: const Color(0xFFF59E0B),
-            ),
+          const SizedBox(height: 4),
+          Text(
+            'Track live agent connections, persistent MCP history, and long-term checkpoint coverage.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: scheme.secondaryText,
+                ),
           ),
-          Expanded(
-            child: _StatItem(
-                icon: LucideIcons.xCircle,
-                label: 'Disconnected',
-                value: state.disconnectedCount.toString(),
-                color: const Color(0xFFEF4444)),
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              _SummaryMetricCard(
+                icon: LucideIcons.checkCircle,
+                label: 'Active',
+                value: state.activeCount.toString(),
+                subtitle: '${state.sessions.length} total agents',
+                color: const Color(0xFF22C55E),
+              ),
+              _SummaryMetricCard(
+                icon: LucideIcons.brain,
+                label: 'Memory Ready',
+                value: state.sessionsWithMemory.toString(),
+                subtitle: '${state.totalHistoryItems} history items',
+                color: scheme.primary,
+              ),
+              _SummaryMetricCard(
+                icon: LucideIcons.archive,
+                label: 'Long-Term',
+                value: state.sessionsWithLongTermMemory.toString(),
+                subtitle: '${state.totalCheckpoints} checkpoints saved',
+                color: const Color(0xFF14B8A6),
+              ),
+              _SummaryMetricCard(
+                icon: LucideIcons.clock,
+                label: 'Needs Attention',
+                value:
+                    (state.expiredCount + state.disconnectedCount).toString(),
+                subtitle: '${state.expiredCount} expired, ${state.disconnectedCount} offline',
+                color: const Color(0xFFF59E0B),
+              ),
+            ],
           ),
         ],
       ),
@@ -597,28 +761,7 @@ class AgentConnectionsScreen extends ConsumerWidget {
     );
 
     try {
-      final apiService = ref.read(apiServiceProvider);
-      final first = await apiService.getAgentMemory(
-        agentSessionId: session.id,
-        namespace: 'default',
-      );
-
-      final namespacesRaw = first['availableNamespaces'];
-      final namespaces = namespacesRaw is List
-          ? List<String>.from(namespacesRaw)
-          : <String>[];
-      final namespaceList = namespaces.isEmpty ? <String>['default'] : namespaces;
-
-      final memoryByNamespace = <String, dynamic>{};
-      for (final namespace in namespaceList) {
-        final response = namespace == 'default'
-            ? first
-            : await apiService.getAgentMemory(
-                agentSessionId: session.id,
-                namespace: namespace,
-              );
-        memoryByNamespace[namespace] = response['memory'];
-      }
+      final snapshot = await _loadMemorySnapshot(ref, session);
 
       if (context.mounted) {
         Navigator.pop(context);
@@ -632,8 +775,9 @@ class AgentConnectionsScreen extends ConsumerWidget {
         context: context,
         builder: (context) => _AgentMemoryViewerDialog(
           session: session,
-          memoryByNamespace: memoryByNamespace,
-          memoryUpdatedAt: first['memoryUpdatedAt'] as String?,
+          memoryByNamespace: snapshot.memoryByNamespace,
+          memoryStatsByNamespace: snapshot.memoryStatsByNamespace,
+          memoryUpdatedAt: snapshot.memoryUpdatedAt,
         ),
       );
     } catch (e) {
@@ -653,11 +797,13 @@ class AgentConnectionsScreen extends ConsumerWidget {
 class _AgentMemoryViewerDialog extends StatefulWidget {
   final AgentSession session;
   final Map<String, dynamic> memoryByNamespace;
+  final Map<String, Map<String, dynamic>> memoryStatsByNamespace;
   final String? memoryUpdatedAt;
 
   const _AgentMemoryViewerDialog({
     required this.session,
     required this.memoryByNamespace,
+    required this.memoryStatsByNamespace,
     required this.memoryUpdatedAt,
   });
 
@@ -695,6 +841,33 @@ class _AgentMemoryViewerDialogState extends State<_AgentMemoryViewerDialog>
   String _namespaceText(String namespace) {
     final memory = widget.memoryByNamespace[namespace];
     return const JsonEncoder.withIndent('  ').convert(memory);
+  }
+
+  Map<String, dynamic> _namespaceStats(String namespace) =>
+      widget.memoryStatsByNamespace[namespace] ?? const <String, dynamic>{};
+
+  int get _totalHistoryItems => widget.memoryStatsByNamespace.values.fold(
+        0,
+        (count, stats) => count + ((stats['historyLength'] as int?) ?? 0),
+      );
+
+  int get _totalCheckpoints => widget.memoryStatsByNamespace.values.fold(
+        0,
+        (count, stats) => count + ((stats['checkpointCount'] as int?) ?? 0),
+      );
+
+  int get _durableNamespaces => widget.memoryStatsByNamespace.values
+      .where((stats) => (stats['longTermStatus'] as String?) == 'durable')
+      .length;
+
+  String _namespaceLabel(String namespace) {
+    final stats = _namespaceStats(namespace);
+    final history = (stats['historyLength'] as int?) ?? 0;
+    final checkpoints = (stats['checkpointCount'] as int?) ?? 0;
+    if (history == 0 && checkpoints == 0) {
+      return namespace;
+    }
+    return '$namespace  $history/$checkpoints';
   }
 
   String _filteredText(String fullText) {
@@ -741,23 +914,31 @@ class _AgentMemoryViewerDialogState extends State<_AgentMemoryViewerDialog>
           children: [
             Wrap(
               spacing: 12,
-              runSpacing: 6,
+              runSpacing: 12,
               children: [
-                Text(
-                  'Namespaces: ${_namespaces.length}',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: scheme.secondaryText,
-                  ),
+                _SummaryMetricCard(
+                  icon: LucideIcons.layers,
+                  label: 'Namespaces',
+                  value: _namespaces.length.toString(),
+                  subtitle: '$_durableNamespaces durable',
+                  color: scheme.primary,
                 ),
-                if (updatedAt != null && updatedAt.isNotEmpty)
-                  Text(
-                    'Updated: $updatedAt',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: scheme.secondaryText,
-                    ),
-                  ),
+                _SummaryMetricCard(
+                  icon: LucideIcons.history,
+                  label: 'History',
+                  value: _totalHistoryItems.toString(),
+                  subtitle: 'Persistent timeline items',
+                  color: const Color(0xFF6366F1),
+                ),
+                _SummaryMetricCard(
+                  icon: LucideIcons.archive,
+                  label: 'Checkpoints',
+                  value: _totalCheckpoints.toString(),
+                  subtitle: updatedAt != null && updatedAt.isNotEmpty
+                      ? 'Updated $updatedAt'
+                      : 'Awaiting long-term summaries',
+                  color: const Color(0xFF14B8A6),
+                ),
               ],
             ),
             const SizedBox(height: 10),
@@ -785,7 +966,9 @@ class _AgentMemoryViewerDialogState extends State<_AgentMemoryViewerDialog>
                 controller: _tabController,
                 isScrollable: true,
                 tabAlignment: TabAlignment.start,
-                tabs: _namespaces.map((namespace) => Tab(text: namespace)).toList(),
+                tabs: _namespaces
+                    .map((namespace) => Tab(text: _namespaceLabel(namespace)))
+                    .toList(),
               ),
             ),
             const SizedBox(height: 10),
@@ -796,21 +979,61 @@ class _AgentMemoryViewerDialogState extends State<_AgentMemoryViewerDialog>
                 children: _namespaces.map((namespace) {
                   final fullText = _namespaceText(namespace);
                   final display = _filteredText(fullText);
+                  final stats = _namespaceStats(namespace);
+                  final longTermStatus =
+                      stats['longTermStatus'] as String? ?? 'empty';
                   return Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
                       color: scheme.surfaceContainerHighest.withValues(alpha: 0.3),
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: SingleChildScrollView(
-                      child: SelectableText(
-                        display,
-                        style: TextStyle(
-                          fontFamily: 'monospace',
-                          fontSize: 12,
-                          color: scheme.onSurface,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            _MemoryInfoChip(
+                              label:
+                                  '${(stats['fieldCount'] as int?) ?? 0} fields',
+                              color: scheme.primary,
+                            ),
+                            _MemoryInfoChip(
+                              label:
+                                  '${(stats['historyLength'] as int?) ?? 0} history',
+                              color: const Color(0xFF6366F1),
+                            ),
+                            _MemoryInfoChip(
+                              label:
+                                  '${(stats['checkpointCount'] as int?) ?? 0} checkpoints',
+                              color: const Color(0xFF14B8A6),
+                            ),
+                            _MemoryInfoChip(
+                              label: longTermStatus.toUpperCase(),
+                              color: longTermStatus == 'durable'
+                                  ? const Color(0xFF22C55E)
+                                  : longTermStatus == 'warming'
+                                      ? const Color(0xFFF59E0B)
+                                      : scheme.outline,
+                            ),
+                          ],
                         ),
-                      ),
+                        const SizedBox(height: 12),
+                        Expanded(
+                          child: SingleChildScrollView(
+                            child: SelectableText(
+                              display,
+                              style: TextStyle(
+                                fontFamily: 'monospace',
+                                fontSize: 12,
+                                color: scheme.onSurface,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   );
                 }).toList(),
@@ -834,47 +1057,94 @@ class _AgentMemoryViewerDialogState extends State<_AgentMemoryViewerDialog>
   }
 }
 
-/// Stat item widget for the summary
-class _StatItem extends StatelessWidget {
+class _SummaryMetricCard extends StatelessWidget {
   final IconData icon;
   final String label;
   final String value;
+  final String subtitle;
   final Color color;
 
-  const _StatItem({
+  const _SummaryMetricCard({
     required this.icon,
     required this.label,
     required this.value,
+    required this.subtitle,
     required this.color,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.1),
-            shape: BoxShape.circle,
+    return Container(
+      width: 170,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withValues(alpha: 0.16)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, size: 18, color: color),
           ),
-          child: Icon(icon, size: 20, color: color),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          value,
-          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.bold,
-                color: color,
-              ),
-        ),
-        Text(
-          label,
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Theme.of(context).colorScheme.secondaryText,
-              ),
-        ),
-      ],
+          const SizedBox(height: 12),
+          Text(
+            value,
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: color,
+                ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            subtitle,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.secondaryText,
+                ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MemoryInfoChip extends StatelessWidget {
+  final String label;
+  final Color color;
+
+  const _MemoryInfoChip({
+    required this.label,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: color,
+              fontWeight: FontWeight.w700,
+            ),
+      ),
     );
   }
 }
@@ -903,6 +1173,61 @@ class _AgentSessionCard extends StatelessWidget {
     return Icons.terminal;
   }
 
+  Color _statusColor() {
+    switch (session.status.toLowerCase()) {
+      case 'active':
+        return const Color(0xFF22C55E);
+      case 'expired':
+        return const Color(0xFFF59E0B);
+      case 'disconnected':
+        return const Color(0xFFEF4444);
+      default:
+        return const Color(0xFF64748B);
+    }
+  }
+
+  String _memoryHeadline() {
+    if (!session.hasMemory) {
+      return 'Memory bank is empty';
+    }
+    switch (session.memoryLongTermStatus) {
+      case 'durable':
+        return 'Long-term memory is protected';
+      case 'warming':
+        return 'Checkpointing is warming up';
+      default:
+        return 'Working memory is live';
+    }
+  }
+
+  String _memorySubtitle() {
+    if (!session.hasMemory) {
+      return 'This agent has not written MCP memory yet.';
+    }
+    final namespaces = session.memoryNamespaces.length;
+    if (session.totalCheckpoints > 0) {
+      return '$namespaces namespaces synced with ${session.totalCheckpoints} long-term checkpoints.';
+    }
+    if (session.totalHistoryItems > 0) {
+      return '$namespaces namespaces tracking ${session.totalHistoryItems} recent history items.';
+    }
+    return '$namespaces namespaces saved and ready for future checkpoints.';
+  }
+
+  Color _memoryAccent(BuildContext context) {
+    if (!session.hasMemory) {
+      return Theme.of(context).colorScheme.outline;
+    }
+    switch (session.memoryLongTermStatus) {
+      case 'durable':
+        return const Color(0xFF14B8A6);
+      case 'warming':
+        return const Color(0xFFF59E0B);
+      default:
+        return Theme.of(context).colorScheme.primary;
+    }
+  }
+
   String _formatTimeAgo(DateTime dateTime) {
     final now = DateTime.now();
     final difference = now.difference(dateTime);
@@ -923,6 +1248,9 @@ class _AgentSessionCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
+    final statusColor = _statusColor();
+    final memoryAccent = _memoryAccent(context);
+    final notebookLabel = session.notebookTitle ?? 'Notebook unavailable';
 
     return Container(
       decoration: BoxDecoration(
@@ -941,31 +1269,39 @@ class _AgentSessionCard extends StatelessWidget {
       ),
       child: Column(
         children: [
-          // Header
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: scheme.primary.withValues(alpha: 0.05),
+              gradient: LinearGradient(
+                colors: [
+                  statusColor.withValues(alpha: 0.12),
+                  memoryAccent.withValues(alpha: 0.08),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
               borderRadius:
                   const BorderRadius.vertical(top: Radius.circular(16)),
             ),
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Agent icon
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: scheme.primary.withValues(alpha: 0.1),
+                    color: scheme.surface.withValues(alpha: 0.72),
                     borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: statusColor.withValues(alpha: 0.2),
+                    ),
                   ),
                   child: Icon(
                     _getAgentIcon(),
                     size: 24,
-                    color: scheme.primary,
+                    color: statusColor,
                   ),
                 ),
                 const SizedBox(width: 12),
-                // Agent info
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -982,9 +1318,24 @@ class _AgentSessionCard extends StatelessWidget {
                         status: session.status,
                         compact: true,
                       ),
+                      const SizedBox(height: 8),
+                      Text(
+                        _memoryHeadline(),
+                        style: text.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        _memorySubtitle(),
+                        style: text.bodySmall?.copyWith(
+                          color: scheme.secondaryText,
+                        ),
+                      ),
                     ],
                   ),
                 ),
+                const SizedBox(width: 12),
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
@@ -994,25 +1345,95 @@ class _AgentSessionCard extends StatelessWidget {
                       hasMemory: session.hasMemory,
                       namespaceCount: session.memoryNamespaces.length,
                       updatedAt: session.memoryUpdatedAt,
+                      longTermStatus: session.memoryLongTermStatus,
+                      checkpointCount: session.totalCheckpoints,
                     ),
                   ],
                 ),
               ],
             ),
           ),
-          // Details
           Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (session.notebookTitle != null) ...[
-                  _DetailRow(
-                    icon: LucideIcons.bookOpen,
-                    label: 'Notebook',
-                    value: session.notebookTitle!,
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: memoryAccent.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: memoryAccent.withValues(alpha: 0.15),
+                    ),
                   ),
-                  const SizedBox(height: 8),
-                ],
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            LucideIcons.bookOpen,
+                            size: 16,
+                            color: memoryAccent,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              notebookLabel,
+                              style: text.titleSmall?.copyWith(
+                                fontWeight: FontWeight.w700,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        session.notebookId != null
+                            ? 'Notebook-linked memory keeps agent context, saved code, and follow-up work connected over time.'
+                            : 'This agent session is active, but it is not attached to a notebook yet.',
+                        style: text.bodySmall?.copyWith(
+                          color: scheme.secondaryText,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    _SessionSignalChip(
+                      icon: LucideIcons.layers,
+                      label: 'Namespaces',
+                      value: session.memoryNamespaces.length.toString(),
+                      color: scheme.primary,
+                    ),
+                    _SessionSignalChip(
+                      icon: LucideIcons.history,
+                      label: 'History',
+                      value: session.totalHistoryItems.toString(),
+                      color: const Color(0xFF6366F1),
+                    ),
+                    _SessionSignalChip(
+                      icon: LucideIcons.archive,
+                      label: 'Checkpoints',
+                      value: session.totalCheckpoints.toString(),
+                      color: const Color(0xFF14B8A6),
+                    ),
+                    _SessionSignalChip(
+                      icon: LucideIcons.database,
+                      label: 'Structured',
+                      value: session.totalStructuredItems.toString(),
+                      color: const Color(0xFFF97316),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
                 _DetailRow(
                   icon: LucideIcons.clock,
                   label: 'Last Activity',
@@ -1029,7 +1450,7 @@ class _AgentSessionCard extends StatelessWidget {
                   icon: LucideIcons.brain,
                   label: 'Memory',
                   value: session.hasMemory
-                      ? '${session.memoryNamespaces.length} namespaces'
+                      ? '${session.memoryNamespaces.length} namespaces, ${session.totalHistoryItems} history items'
                       : 'No memory saved',
                 ),
                 if (session.memoryUpdatedAt != null) ...[
@@ -1043,7 +1464,6 @@ class _AgentSessionCard extends StatelessWidget {
               ],
             ),
           ),
-          // Actions
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
@@ -1053,55 +1473,98 @@ class _AgentSessionCard extends StatelessWidget {
                 ),
               ),
             ),
-            child: Row(
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
               children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: onViewMemory,
-                    icon: const Icon(LucideIcons.brain, size: 16),
-                    label: const Text('View Memory'),
-                  ),
+                OutlinedButton.icon(
+                  onPressed: onViewMemory,
+                  icon: const Icon(LucideIcons.brain, size: 16),
+                  label: const Text('Inspect Memory'),
                 ),
-                const SizedBox(width: 8),
                 if (onViewNotebook != null)
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: onViewNotebook,
-                      icon: const Icon(LucideIcons.externalLink, size: 16),
-                      label: const Text('View Notebook'),
-                    ),
+                  OutlinedButton.icon(
+                    onPressed: onViewNotebook,
+                    icon: const Icon(LucideIcons.externalLink, size: 16),
+                    label: const Text('Open Notebook'),
                   ),
-                if (onViewNotebook != null) const SizedBox(width: 8),
                 if (session.isActive)
-                  Expanded(
-                    child: FilledButton.icon(
-                      onPressed: onDisconnect,
-                      icon: const Icon(LucideIcons.unplug, size: 16),
-                      label: const Text('Disconnect'),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: scheme.error,
-                      ),
+                  FilledButton.icon(
+                    onPressed: onDisconnect,
+                    icon: const Icon(LucideIcons.unplug, size: 16),
+                    label: const Text('Disconnect'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: scheme.error,
                     ),
                   ),
                 if (session.isExpired || session.isDisconnected)
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () {
-                        // Show reconnect info
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              'To reconnect, use the coding agent to create a new session',
-                            ),
+                  OutlinedButton.icon(
+                    onPressed: () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            'To reconnect, use the coding agent to create a new session',
                           ),
-                        );
-                      },
-                      icon: const Icon(LucideIcons.refreshCw, size: 16),
-                      label: const Text('Reconnect Info'),
-                    ),
+                        ),
+                      );
+                    },
+                    icon: const Icon(LucideIcons.refreshCw, size: 16),
+                    label: const Text('Reconnect Info'),
                   ),
               ],
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SessionSignalChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color color;
+
+  const _SessionSignalChip({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      width: 136,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: color.withValues(alpha: 0.16),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 16, color: color),
+          const SizedBox(height: 10),
+          Text(
+            value,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  color: color,
+                ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  color: scheme.secondaryText,
+                  fontWeight: FontWeight.w600,
+                ),
           ),
         ],
       ),
@@ -1183,12 +1646,52 @@ class _MemoryHealthChip extends StatelessWidget {
   final bool hasMemory;
   final int namespaceCount;
   final DateTime? updatedAt;
+  final String longTermStatus;
+  final int checkpointCount;
 
   const _MemoryHealthChip({
     required this.hasMemory,
     required this.namespaceCount,
     required this.updatedAt,
+    required this.longTermStatus,
+    required this.checkpointCount,
   });
+
+  Color _resolvedColor() {
+    if (!hasMemory) {
+      return const Color(0xFF9CA3AF);
+    }
+    if (longTermStatus == 'durable' || checkpointCount > 0) {
+      return const Color(0xFF14B8A6);
+    }
+    if (longTermStatus == 'warming') {
+      return const Color(0xFFF59E0B);
+    }
+    return _chipColor();
+  }
+
+  String _resolvedLabel() {
+    if (!hasMemory) {
+      return 'Memory empty';
+    }
+    if (longTermStatus == 'durable' || checkpointCount > 0) {
+      return '$checkpointCount checkpoints';
+    }
+    if (longTermStatus == 'warming') {
+      return 'Long-term warming';
+    }
+    if (updatedAt == null) {
+      return '$namespaceCount namespaces';
+    }
+    final age = DateTime.now().difference(updatedAt!);
+    if (age.inHours < 1) {
+      return '$namespaceCount ns - fresh';
+    }
+    if (age.inDays < 1) {
+      return '$namespaceCount ns - ${age.inHours}h';
+    }
+    return '$namespaceCount ns - ${age.inDays}d';
+  }
 
   Color _chipColor() {
     if (!hasMemory) {
@@ -1207,6 +1710,7 @@ class _MemoryHealthChip extends StatelessWidget {
     return const Color(0xFFEF4444);
   }
 
+  // ignore: unused_element
   String _label() {
     if (!hasMemory) {
       return 'Memory empty';
@@ -1226,7 +1730,7 @@ class _MemoryHealthChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = _chipColor();
+    final color = _resolvedColor();
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
@@ -1240,7 +1744,7 @@ class _MemoryHealthChip extends StatelessWidget {
           Icon(LucideIcons.brain, size: 10, color: color),
           const SizedBox(width: 5),
           Text(
-            _label(),
+            _resolvedLabel(),
             style: TextStyle(
               fontSize: 10,
               fontWeight: FontWeight.w600,

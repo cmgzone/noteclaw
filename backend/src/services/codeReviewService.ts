@@ -45,6 +45,7 @@ export interface CodeReview {
   suggestions: string[];
   context?: string;
   relatedFilesUsed?: string[];
+  metadata?: Record<string, any>;
   createdAt: Date;
 }
 
@@ -72,6 +73,45 @@ export interface ReviewComparisonResult {
 }
 
 class CodeReviewService {
+  async saveReviewRecord(params: {
+    userId: string;
+    code: string;
+    language: string;
+    reviewType: string;
+    score: number;
+    summary: string;
+    issues: CodeReviewIssue[];
+    suggestions: string[];
+    context?: string;
+    relatedFilesUsed?: string[];
+    metadata?: Record<string, any>;
+  }): Promise<CodeReview> {
+    const result = await pool.query(
+      `INSERT INTO code_reviews (
+         user_id, code, language, review_type, score, summary, issues, suggestions, context, related_files_used, metadata
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+       RETURNING *`,
+      [
+        params.userId,
+        params.code,
+        params.language,
+        params.reviewType,
+        params.score,
+        params.summary,
+        JSON.stringify(params.issues),
+        JSON.stringify(params.suggestions),
+        params.context ?? null,
+        params.relatedFilesUsed?.length
+          ? JSON.stringify(params.relatedFilesUsed)
+          : null,
+        JSON.stringify(params.metadata ?? {}),
+      ],
+    );
+
+    return this.mapRowToReview(result.rows[0]);
+  }
+
   /**
    * Extract imports/dependencies from code based on language
    */
@@ -467,17 +507,24 @@ class CodeReviewService {
     const reviewResult = await this.generateAIReview(code, language, reviewType, context, modelId || undefined, relatedFiles);
 
     if (saveReview) {
-      // Save to database
-      const result = await pool.query(
-        `INSERT INTO code_reviews (user_id, code, language, review_type, score, summary, issues, suggestions, context, related_files_used)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-         RETURNING *`,
-        [userId, code, language, reviewType, reviewResult.score, reviewResult.summary,
-          JSON.stringify(reviewResult.issues), JSON.stringify(reviewResult.suggestions), context,
-          relatedFiles.length > 0 ? JSON.stringify(relatedFiles.map(f => f.path)) : null]
-      );
-
-      return this.mapRowToReview(result.rows[0]);
+      return this.saveReviewRecord({
+        userId,
+        code,
+        language,
+        reviewType,
+        score: reviewResult.score,
+        summary: reviewResult.summary,
+        issues: reviewResult.issues,
+        suggestions: reviewResult.suggestions,
+        context,
+        relatedFilesUsed: relatedFiles.map(f => f.path),
+        metadata: {
+          source: 'app',
+          toolName: 'review_code',
+          modelUsed: reviewResult.modelUsed ?? null,
+          isContextAware: relatedFiles.length > 0,
+        },
+      });
     }
 
     return {
@@ -701,6 +748,9 @@ ${relatedFiles && relatedFiles.length > 0 ? '\nNote: Include "integration" categ
       context: row.context,
       relatedFilesUsed: row.related_files_used
         ? (typeof row.related_files_used === 'string' ? JSON.parse(row.related_files_used) : row.related_files_used)
+        : undefined,
+      metadata: row.metadata
+        ? (typeof row.metadata === 'string' ? JSON.parse(row.metadata) : row.metadata)
         : undefined,
       createdAt: row.created_at,
     };

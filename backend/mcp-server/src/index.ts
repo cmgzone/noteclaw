@@ -370,7 +370,10 @@ Use this to restore identity, working memory, preferences, and checkpoints betwe
     name: 'memory_put',
     description: `Write to the persisted memory bank for an agent session.
 
-Use mode "merge" for partial updates or "replace" for full namespace overwrite.`,
+Use:
+- mode "merge" for partial updates
+- mode "replace" for full namespace overwrite
+- mode "append" to grow a history array and optionally auto-compact older items into long-term checkpoints.`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -389,16 +392,48 @@ Use mode "merge" for partial updates or "replace" for full namespace overwrite.`
         },
         mode: {
           type: 'string',
-          description: 'Update mode: merge or replace',
-          enum: ['merge', 'replace'],
+          description: 'Update mode: merge, replace, or append',
+          enum: ['merge', 'replace', 'append'],
           default: 'merge',
         },
         memory: {
           type: 'object',
-          description: 'Memory payload object to persist',
+          description: 'Memory payload object to persist or merge into the namespace',
+        },
+        historyField: {
+          type: 'string',
+          description: 'History field to append into when mode = append',
+          default: 'history',
+        },
+        item: {
+          description: 'Single history item to append when mode = append',
+        },
+        items: {
+          type: 'array',
+          description: 'Multiple history items to append when mode = append',
+          items: {},
+        },
+        maxHistoryItems: {
+          type: 'number',
+          description: 'If the history exceeds this size, older items can be auto-compacted',
+        },
+        keepRecent: {
+          type: 'number',
+          description: 'How many recent history items to keep after auto-compaction',
+        },
+        summaryMaxItems: {
+          type: 'number',
+          description: 'Maximum removed history items to sample into the checkpoint summary',
+        },
+        compactToNamespace: {
+          type: 'string',
+          description: 'Optional long-term namespace for automatic checkpoint storage',
+        },
+        dedupeKey: {
+          type: 'string',
+          description: 'Optional dotted path used to de-duplicate appended history items',
         },
       },
-      required: ['memory'],
     },
   },
   {
@@ -2043,8 +2078,16 @@ const MemoryPutSchema = z.object({
   agentSessionId: z.string().optional(),
   agentIdentifier: z.string().optional(),
   namespace: z.string().optional().default('default'),
-  mode: z.enum(['merge', 'replace']).optional().default('merge'),
-  memory: z.record(z.string(), z.any()),
+  mode: z.enum(['merge', 'replace', 'append']).optional().default('merge'),
+  memory: z.record(z.string(), z.any()).optional().default({}),
+  historyField: z.string().optional().default('history'),
+  item: z.any().optional(),
+  items: z.array(z.any()).optional(),
+  maxHistoryItems: z.number().int().min(0).optional(),
+  keepRecent: z.number().int().min(0).optional(),
+  summaryMaxItems: z.number().int().min(1).optional(),
+  compactToNamespace: z.string().optional(),
+  dedupeKey: z.string().optional(),
 });
 
 const MemoryCompactSchema = z.object({
@@ -2352,7 +2395,7 @@ const ebookApi = axios.create({
 const server = new Server(
   {
     name: 'coding-agent-mcp',
-    version: '1.2.0',
+    version: '1.3.0',
   },
   {
     capabilities: {

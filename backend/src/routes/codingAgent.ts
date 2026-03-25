@@ -9,8 +9,11 @@ import { Router, Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import pool from '../config/database.js';
 import codeVerificationService, { 
-  CodeVerificationRequest, 
-  VerifiedSource 
+  type CodeIssue,
+  type CodeSuggestion,
+  type CodeVerificationRequest,
+  type VerificationResult,
+  type VerifiedSource
 } from '../services/codeVerificationService.js';
 import { authenticateToken, optionalAuth } from '../middleware/auth.js';
 import { agentSessionService } from '../services/agentSessionService.js';
@@ -23,6 +26,7 @@ import { mcpLimitsService } from '../services/mcpLimitsService.js';
 import { unifiedContextBuilder } from '../services/unifiedContextBuilder.js';
 import { githubWebhookBuilder } from '../services/githubWebhookBuilder.js';
 import { mcpUserSettingsService } from '../services/mcpUserSettingsService.js';
+import { codeReviewService, type CodeReviewIssue } from '../services/codeReviewService.js';
 
 const router = Router();
 
@@ -65,13 +69,151 @@ const sanitizeImageAttachments = (value: unknown): ImageAttachmentPayload[] => {
     .slice(0, 4);
 };
 
+const titleCase = (value: string | null | undefined): string =>
+  (value ?? '')
+    .split(/[_\-\s]+/)
+    .filter(Boolean)
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(' ');
+
+const mapVerificationCategory = (
+  issue: CodeIssue,
+): CodeReviewIssue['category'] => {
+  const haystack = `${issue.rule ?? ''} ${issue.message}`.toLowerCase();
+
+  if (
+    /(security|xss|csrf|sql|injection|secret|token|password|auth|credential|unsafe|vuln)/.test(
+      haystack,
+    )
+  ) {
+    return 'security';
+  }
+
+  if (/(performance|memory|render|loop|slow|optimi[sz]e|complexity)/.test(haystack)) {
+    return 'performance';
+  }
+
+  if (/(syntax|logic|undefined|null|type|bracket|runtime|reference)/.test(haystack)) {
+    return 'logic';
+  }
+
+  if (/(style|indent|readability|format|lint|eqeqeq|no-var|no-console|naming)/.test(haystack)) {
+    return 'style';
+  }
+
+  return 'best-practice';
+};
+
+const toCodeReviewIssue = (issue: CodeIssue): CodeReviewIssue => ({
+  id: uuidv4(),
+  severity: issue.type === 'error' ? 'error' : 'warning',
+  category: mapVerificationCategory(issue),
+  message: issue.message,
+  line: issue.line,
+  column: issue.column,
+  suggestion: issue.rule
+    ? `Review rule "${issue.rule}"${issue.line ? ` near line ${issue.line}` : ''}.`
+    : undefined,
+});
+
+const formatVerificationSuggestion = (suggestion: CodeSuggestion): string => {
+  const category = titleCase(suggestion.category);
+  const priority = titleCase(suggestion.priority);
+  return `${category} (${priority} priority): ${suggestion.message}`;
+};
+
+const buildVerificationSummary = (params: {
+  language: string;
+  verification: VerificationResult;
+  label: string;
+}): string => {
+  const { language, verification, label } = params;
+  const errorCount = verification.errors.length;
+  const warningCount = verification.warnings.length;
+  const suggestionCount = verification.suggestions.length;
+  const status = verification.isValid ? 'passed cleanly' : 'flagged follow-up issues';
+
+  return `${label} for ${language} ${status} with a score of ${verification.score}/100. `
+    + `${errorCount} error(s), ${warningCount} warning(s), ${suggestionCount} suggestion(s).`;
+};
+
+const resolveRenderableMimeType = (
+  language: string | null | undefined,
+  code: string | null | undefined,
+): string | null => {
+  const normalizedLanguage = (language ?? '').trim().toLowerCase();
+
+  if (['html', 'htm', 'xhtml'].includes(normalizedLanguage)) {
+    return 'text/html';
+  }
+
+  const normalizedCode = (code ?? '').trim().toLowerCase();
+  if (
+    normalizedCode.includes('```html') ||
+    normalizedCode.includes('<!doctype html') ||
+    normalizedCode.includes('<html') ||
+    normalizedCode.includes('</html>')
+  ) {
+    return 'text/html';
+  }
+
+  return null;
+};
+
+const saveMcpReviewRecord = async (params: {
+  userId?: string;
+  code: string;
+  language: string;
+  reviewType: string;
+  context?: string;
+  verification: VerificationResult;
+  metadata?: Record<string, unknown>;
+  summaryLabel: string;
+}) => {
+  const userId = params.userId;
+
+  if (!userId) {
+    return null;
+  }
+
+  const issues = [
+    ...params.verification.errors.map(toCodeReviewIssue),
+    ...params.verification.warnings.map(toCodeReviewIssue),
+  ];
+
+  const suggestions = params.verification.suggestions.map(formatVerificationSuggestion);
+
+  return codeReviewService.saveReviewRecord({
+    userId,
+    code: params.code,
+    language: params.language,
+    reviewType: params.reviewType,
+    score: params.verification.score,
+    summary: buildVerificationSummary({
+      language: params.language,
+      verification: params.verification,
+      label: params.summaryLabel,
+    }),
+    issues,
+    suggestions,
+    context: params.context,
+    metadata: {
+      source: 'mcp',
+      toolName: params.reviewType,
+      isContextAware: false,
+      verificationMeta: params.verification.metadata,
+      ...(params.metadata ?? {}),
+    },
+  });
+};
+
 /**
  * POST /api/coding-agent/verify
  * Verify code for correctness
  */
 router.post('/verify', optionalAuth, async (req: Request, res: Response) => {
   try {
-    const { code, language, context, strictMode } = req.body;
+    const { code, language, context, strictMode, saveReview } = req.body;
     const userId = (req as any).userId;
 
     if (!code || !language) {
@@ -93,6 +235,22 @@ router.post('/verify', optionalAuth, async (req: Request, res: Response) => {
     };
 
     const result = await codeVerificationService.verifyCode(request);
+    const savedReview =
+      userId && saveReview !== false
+        ? await saveMcpReviewRecord({
+            userId,
+            code,
+            language,
+            reviewType: 'verify_code',
+            context,
+            verification: result,
+            summaryLabel: 'MCP verification',
+            metadata: {
+              strictMode: Boolean(strictMode),
+              isValid: result.isValid,
+            },
+          })
+        : null;
 
     // Log verification for analytics
     console.log(`[Coding Agent] Verified ${language} code - Score: ${result.score}`);
@@ -100,6 +258,7 @@ router.post('/verify', optionalAuth, async (req: Request, res: Response) => {
     res.json({
       success: true,
       verification: result,
+      reviewId: savedReview?.id ?? null,
     });
   } catch (error: any) {
     console.error('Code verification error:', error);
@@ -113,7 +272,8 @@ router.post('/verify', optionalAuth, async (req: Request, res: Response) => {
  */
 router.post('/verify-and-save', authenticateToken, async (req: Request, res: Response) => {
   try {
-    const { code, language, title, description, notebookId, context, strictMode } = req.body;
+    const { code, language, title, description, notebookId, context, strictMode, saveReview } =
+      req.body;
     const userId = (req as any).userId;
 
     if (!code || !language || !title) {
@@ -144,12 +304,38 @@ router.post('/verify-and-save', authenticateToken, async (req: Request, res: Res
       strictMode: strictMode || false,
     });
 
+    const baseReviewMetadata = {
+      strictMode: Boolean(strictMode),
+      isValid: verification.isValid,
+      title,
+      notebookId: notebookId ?? null,
+      saveAsSourceAttempted: true,
+    };
+
     // Only save if code passes verification (score >= 60)
     if (verification.score < 60) {
+      const savedReview =
+        saveReview !== false
+          ? await saveMcpReviewRecord({
+              userId,
+              code,
+              language,
+              reviewType: 'verify_and_save',
+              context,
+              verification,
+              summaryLabel: 'Verify and save review',
+              metadata: {
+                ...baseReviewMetadata,
+                savedAsSource: false,
+              },
+            })
+          : null;
+
       return res.status(400).json({
         success: false,
         error: 'Code verification failed',
         verification,
+        reviewId: savedReview?.id ?? null,
         message: 'Code must have a verification score of at least 60 to be saved as a source',
       });
     }
@@ -168,6 +354,8 @@ router.post('/verify-and-save', authenticateToken, async (req: Request, res: Res
       notebookId,
     };
 
+    const sourceMimeType = resolveRenderableMimeType(language, code);
+
     // Save to database as a source
     const result = await pool.query(
       `INSERT INTO sources (id, notebook_id, user_id, type, title, content, metadata, created_at)
@@ -181,6 +369,7 @@ router.post('/verify-and-save', authenticateToken, async (req: Request, res: Res
         code,
         JSON.stringify({
           language,
+          ...(sourceMimeType != null ? { mimeType: sourceMimeType } : {}),
           verification: verification,
           isVerified: true,
           verifiedAt: new Date().toISOString(),
@@ -191,10 +380,29 @@ router.post('/verify-and-save', authenticateToken, async (req: Request, res: Res
     // Increment user's source count
     await mcpLimitsService.incrementSourceCount(userId);
 
+    const savedReview =
+      saveReview !== false
+        ? await saveMcpReviewRecord({
+            userId,
+            code,
+            language,
+            reviewType: 'verify_and_save',
+            context,
+            verification,
+            summaryLabel: 'Verify and save review',
+            metadata: {
+              ...baseReviewMetadata,
+              savedAsSource: true,
+              sourceId,
+            },
+          })
+        : null;
+
     res.json({
       success: true,
       source: result.rows[0],
       verification,
+      reviewId: savedReview?.id ?? null,
     });
   } catch (error: any) {
     console.error('Verify and save error:', error);
@@ -328,7 +536,7 @@ router.post('/batch-verify', optionalAuth, async (req: Request, res: Response) =
  */
 router.post('/analyze', optionalAuth, async (req: Request, res: Response) => {
   try {
-    const { code, language, analysisType } = req.body;
+    const { code, language, analysisType, saveReview } = req.body;
     const userId = (req as any).userId;
 
     if (!code || !language) {
@@ -350,12 +558,32 @@ router.post('/analyze', optionalAuth, async (req: Request, res: Response) => {
       strictMode: true,
     });
 
+    const analysisLabel = titleCase(analysisType || 'comprehensive');
+    const savedReview =
+      userId && saveReview !== false
+        ? await saveMcpReviewRecord({
+            userId,
+            code,
+            language,
+            reviewType: 'analyze_code',
+            context: `Perform ${analysisType || 'comprehensive'} analysis`,
+            verification,
+            summaryLabel: `${analysisLabel} analysis`,
+            metadata: {
+              analysisType: analysisType || 'comprehensive',
+              strictMode: true,
+              isValid: verification.isValid,
+            },
+          })
+        : null;
+
     res.json({
       success: true,
       analysis: {
         ...verification,
         analysisType: analysisType || 'comprehensive',
       },
+      reviewId: savedReview?.id ?? null,
     });
   } catch (error: any) {
     console.error('Analysis error:', error);
@@ -550,8 +778,10 @@ router.post('/sources/with-context', authenticateToken, async (req: Request, res
 
     // Create the source with agent context (Requirements 2.1, 2.2, 2.3)
     const sourceId = uuidv4();
+    const sourceMimeType = resolveRenderableMimeType(language, code);
     const sourceMetadata = {
       language,
+      ...(sourceMimeType != null ? { mimeType: sourceMimeType } : {}),
       verification: verificationResult,
       isVerified: verificationResult?.isValid ?? true,
       verifiedAt: new Date().toISOString(),
@@ -992,6 +1222,7 @@ router.post('/followups/send', authenticateToken, async (req: Request, res: Resp
     res.json({
       success: true,
       message: userMessage,
+      agentSessionId,
       delivered,
       deliveryMethod,
       agentResponse,
@@ -1211,15 +1442,21 @@ router.get('/websocket/info', optionalAuth, async (req: Request, res: Response) 
     success: true,
     websocket: {
       url: `${wsUrl}/ws/agent`,
-      protocol: 'wss',
-      authentication: 'Query parameter: ?token=YOUR_API_TOKEN&sessionId=YOUR_SESSION_ID',
+      protocol: wsUrl.startsWith('wss://') ? 'wss' : 'ws',
+      authentication:
+        'Query parameter: ?token=YOUR_API_TOKEN&sessionId=YOUR_SESSION_ID or ?token=YOUR_API_TOKEN&agentIdentifier=YOUR_AGENT_IDENTIFIER',
       messageTypes: {
         incoming: ['followup_message', 'ping'],
         outgoing: ['response', 'pong'],
       },
+      behavior: {
+        pendingMessagesOnConnect:
+          'Unread follow-up messages are replayed immediately after the socket connects.',
+      },
     },
     example: {
       connect: `const ws = new WebSocket('${wsUrl}/ws/agent?token=nclaw_xxx&sessionId=xxx')`,
+      connectByAgentIdentifier: `const ws = new WebSocket('${wsUrl}/ws/agent?token=nclaw_xxx&agentIdentifier=your-agent-id')`,
       incomingFollowup: JSON.stringify({
         type: 'followup_message',
         messageId: 'message-uuid',
@@ -1554,14 +1791,25 @@ router.put('/sources/:id', authenticateToken, async (req: Request, res: Response
       values.push(title);
     }
 
+    const resolvedMimeType = resolveRenderableMimeType(
+      language || existingMetadata.language,
+      code ?? existing.content,
+    );
+
     // Update metadata
-    const newMetadata = {
+    const newMetadata: Record<string, unknown> = {
       ...existingMetadata,
       ...(language && { language }),
       ...(description && { description }),
       ...(verification && { verification, isVerified: verification.isValid }),
       lastUpdatedAt: new Date().toISOString(),
     };
+
+    if (resolvedMimeType != null) {
+      newMetadata.mimeType = resolvedMimeType;
+    } else {
+      delete newMetadata.mimeType;
+    }
 
     updates.push(`metadata = $${paramIndex++}`);
     values.push(JSON.stringify(newMetadata));
@@ -1925,6 +2173,272 @@ const getMetadataNamespaceMemory = (metadata: any, namespace: string): Record<st
   return namespaceMemory && typeof namespaceMemory === 'object' ? namespaceMemory : {};
 };
 
+type AgentMemoryStats = {
+  namespace: string;
+  fieldCount: number;
+  nonEmptyFieldCount: number;
+  historyLength: number;
+  checkpointCount: number;
+  summaryItemCount: number;
+  hasProfile: boolean;
+  hasData: boolean;
+  longTermStatus: 'empty' | 'warming' | 'durable';
+  lastCompactedAt: string | null;
+  version: number | null;
+};
+
+type MemoryCompactionResult = {
+  checkpoint: Record<string, any>;
+  nextSourceMemory: Record<string, any>;
+  nextTargetMemory: Record<string, any>;
+  removedCount: number;
+  keptCount: number;
+};
+
+const toMemoryObject = (value: unknown): Record<string, any> => {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value as Record<string, any>;
+  }
+  return {};
+};
+
+const parseStoredMemory = (value: unknown): Record<string, any> => {
+  if (typeof value === 'string') {
+    try {
+      return toMemoryObject(JSON.parse(value));
+    } catch {
+      return {};
+    }
+  }
+
+  return toMemoryObject(value);
+};
+
+const normalizeNamespace = (value: unknown, fallback = 'default'): string => {
+  const trimmed = typeof value === 'string' ? value.trim() : '';
+  return trimmed.length > 0 ? trimmed : fallback;
+};
+
+const normalizeIsoString = (value: unknown): string | null => {
+  if (!value) {
+    return null;
+  }
+
+  const date = value instanceof Date ? value : new Date(String(value));
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+};
+
+const countMeaningfulItems = (value: unknown): number => {
+  if (Array.isArray(value)) {
+    return value.length;
+  }
+  if (value && typeof value === 'object') {
+    return Object.keys(value as Record<string, unknown>).length;
+  }
+  if (typeof value === 'string') {
+    return value.trim().length === 0 ? 0 : 1;
+  }
+  return value == null ? 0 : 1;
+};
+
+const getNestedValue = (input: unknown, path: string): unknown => {
+  const segments = path.split('.').map((segment) => segment.trim()).filter(Boolean);
+  let current: unknown = input;
+
+  for (const segment of segments) {
+    if (!current || typeof current !== 'object' || Array.isArray(current)) {
+      return undefined;
+    }
+    current = (current as Record<string, unknown>)[segment];
+  }
+
+  return current;
+};
+
+const dedupeHistoryItems = (items: unknown[], dedupeKey?: string): unknown[] => {
+  if (!dedupeKey || !dedupeKey.trim()) {
+    return items;
+  }
+
+  const seen = new Set<string>();
+  const deduped: unknown[] = [];
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const item = items[index];
+    const keyValue = getNestedValue(item, dedupeKey);
+    const fallbackKey = typeof item === 'string' ? item : JSON.stringify(item);
+    const normalizedKey = keyValue == null ? fallbackKey : JSON.stringify(keyValue);
+
+    if (seen.has(normalizedKey)) {
+      continue;
+    }
+
+    seen.add(normalizedKey);
+    deduped.push(item);
+  }
+
+  return deduped.reverse();
+};
+
+const normalizeHistoryItems = (items: unknown[], nowIso: string): unknown[] =>
+  items.map((item) => {
+    if (item && typeof item === 'object' && !Array.isArray(item)) {
+      const record = { ...(item as Record<string, unknown>) };
+      if (
+        record.timestamp == null &&
+        record.createdAt == null &&
+        record.updatedAt == null &&
+        record.recordedAt == null
+      ) {
+        record.timestamp = nowIso;
+      }
+      return record;
+    }
+
+    return {
+      value: item,
+      timestamp: nowIso,
+    };
+  });
+
+const buildMemoryStats = (
+  namespace: string,
+  memory: Record<string, any>,
+  version: number | null = null,
+): AgentMemoryStats => {
+  const fieldCount = Object.keys(memory).length;
+  const nonEmptyFieldCount = Object.values(memory).reduce(
+    (count, value) => count + (countMeaningfulItems(value) > 0 ? 1 : 0),
+    0,
+  );
+  const historyLength = Array.isArray(memory.history) ? memory.history.length : 0;
+  const checkpointCount = Array.isArray(memory.checkpoints)
+    ? memory.checkpoints.length
+    : 0;
+  const summaryKeys = [
+    'summary',
+    'summaries',
+    'facts',
+    'preferences',
+    'decisions',
+    'goals',
+    'entities',
+    'openLoops',
+    'workingSet',
+  ];
+  const summaryItemCount = summaryKeys.reduce(
+    (count, key) => count + countMeaningfulItems(memory[key]),
+    0,
+  );
+  const hasProfile = countMeaningfulItems(memory.profile) > 0;
+  const hasData =
+    fieldCount > 0 || historyLength > 0 || checkpointCount > 0 || summaryItemCount > 0;
+  const longTermStatus: AgentMemoryStats['longTermStatus'] =
+    checkpointCount > 0 || summaryItemCount > 0 || hasProfile
+      ? 'durable'
+      : hasData
+          ? 'warming'
+          : 'empty';
+
+  return {
+    namespace,
+    fieldCount,
+    nonEmptyFieldCount,
+    historyLength,
+    checkpointCount,
+    summaryItemCount,
+    hasProfile,
+    hasData,
+    longTermStatus,
+    lastCompactedAt: normalizeIsoString(memory.lastCompactedAt),
+    version,
+  };
+};
+
+const compactMemoryHistory = (params: {
+  sourceNamespace: string;
+  sourceMemory: Record<string, any>;
+  targetMemory: Record<string, any>;
+  historyField: string;
+  keepRecent: number;
+  summaryMaxItems: number;
+  compactedAt: string;
+}): MemoryCompactionResult | null => {
+  const {
+    sourceNamespace,
+    sourceMemory,
+    targetMemory,
+    historyField,
+    keepRecent,
+    summaryMaxItems,
+    compactedAt,
+  } = params;
+
+  const history = Array.isArray(sourceMemory[historyField]) ? sourceMemory[historyField] : [];
+  if (history.length <= keepRecent) {
+    return null;
+  }
+
+  const removeCount = history.length - keepRecent;
+  const removed = history.slice(0, removeCount);
+  const kept = history.slice(removeCount);
+  const sampled = removed.slice(-summaryMaxItems);
+
+  const summaryItems = sampled.map((item: any, index: number) => {
+    if (item && typeof item === 'object') {
+      return {
+        index: removeCount - sampled.length + index,
+        id: item.id || null,
+        timestamp: item.timestamp || item.createdAt || item.time || null,
+        type: item.type || item.role || item.kind || null,
+        title: item.title || null,
+        summary: item.summary || item.message || item.action || item.result || null,
+        status: item.status || null,
+      };
+    }
+
+    return {
+      index: removeCount - sampled.length + index,
+      summary: String(item).slice(0, 500),
+    };
+  });
+
+  const previousCheckpoints = Array.isArray(targetMemory.checkpoints)
+    ? targetMemory.checkpoints
+    : [];
+
+  const checkpoint = {
+    compactedAt,
+    sourceNamespace,
+    historyField,
+    removedCount: removed.length,
+    keptCount: kept.length,
+    sampledCount: summaryItems.length,
+    summaryItems,
+  };
+
+  const nextSourceMemory = {
+    ...sourceMemory,
+    [historyField]: kept,
+    lastCompactedAt: compactedAt,
+    totalCompactedItems: Number(sourceMemory.totalCompactedItems || 0) + removed.length,
+  };
+
+  const nextTargetMemory = {
+    ...targetMemory,
+    checkpoints: [...previousCheckpoints, checkpoint].slice(-40),
+    totalCompactedItems: Number(targetMemory.totalCompactedItems || 0) + removed.length,
+    lastCompactedAt: compactedAt,
+  };
+
+  return {
+    checkpoint,
+    nextSourceMemory,
+    nextTargetMemory,
+    removedCount: removed.length,
+    keptCount: kept.length,
+  };
+};
+
 const upsertMemoryEntry = async (
   userId: string,
   sessionId: string,
@@ -1982,7 +2496,7 @@ router.get('/memory/sessions', authenticateToken, async (req: Request, res: Resp
     );
 
     const memoryResult = await pool.query(
-      `SELECT agent_session_id, namespace, memory, updated_at
+      `SELECT agent_session_id, namespace, memory, version, updated_at
        FROM agent_memory_entries
        WHERE user_id = $1`,
       [userId]
@@ -1990,28 +2504,35 @@ router.get('/memory/sessions', authenticateToken, async (req: Request, res: Resp
 
     const tableMemoryBySession = new Map<string, {
       namespaces: string[];
-      namespaceStats: Array<{ namespace: string; historyLength: number; fieldCount: number; hasData: boolean }>;
+      namespaceStats: AgentMemoryStats[];
       memoryUpdatedAt: string | null;
+      totalHistoryItems: number;
+      totalCheckpointCount: number;
+      totalStructuredItems: number;
     }>();
 
     for (const row of memoryResult.rows) {
       const sessionId = row.agent_session_id as string;
-      const memory = typeof row.memory === 'string' ? JSON.parse(row.memory) : (row.memory || {});
-      const historyLength = Array.isArray(memory?.history) ? memory.history.length : 0;
-      const fieldCount = memory && typeof memory === 'object' ? Object.keys(memory).length : 0;
+      const memory = parseStoredMemory(row.memory);
+      const stats = buildMemoryStats(
+        row.namespace as string,
+        memory,
+        typeof row.version === 'number' ? row.version : Number(row.version ?? 0) || null,
+      );
       const existing = tableMemoryBySession.get(sessionId) || {
         namespaces: [],
-        namespaceStats: [],
+        namespaceStats: [] as AgentMemoryStats[],
         memoryUpdatedAt: null,
+        totalHistoryItems: 0,
+        totalCheckpointCount: 0,
+        totalStructuredItems: 0,
       };
 
       existing.namespaces.push(row.namespace);
-      existing.namespaceStats.push({
-        namespace: row.namespace,
-        historyLength,
-        fieldCount,
-        hasData: fieldCount > 0 || historyLength > 0,
-      });
+      existing.namespaceStats.push(stats);
+      existing.totalHistoryItems += stats.historyLength;
+      existing.totalCheckpointCount += stats.checkpointCount;
+      existing.totalStructuredItems += stats.summaryItemCount;
       const updatedAt = row.updated_at ? new Date(row.updated_at).toISOString() : null;
       if (!existing.memoryUpdatedAt || (updatedAt && updatedAt > existing.memoryUpdatedAt)) {
         existing.memoryUpdatedAt = updatedAt;
@@ -2031,17 +2552,25 @@ router.get('/memory/sessions', authenticateToken, async (req: Request, res: Resp
         ? tableMemory.namespaceStats
         : metadataNamespaces.map((namespace) => {
             const namespaceMemory = getMetadataNamespaceMemory(metadata, namespace);
-            const historyLength = Array.isArray(namespaceMemory.history) ? namespaceMemory.history.length : 0;
-            const fieldCount = Object.keys(namespaceMemory).length;
-            return {
-              namespace,
-              historyLength,
-              fieldCount,
-              hasData: fieldCount > 0 || historyLength > 0,
-            };
+            return buildMemoryStats(namespace, namespaceMemory);
           });
 
       const memoryUpdatedAt = tableMemory?.memoryUpdatedAt || metadata.memoryUpdatedAt || null;
+      const totalHistoryItems = tableMemory
+        ? tableMemory.totalHistoryItems
+        : namespaceStats.reduce((count, stat) => count + stat.historyLength, 0);
+      const totalCheckpointCount = tableMemory
+        ? tableMemory.totalCheckpointCount
+        : namespaceStats.reduce((count, stat) => count + stat.checkpointCount, 0);
+      const totalStructuredItems = tableMemory
+        ? tableMemory.totalStructuredItems
+        : namespaceStats.reduce((count, stat) => count + stat.summaryItemCount, 0);
+      const longTermStatus =
+        totalCheckpointCount > 0 || totalStructuredItems > 0
+          ? 'durable'
+          : namespaces.length > 0
+              ? 'warming'
+              : 'empty';
 
       return {
         session: {
@@ -2062,6 +2591,11 @@ router.get('/memory/sessions', authenticateToken, async (req: Request, res: Resp
           namespaceStats,
           memoryUpdatedAt,
           totalNamespaces: namespaces.length,
+          totalHistoryItems,
+          totalCheckpointCount,
+          totalStructuredItems,
+          hasLongTermMemory: totalCheckpointCount > 0 || totalStructuredItems > 0,
+          longTermStatus,
         },
       };
     });
@@ -2085,6 +2619,7 @@ router.get('/memory', authenticateToken, async (req: Request, res: Response) => 
       agentIdentifier?: string;
       namespace?: string;
     };
+    const normalizedNamespace = normalizeNamespace(namespace);
 
     await mcpLimitsService.incrementApiCallCount(userId);
 
@@ -2106,17 +2641,27 @@ router.get('/memory', authenticateToken, async (req: Request, res: Response) => 
     }
 
     const memoryEntriesResult = await pool.query(
-      `SELECT namespace, memory, updated_at
+      `SELECT namespace, memory, version, updated_at
        FROM agent_memory_entries
        WHERE user_id = $1 AND agent_session_id = $2`,
       [userId, session.id]
     );
 
     const memoryByNamespace: Record<string, any> = {};
+    const namespaceStats: AgentMemoryStats[] = [];
     let memoryUpdatedAt: string | null = null;
     for (const row of memoryEntriesResult.rows) {
-      memoryByNamespace[row.namespace] =
-        typeof row.memory === 'string' ? JSON.parse(row.memory) : (row.memory || {});
+      const namespaceMemory = parseStoredMemory(row.memory);
+      memoryByNamespace[row.namespace] = namespaceMemory;
+      namespaceStats.push(
+        buildMemoryStats(
+          row.namespace as string,
+          namespaceMemory,
+          typeof row.version === 'number'
+            ? row.version
+            : Number(row.version ?? 0) || null,
+        ),
+      );
       const updatedAt = row.updated_at ? new Date(row.updated_at).toISOString() : null;
       if (!memoryUpdatedAt || (updatedAt && updatedAt > memoryUpdatedAt)) {
         memoryUpdatedAt = updatedAt;
@@ -2130,8 +2675,19 @@ router.get('/memory', authenticateToken, async (req: Request, res: Response) => 
       ? Object.keys(memoryByNamespace)
       : Object.keys(metadataBank);
     const memory = hasTableData
-      ? (memoryByNamespace[namespace] || {})
-      : getMetadataNamespaceMemory(metadata, namespace);
+      ? (memoryByNamespace[normalizedNamespace] || {})
+      : getMetadataNamespaceMemory(metadata, normalizedNamespace);
+    const resolvedNamespaceStats = hasTableData
+      ? namespaceStats
+      : availableNamespaces.map((availableNamespace) =>
+          buildMemoryStats(
+            availableNamespace,
+            getMetadataNamespaceMemory(metadata, availableNamespace),
+          ),
+        );
+    const selectedNamespaceStats =
+      resolvedNamespaceStats.find((stats) => stats.namespace == normalizedNamespace) ||
+      buildMemoryStats(normalizedNamespace, toMemoryObject(memory));
 
     res.json({
       success: true,
@@ -2141,9 +2697,11 @@ router.get('/memory', authenticateToken, async (req: Request, res: Response) => 
         agentIdentifier: session.agentIdentifier,
         status: session.status,
       },
-      namespace,
+      namespace: normalizedNamespace,
       memory,
       availableNamespaces,
+      namespaceStats: resolvedNamespaceStats,
+      memoryStats: selectedNamespaceStats,
       memoryUpdatedAt: memoryUpdatedAt || metadata.memoryUpdatedAt || null,
       lastActivity: session.lastActivity,
     });
@@ -2162,7 +2720,19 @@ router.put('/memory', authenticateToken, async (req: Request, res: Response) => 
       namespace = 'default',
       mode = 'merge',
       memory,
+      historyField = 'history',
+      item,
+      items,
+      maxHistoryItems = 0,
+      keepRecent = 60,
+      summaryMaxItems = 50,
+      compactToNamespace,
+      dedupeKey,
     } = req.body;
+    const normalizedNamespace = normalizeNamespace(namespace);
+    const normalizedHistoryField = normalizeNamespace(historyField, 'history');
+    const hasMemoryObject =
+      memory != null && typeof memory === 'object' && !Array.isArray(memory);
 
     if (!agentSessionId && !agentIdentifier) {
       return res.status(400).json({
@@ -2170,15 +2740,46 @@ router.put('/memory', authenticateToken, async (req: Request, res: Response) => 
       });
     }
 
-    if (!memory || typeof memory !== 'object' || Array.isArray(memory)) {
+    if (!hasMemoryObject && mode !== 'append') {
       return res.status(400).json({
         error: 'Missing or invalid required field: memory (object)',
       });
     }
 
-    if (mode !== 'merge' && mode !== 'replace') {
+    if (mode === 'append') {
+      const appendItems = Array.isArray(items)
+        ? items
+        : item !== undefined
+            ? [item]
+            : [];
+      if (!hasMemoryObject && appendItems.length === 0) {
+        return res.status(400).json({
+          error: 'Append mode requires memory (object) and/or item/items to append',
+        });
+      }
+    }
+
+    if (mode !== 'merge' && mode !== 'replace' && mode !== 'append') {
       return res.status(400).json({
-        error: 'Invalid mode. Supported values: merge, replace',
+        error: 'Invalid mode. Supported values: merge, replace, append',
+      });
+    }
+
+    if (!Number.isInteger(maxHistoryItems) || maxHistoryItems < 0) {
+      return res.status(400).json({
+        error: 'Invalid maxHistoryItems. Must be an integer >= 0',
+      });
+    }
+
+    if (!Number.isInteger(keepRecent) || keepRecent < 0) {
+      return res.status(400).json({
+        error: 'Invalid keepRecent. Must be an integer >= 0',
+      });
+    }
+
+    if (!Number.isInteger(summaryMaxItems) || summaryMaxItems < 1) {
+      return res.status(400).json({
+        error: 'Invalid summaryMaxItems. Must be an integer >= 1',
       });
     }
 
@@ -2200,26 +2801,95 @@ router.put('/memory', authenticateToken, async (req: Request, res: Response) => 
       `SELECT memory
        FROM agent_memory_entries
        WHERE user_id = $1 AND agent_session_id = $2 AND namespace = $3`,
-      [userId, session.id, namespace]
+      [userId, session.id, normalizedNamespace]
     );
 
     const existingTableMemory = existingRowResult.rows.length > 0
-      ? (typeof existingRowResult.rows[0].memory === 'string'
-          ? JSON.parse(existingRowResult.rows[0].memory)
-          : (existingRowResult.rows[0].memory || {}))
+      ? parseStoredMemory(existingRowResult.rows[0].memory)
       : null;
-    const existingNamespaceMemory = existingTableMemory ?? getMetadataNamespaceMemory(session.metadata, namespace);
-
-    const nextNamespaceMemory = mode === 'replace'
-      ? memory
-      : {
-          ...existingNamespaceMemory,
-          ...memory,
-        };
-
-    await upsertMemoryEntry(userId, session.id, namespace, nextNamespaceMemory);
+    const existingNamespaceMemory =
+      existingTableMemory ?? getMetadataNamespaceMemory(session.metadata, normalizedNamespace);
+    const providedMemory = hasMemoryObject ? toMemoryObject(memory) : {};
     const nowIso = new Date().toISOString();
-    await updateSessionMetadataMemory(userId, session, { [namespace]: nextNamespaceMemory }, nowIso);
+
+    let nextNamespaceMemory: Record<string, any>;
+    let compactedToNamespace: string | null = null;
+    let autoCompaction: MemoryCompactionResult | null = null;
+    const metadataUpdates: Record<string, Record<string, any>> = {};
+
+    if (mode === 'replace') {
+      nextNamespaceMemory = providedMemory;
+    } else if (mode === 'merge') {
+      nextNamespaceMemory = {
+        ...existingNamespaceMemory,
+        ...providedMemory,
+      };
+    } else {
+      const appendItems = Array.isArray(items)
+        ? items
+        : item !== undefined
+            ? [item]
+            : [];
+      const normalizedItems = normalizeHistoryItems(appendItems, nowIso);
+      const baseMemory = {
+        ...existingNamespaceMemory,
+        ...providedMemory,
+      };
+      const existingHistory = Array.isArray(baseMemory[normalizedHistoryField])
+        ? baseMemory[normalizedHistoryField]
+        : [];
+      const nextHistory = dedupeHistoryItems(
+        [...existingHistory, ...normalizedItems],
+        typeof dedupeKey === 'string' ? dedupeKey : undefined,
+      );
+
+      nextNamespaceMemory = {
+        ...baseMemory,
+        [normalizedHistoryField]: nextHistory,
+        lastAppendedAt: nowIso,
+      };
+
+      if (maxHistoryItems > 0 && nextHistory.length > maxHistoryItems) {
+        compactedToNamespace = normalizeNamespace(
+          compactToNamespace,
+          `${normalizedNamespace}:long_term`,
+        );
+        const targetRowResult = await pool.query(
+          `SELECT memory
+           FROM agent_memory_entries
+           WHERE user_id = $1 AND agent_session_id = $2 AND namespace = $3`,
+          [userId, session.id, compactedToNamespace],
+        );
+        const targetMemory = targetRowResult.rows.length > 0
+          ? parseStoredMemory(targetRowResult.rows[0].memory)
+          : getMetadataNamespaceMemory(session.metadata, compactedToNamespace);
+
+        autoCompaction = compactMemoryHistory({
+          sourceNamespace: normalizedNamespace,
+          sourceMemory: nextNamespaceMemory,
+          targetMemory,
+          historyField: normalizedHistoryField,
+          keepRecent,
+          summaryMaxItems,
+          compactedAt: nowIso,
+        });
+
+        if (autoCompaction) {
+          nextNamespaceMemory = autoCompaction.nextSourceMemory;
+          metadataUpdates[compactedToNamespace] = autoCompaction.nextTargetMemory;
+          await upsertMemoryEntry(
+            userId,
+            session.id,
+            compactedToNamespace,
+            autoCompaction.nextTargetMemory,
+          );
+        }
+      }
+    }
+
+    metadataUpdates[normalizedNamespace] = nextNamespaceMemory;
+    await upsertMemoryEntry(userId, session.id, normalizedNamespace, nextNamespaceMemory);
+    await updateSessionMetadataMemory(userId, session, metadataUpdates, nowIso);
 
     res.json({
       success: true,
@@ -2228,9 +2898,13 @@ router.put('/memory', authenticateToken, async (req: Request, res: Response) => 
         agentName: session.agentName,
         agentIdentifier: session.agentIdentifier,
       },
-      namespace,
+      namespace: normalizedNamespace,
       mode,
       memory: nextNamespaceMemory,
+      memoryStats: buildMemoryStats(normalizedNamespace, nextNamespaceMemory),
+      autoCompacted: autoCompaction !== null,
+      compactedToNamespace,
+      checkpoint: autoCompaction?.checkpoint || null,
       memoryUpdatedAt: nowIso,
     });
   } catch (error: any) {
@@ -2251,6 +2925,8 @@ router.post('/memory/compact', authenticateToken, async (req: Request, res: Resp
       keepRecent = 20,
       summaryMaxItems = 50,
     } = req.body;
+    const normalizedNamespace = normalizeNamespace(namespace);
+    const normalizedHistoryField = normalizeNamespace(historyField, 'history');
 
     if (!agentSessionId && !agentIdentifier) {
       return res.status(400).json({
@@ -2288,55 +2964,29 @@ router.post('/memory/compact', authenticateToken, async (req: Request, res: Resp
       `SELECT memory
        FROM agent_memory_entries
        WHERE user_id = $1 AND agent_session_id = $2 AND namespace = $3`,
-      [userId, session.id, namespace]
+      [userId, session.id, normalizedNamespace]
     );
     const sourceMemory = sourceMemoryResult.rows.length > 0
-      ? (typeof sourceMemoryResult.rows[0].memory === 'string'
-          ? JSON.parse(sourceMemoryResult.rows[0].memory)
-          : (sourceMemoryResult.rows[0].memory || {}))
-      : getMetadataNamespaceMemory(session.metadata, namespace);
+      ? parseStoredMemory(sourceMemoryResult.rows[0].memory)
+      : getMetadataNamespaceMemory(session.metadata, normalizedNamespace);
 
-    const history = Array.isArray(sourceMemory[historyField]) ? sourceMemory[historyField] : [];
+    const history = Array.isArray(sourceMemory[normalizedHistoryField])
+      ? sourceMemory[normalizedHistoryField]
+      : [];
 
     if (history.length <= keepRecent) {
       return res.json({
         success: true,
         compacted: false,
         reason: 'Nothing to compact',
-        namespace,
-        historyField,
+        namespace: normalizedNamespace,
+        historyField: normalizedHistoryField,
         totalItems: history.length,
         keepRecent,
       });
     }
 
-    const removeCount = history.length - keepRecent;
-    const removed = history.slice(0, removeCount);
-    const kept = history.slice(removeCount);
-    const sampled = removed.slice(-summaryMaxItems);
-
-    const summaryItems = sampled.map((item: any, index: number) => {
-      if (item && typeof item === 'object') {
-        return {
-          index: removeCount - sampled.length + index,
-          id: item.id || null,
-          timestamp: item.timestamp || item.createdAt || item.time || null,
-          type: item.type || item.role || item.kind || null,
-          title: item.title || null,
-          summary: item.summary || item.message || item.action || item.result || null,
-          status: item.status || null,
-        };
-      }
-
-      return {
-        index: removeCount - sampled.length + index,
-        summary: String(item).slice(0, 500),
-      };
-    });
-
-    const compactNamespace = typeof targetNamespace === 'string' && targetNamespace.trim().length > 0
-      ? targetNamespace.trim()
-      : `${namespace}:compact`;
+    const compactNamespace = normalizeNamespace(targetNamespace, `${normalizedNamespace}:compact`);
 
     const compactMemoryResult = await pool.query(
       `SELECT memory
@@ -2345,48 +2995,42 @@ router.post('/memory/compact', authenticateToken, async (req: Request, res: Resp
       [userId, session.id, compactNamespace]
     );
     const compactMemory = compactMemoryResult.rows.length > 0
-      ? (typeof compactMemoryResult.rows[0].memory === 'string'
-          ? JSON.parse(compactMemoryResult.rows[0].memory)
-          : (compactMemoryResult.rows[0].memory || {}))
+      ? parseStoredMemory(compactMemoryResult.rows[0].memory)
       : getMetadataNamespaceMemory(session.metadata, compactNamespace);
 
-    const previousCheckpoints = Array.isArray(compactMemory.checkpoints)
-      ? compactMemory.checkpoints
-      : [];
+    const compactedAt = new Date().toISOString();
+    const compaction = compactMemoryHistory({
+      sourceNamespace: normalizedNamespace,
+      sourceMemory,
+      targetMemory: compactMemory,
+      historyField: normalizedHistoryField,
+      keepRecent,
+      summaryMaxItems,
+      compactedAt,
+    });
 
-    const checkpoint = {
-      compactedAt: new Date().toISOString(),
-      sourceNamespace: namespace,
-      historyField,
-      removedCount: removed.length,
-      keptCount: kept.length,
-      sampledCount: summaryItems.length,
-      summaryItems,
-    };
+    if (!compaction) {
+      return res.json({
+        success: true,
+        compacted: false,
+        reason: 'Nothing to compact',
+        namespace: normalizedNamespace,
+        historyField: normalizedHistoryField,
+        totalItems: history.length,
+        keepRecent,
+      });
+    }
 
-    const nextSourceMemory = {
-      ...sourceMemory,
-      [historyField]: kept,
-      lastCompactedAt: checkpoint.compactedAt,
-    };
-
-    const nextCompactMemory = {
-      ...compactMemory,
-      checkpoints: [...previousCheckpoints, checkpoint].slice(-20),
-      totalCompactedItems: (compactMemory.totalCompactedItems || 0) + removed.length,
-      lastCompactedAt: checkpoint.compactedAt,
-    };
-
-    await upsertMemoryEntry(userId, session.id, namespace, nextSourceMemory);
-    await upsertMemoryEntry(userId, session.id, compactNamespace, nextCompactMemory);
+    await upsertMemoryEntry(userId, session.id, normalizedNamespace, compaction.nextSourceMemory);
+    await upsertMemoryEntry(userId, session.id, compactNamespace, compaction.nextTargetMemory);
     await updateSessionMetadataMemory(
       userId,
       session,
       {
-        [namespace]: nextSourceMemory,
-        [compactNamespace]: nextCompactMemory,
+        [normalizedNamespace]: compaction.nextSourceMemory,
+        [compactNamespace]: compaction.nextTargetMemory,
       },
-      checkpoint.compactedAt
+      compactedAt
     );
 
     res.json({
@@ -2397,13 +3041,15 @@ router.post('/memory/compact', authenticateToken, async (req: Request, res: Resp
         agentName: session.agentName,
         agentIdentifier: session.agentIdentifier,
       },
-      sourceNamespace: namespace,
+      sourceNamespace: normalizedNamespace,
       targetNamespace: compactNamespace,
-      historyField,
-      removedCount: removed.length,
-      keptCount: kept.length,
-      checkpoint,
-      memoryUpdatedAt: checkpoint.compactedAt,
+      historyField: normalizedHistoryField,
+      removedCount: compaction.removedCount,
+      keptCount: compaction.keptCount,
+      checkpoint: compaction.checkpoint,
+      sourceMemoryStats: buildMemoryStats(normalizedNamespace, compaction.nextSourceMemory),
+      compactMemoryStats: buildMemoryStats(compactNamespace, compaction.nextTargetMemory),
+      memoryUpdatedAt: compactedAt,
     });
   } catch (error: any) {
     console.error('Compact agent memory error:', error);
@@ -2488,8 +3134,6 @@ router.get('/models', authenticateToken, async (req: Request, res: Response) => 
 
 // ==================== CODE REVIEW ENDPOINTS ====================
 
-import { codeReviewService } from '../services/codeReviewService.js';
-
 /**
  * POST /api/coding-agent/review
  * Submit code for AI-powered review
@@ -2538,6 +3182,7 @@ router.post('/review', authenticateToken, async (req: Request, res: Response) =>
       success: true,
       review: {
         id: review.id,
+        code: review.code,
         score: review.score,
         summary: review.summary,
         issues: review.issues,
@@ -2545,6 +3190,9 @@ router.post('/review', authenticateToken, async (req: Request, res: Response) =>
         language: review.language,
         reviewType: review.reviewType,
         relatedFilesUsed: review.relatedFilesUsed,
+        metadata: review.metadata ?? {},
+        source: review.metadata?.source ?? 'app',
+        toolName: review.metadata?.toolName ?? 'review_code',
         createdAt: review.createdAt,
       },
     });
@@ -2568,7 +3216,7 @@ router.get('/reviews', authenticateToken, async (req: Request, res: Response) =>
 
     const reviews = await codeReviewService.getReviewHistory(userId, {
       language: language as string,
-      limit: limit ? parseInt(limit as string) : 20,
+      limit: limit ? parseInt(limit as string) : 50,
       minScore: minScore ? parseInt(minScore as string) : undefined,
       maxScore: maxScore ? parseInt(maxScore as string) : undefined,
     });
@@ -2581,11 +3229,16 @@ router.get('/reviews', authenticateToken, async (req: Request, res: Response) =>
         language: r.language,
         reviewType: r.reviewType,
         score: r.score,
+        summary: r.summary,
         issueCount: {
           errors: r.issues.filter(i => i.severity === 'error').length,
           warnings: r.issues.filter(i => i.severity === 'warning').length,
           info: r.issues.filter(i => i.severity === 'info').length,
         },
+        source: r.metadata?.source ?? 'app',
+        toolName: r.metadata?.toolName ?? null,
+        metadata: r.metadata ?? {},
+        relatedFileCount: r.relatedFilesUsed?.length ?? 0,
         createdAt: r.createdAt,
       })),
       count: reviews.length,

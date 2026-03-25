@@ -28,6 +28,14 @@ class Source with _$Source {
 
 /// Extension methods for Source to check for GitHub and agent-related properties
 extension SourceExtensions on Source {
+  String? get mimeType {
+    final rawValue = metadata['mimeType'] ?? metadata['mime_type'];
+    if (rawValue is String && rawValue.trim().isNotEmpty) {
+      return rawValue.trim();
+    }
+    return null;
+  }
+
   /// Check if this is a GitHub source
   bool get isGitHubSource => type == 'github';
 
@@ -57,6 +65,84 @@ extension SourceExtensions on Source {
 
   /// Get the detected language if this is a GitHub source
   String? get language => metadata['language'] as String?;
+
+  bool get isHtmlSource {
+    final normalizedMimeType = mimeType?.toLowerCase();
+    if (normalizedMimeType != null && normalizedMimeType.contains('html')) {
+      return true;
+    }
+
+    final normalizedLanguage = language?.toLowerCase();
+    if (normalizedLanguage != null &&
+        ['html', 'htm', 'xhtml'].contains(normalizedLanguage)) {
+      return true;
+    }
+
+    final normalizedContent = content.toLowerCase();
+    return normalizedContent.contains('```html') ||
+        normalizedContent.contains('<!doctype html') ||
+        normalizedContent.contains('<html') ||
+        normalizedContent.contains('</html>');
+  }
+
+  String? get renderableHtmlDocument {
+    if (!isHtmlSource) {
+      return null;
+    }
+
+    var html = content.trim();
+    if (html.isEmpty) {
+      return null;
+    }
+
+    final fencedHtmlMatch = RegExp(
+      r'```html\s*([\s\S]*?)```',
+      caseSensitive: false,
+    ).firstMatch(html);
+    if (fencedHtmlMatch != null) {
+      html = fencedHtmlMatch.group(1)?.trim() ?? html;
+    } else {
+      final fencedMatch = RegExp(
+        r'```[a-z0-9_-]*\s*([\s\S]*?)```',
+        caseSensitive: false,
+      ).firstMatch(html);
+      if (fencedMatch != null) {
+        html = fencedMatch.group(1)?.trim() ?? html;
+      }
+    }
+
+    final lowerHtml = html.toLowerCase();
+    final closingHtmlIndex = lowerHtml.lastIndexOf('</html>');
+    if (closingHtmlIndex >= 0) {
+      html = html.substring(0, closingHtmlIndex + 7).trim();
+    }
+
+    final hasDocumentTag = RegExp(r'<html[\s>]', caseSensitive: false)
+        .hasMatch(html);
+    if (hasDocumentTag) {
+      return html;
+    }
+
+    return '''
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>$title</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        background: #ffffff;
+      }
+    </style>
+  </head>
+  <body>
+$html
+  </body>
+</html>''';
+  }
 
   /// Get the GitHub URL if this is a GitHub source
   String? get githubUrl => metadata['githubUrl'] as String?;
