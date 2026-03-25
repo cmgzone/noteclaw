@@ -22,31 +22,17 @@ class AppScaffold extends StatelessWidget {
       route: '/search',
     ),
     _NavDestination(
-      icon: Icons.description_outlined,
-      selectedIcon: Icons.description,
-      label: 'Sources',
-      route: '/sources',
-    ),
-    _NavDestination(
       icon: Icons.chat_outlined,
       selectedIcon: Icons.chat,
       label: 'Chat',
       route: '/chat',
-    ),
-    _NavDestination(
-      icon: Icons.mic_none,
-      selectedIcon: Icons.mic,
-      label: 'Studio',
-      route: '/studio',
     ),
   ];
 
   int _indexForLocation(String location) {
     if (location.startsWith('/home')) return 0;
     if (location.startsWith('/search')) return 1;
-    if (location.startsWith('/sources')) return 2;
-    if (location.startsWith('/chat')) return 3;
-    if (location.startsWith('/studio')) return 4;
+    if (location.startsWith('/chat')) return 2;
     return 0;
   }
 
@@ -85,6 +71,26 @@ class AppScaffold extends StatelessWidget {
               trailing: Column(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
+                  IconButton(
+                    icon: Icon(
+                      location.startsWith('/agent-connections')
+                          ? Icons.hub
+                          : Icons.hub_outlined,
+                    ),
+                    tooltip: 'Connect AI Agents',
+                    onPressed: () => context.go('/agent-connections'),
+                  ),
+                  const SizedBox(height: 8),
+                  IconButton(
+                    icon: Icon(
+                      location.startsWith('/sources')
+                          ? Icons.description
+                          : Icons.description_outlined,
+                    ),
+                    tooltip: 'Sources',
+                    onPressed: () => context.go('/sources'),
+                  ),
+                  const SizedBox(height: 8),
                   IconButton(
                     icon: const Icon(Icons.settings),
                     tooltip: 'Settings',

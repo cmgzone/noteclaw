@@ -85,8 +85,7 @@ class StripeService {
     required Function(String error) onError,
   }) async {
     if (!isConfigured) {
-      onError(
-          'Stripe is not configured. Please add credentials in admin panel.');
+      onError('Stripe is not configured yet. Please contact support.');
       return;
     }
 

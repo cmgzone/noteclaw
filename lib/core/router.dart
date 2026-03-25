@@ -51,7 +51,6 @@ import '../features/gamification/achievements_screen.dart';
 import '../features/gamification/daily_challenges_screen.dart';
 import '../features/language_learning/language_learning_hub.dart';
 import '../features/language_learning/language_session_screen.dart';
-import '../features/admin/ai_models_manager_screen.dart';
 
 import '../features/settings/agent_connections_screen.dart';
 import '../features/agent_skills/agent_skills_screen.dart';
@@ -198,8 +197,7 @@ GoRouter createRouter(bool hasSeenOnboarding, ProviderContainer container) {
           GoRoute(
             path: '/studio',
             name: 'studio',
-            pageBuilder: (context, state) =>
-                buildTransitionPage(child: const StudioScreen()),
+            redirect: (context, state) => '/home',
           ),
           GoRoute(
             path: '/search',
@@ -624,7 +622,7 @@ GoRouter createRouter(bool hasSeenOnboarding, ProviderContainer container) {
               child: ArtifactViewerScreen(artifact: extra),
             );
           }
-          return buildTransitionPage(child: const StudioScreen());
+          return buildTransitionPage(child: NotFoundScreen(state: state));
         },
       ),
       GoRoute(
@@ -678,12 +676,6 @@ GoRouter createRouter(bool hasSeenOnboarding, ProviderContainer container) {
             child: MindMapScreen(mindMapId: id),
           );
         },
-      ),
-      GoRoute(
-        path: '/admin/ai-models',
-        name: 'admin-ai-models',
-        pageBuilder: (context, state) =>
-            buildTransitionPage(child: const AIModelsManagerScreen()),
       ),
     ],
   );

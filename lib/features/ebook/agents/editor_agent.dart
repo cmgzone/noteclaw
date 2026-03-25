@@ -38,7 +38,15 @@ Instruction: $instruction
 Original Text:
 "$text"
 
-Rewrite the text following the instruction. Maintain the core meaning but improve the style/tone/clarity as requested.
+Rewrite the text following the instruction.
+
+Rules:
+- Maintain the core meaning and all grounded facts.
+- Preserve existing Markdown headings, lists, and structure unless the instruction says otherwise.
+- Improve clarity, rhythm, transitions, and readability.
+- Remove repetition and generic filler.
+- Do not add fabricated details.
+
 Return ONLY the rewritten text.
 ''';
 

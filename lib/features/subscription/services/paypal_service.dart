@@ -54,8 +54,7 @@ class PayPalService {
     required Function(String error) onError,
   }) async {
     if (!isConfigured) {
-      onError(
-          'PayPal is not configured. Please add credentials in admin panel.');
+      onError('PayPal is not configured yet. Please contact support.');
       return;
     }
 

@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../../features/admin/services/ai_model_service.dart';
+import 'ai_model_service.dart';
 import '../security/credentials_service.dart';
 
 typedef ProviderRead = T Function<T>(ProviderListenable<T> provider);
@@ -34,7 +34,7 @@ class AISettingsService {
   }
 
   /// Get the actual provider for a specific model by looking it up in the database
-  /// This ensures custom models added via admin panel use the correct service
+  /// This ensures custom models use the shared model catalog service
   static Future<String> getProviderForModel(
       String modelId, ProviderRead read) async {
     try {

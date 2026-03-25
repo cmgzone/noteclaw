@@ -58,6 +58,15 @@ class ChatAIModelButton extends ConsumerWidget {
       tooltip: hasSelection ? 'AI model: $currentModelName' : 'Select AI model',
       padding: EdgeInsets.zero,
       position: PopupMenuPosition.under,
+      color: scheme.surface,
+      surfaceTintColor: Colors.transparent,
+      elevation: 12,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: BorderSide(
+          color: scheme.outline.withValues(alpha: 0.45),
+        ),
+      ),
       enabled: geminiModels.isNotEmpty || openRouterModels.isNotEmpty,
       onSelected: (modelId) async {
         final selectedModel = findAIModelOption(models, modelId);

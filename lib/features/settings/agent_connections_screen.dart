@@ -287,7 +287,7 @@ class AgentConnectionsScreen extends ConsumerWidget {
           ),
         ),
         title: const Text(
-          'Agent Connections',
+          'Connect AI Agents',
           style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
         ),
         iconTheme: const IconThemeData(color: Colors.white),
@@ -388,7 +388,7 @@ class AgentConnectionsScreen extends ConsumerWidget {
             ).animate().fadeIn(delay: 200.ms),
             const SizedBox(height: 12),
             Text(
-              'Connect a coding agent like Claude, Kiro, or Cursor via MCP to see them here.',
+              'Connect Codex, Claude Code, OpenClaw, Kiro, and other coding agents via MCP to see them here.',
               style: TextStyle(color: scheme.secondaryText),
               textAlign: TextAlign.center,
             ).animate().fadeIn(delay: 400.ms),
@@ -413,7 +413,7 @@ class AgentConnectionsScreen extends ConsumerWidget {
       context: context,
       builder: (context) => AlertDialog(
         icon: Icon(LucideIcons.terminal, size: 48, color: scheme.primary),
-        title: const Text('Connecting Coding Agents'),
+        title: const Text('Connect AI Agents'),
         content: const SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -421,7 +421,7 @@ class AgentConnectionsScreen extends ConsumerWidget {
             children: [
               Text(
                 'To connect a coding agent:\n\n'
-                '1. Configure the MCP server in your coding agent (Claude, Kiro, Cursor, etc.)\n\n'
+                '1. Configure the MCP server in your coding agent (Codex, Claude Code, OpenClaw, Kiro, etc.)\n\n'
                 '2. Use the create_agent_notebook tool to create a dedicated notebook\n\n'
                 '3. Save verified code using save_code_with_context\n\n'
                 '4. Your agent will appear here once connected!',
@@ -898,7 +898,7 @@ class _AgentSessionCard extends StatelessWidget {
     final name = session.agentName.toLowerCase();
     if (name.contains('claude')) return Icons.smart_toy_outlined;
     if (name.contains('kiro')) return Icons.auto_awesome;
-    if (name.contains('cursor')) return Icons.code;
+    if (name.contains('openclaw') || name.contains('cursor')) return Icons.code;
     if (name.contains('copilot')) return Icons.assistant;
     return Icons.terminal;
   }

@@ -12,6 +12,7 @@ import '../../core/ai/gemini_image_service.dart';
 import '../../core/ai/ai_settings_service.dart';
 import '../../core/security/ai_api_key_resolver.dart';
 import '../sources/source_provider.dart';
+import '../sources/source.dart';
 
 class VisualStudioScreen extends ConsumerStatefulWidget {
   const VisualStudioScreen({
@@ -64,6 +65,7 @@ class _VisualStudioScreenState extends ConsumerState<VisualStudioScreen> {
   void _generateImage() async {
     final rawPrompt = _promptController.text.trim();
     if (rawPrompt.isEmpty) return;
+    final aspectRatio = _inferAspectRatio(rawPrompt);
 
     setState(() {
       _isGenerating = true;
@@ -71,7 +73,10 @@ class _VisualStudioScreenState extends ConsumerState<VisualStudioScreen> {
     });
 
     try {
-      final prompt = _buildPromptWithNotebookContext(rawPrompt);
+      final prompt = _buildPromptWithNotebookContext(
+        rawPrompt,
+        aspectRatio: aspectRatio,
+      );
       final settings = await AISettingsService.getSettingsWithDefault(ref.read);
       final route = await _resolveImageRoute(
         providerOverride: settings.provider,
@@ -83,6 +88,7 @@ class _VisualStudioScreenState extends ConsumerState<VisualStudioScreen> {
         prompt,
         provider: settings.provider,
         model: settings.model,
+        aspectRatio: aspectRatio,
       );
 
       if (mounted) {
@@ -106,38 +112,202 @@ class _VisualStudioScreenState extends ConsumerState<VisualStudioScreen> {
     }
   }
 
-  String _buildPromptWithNotebookContext(String prompt) {
-    final notebookId = widget.notebookId;
-    final notebookTitle = (widget.notebookTitle ?? '').trim();
-    if (notebookId == null || notebookId.isEmpty) {
-      return prompt;
+  Set<String> _extractPromptKeywords(String prompt) {
+    const stopWords = {
+      'the',
+      'and',
+      'for',
+      'with',
+      'that',
+      'this',
+      'from',
+      'into',
+      'your',
+      'have',
+      'make',
+      'create',
+      'show',
+      'about',
+      'image',
+      'visual',
+      'illustration',
+      'design',
+      'want',
+      'need',
+    };
+
+    return RegExp(r'[a-z0-9]+')
+        .allMatches(prompt.toLowerCase())
+        .map((match) => match.group(0)!)
+        .where((word) => word.length > 2 && !stopWords.contains(word))
+        .take(10)
+        .toSet();
+  }
+
+  int _sourceScore(Source source, Set<String> keywords) {
+    final haystack =
+        '${source.title} ${source.content}'.replaceAll(RegExp(r'\s+'), ' ').toLowerCase();
+    var score = source.title.trim().isNotEmpty ? 2 : 0;
+
+    for (final keyword in keywords) {
+      if (haystack.contains(keyword)) {
+        score += keyword.length >= 6 ? 4 : 2;
+      }
     }
 
+    score += (source.content.length ~/ 900).clamp(0, 4);
+    return score;
+  }
+
+  List<Source> _selectRelevantSources(String prompt) {
+    final notebookId = widget.notebookId;
+    if (notebookId == null || notebookId.isEmpty) return const [];
+
+    final keywords = _extractPromptKeywords(prompt);
     final sources = ref
         .read(sourceProvider)
         .where((source) => source.notebookId == notebookId)
-        .take(4)
+        .where((source) => source.content.trim().isNotEmpty)
         .toList();
 
+    sources.sort(
+      (a, b) => _sourceScore(b, keywords).compareTo(_sourceScore(a, keywords)),
+    );
+
+    return sources.take(5).toList();
+  }
+
+  String _inferAspectRatio(String prompt) {
+    final normalized = prompt.toLowerCase();
+
+    if (normalized.contains('youtube') ||
+        normalized.contains('banner') ||
+        normalized.contains('header') ||
+        normalized.contains('hero image') ||
+        normalized.contains('presentation') ||
+        normalized.contains('slide') ||
+        normalized.contains('landscape') ||
+        normalized.contains('wide')) {
+      return '16:9';
+    }
+
+    if (normalized.contains('phone wallpaper') ||
+        normalized.contains('mobile wallpaper') ||
+        normalized.contains('story format') ||
+        normalized.contains('portrait phone')) {
+      return '9:16';
+    }
+
+    if (normalized.contains('book cover') ||
+        normalized.contains('ebook cover') ||
+        normalized.contains('poster') ||
+        normalized.contains('portrait') ||
+        normalized.contains('flyer')) {
+      return '4:5';
+    }
+
+    return '1:1';
+  }
+
+  String _inferVisualMode(String prompt) {
+    final normalized = prompt.toLowerCase();
+
+    if (normalized.contains('infographic') ||
+        normalized.contains('diagram') ||
+        normalized.contains('chart') ||
+        normalized.contains('map')) {
+      return 'editorial infographic';
+    }
+
+    if (normalized.contains('cover') ||
+        normalized.contains('poster') ||
+        normalized.contains('thumbnail')) {
+      return 'cover-quality concept art';
+    }
+
+    if (normalized.contains('portrait') ||
+        normalized.contains('character') ||
+        normalized.contains('person')) {
+      return 'cinematic character illustration';
+    }
+
+    if (normalized.contains('product') ||
+        normalized.contains('mockup') ||
+        normalized.contains('render')) {
+      return 'high-end product render';
+    }
+
+    return 'polished editorial illustration';
+  }
+
+  bool _wantsReadableText(String prompt) {
+    final normalized = prompt.toLowerCase();
+    return normalized.contains('text') ||
+        normalized.contains('typography') ||
+        normalized.contains('caption') ||
+        normalized.contains('quote') ||
+        normalized.contains('label') ||
+        normalized.contains('logo with text') ||
+        normalized.contains('poster title');
+  }
+
+  String _buildPromptWithNotebookContext(
+    String prompt, {
+    required String aspectRatio,
+  }) {
+    final notebookTitle = (widget.notebookTitle ?? '').trim();
+    final visualMode = _inferVisualMode(prompt);
+    final textInstruction = _wantsReadableText(prompt)
+        ? 'If text is truly necessary, keep it minimal, prominent, and easy to read.'
+        : 'Do not include readable text, captions, UI chrome, logos, or watermarks.';
+
+    final sources = _selectRelevantSources(prompt);
     if (sources.isEmpty) {
-      return 'Create an image for the notebook "$notebookTitle". User request: $prompt';
+      return '''
+Create a finished, production-quality $visualMode.
+
+Primary request:
+$prompt
+
+Preferred framing: $aspectRatio
+
+Art direction:
+- strong focal subject and intentional composition
+- cohesive lighting and color harmony
+- use specific visual details rather than generic stock imagery
+- $textInstruction
+- deliver one clear, confident concept rather than a cluttered collage
+''';
     }
 
     final contextLines = sources.map((source) {
       final snippet = source.content.replaceAll(RegExp(r'\s+'), ' ').trim();
-      final preview = snippet.length > 180 ? '${snippet.substring(0, 180)}...' : snippet;
+      final preview =
+          snippet.length > 220 ? '${snippet.substring(0, 220)}...' : snippet;
       return '- ${source.title}: $preview';
     }).join('\n');
 
     return '''
-Create an image grounded in the notebook "$notebookTitle".
-Use the notebook context as inspiration, but follow the user's request closely.
+Create a finished, production-quality $visualMode grounded in the notebook "$notebookTitle".
+
+Primary request:
+$prompt
+
+Preferred framing: $aspectRatio
+
+Use the notebook evidence below to choose accurate subjects, props, settings, symbols, and mood.
+Prioritize the user's request, but make the final image feel specific to this notebook instead of generic.
 
 Notebook context:
 $contextLines
 
-User request:
-$prompt
+Art direction:
+- strong focal point and clean composition
+- specific details pulled from the notebook references
+- visually coherent lighting, palette, and mood
+- avoid generic stock-photo or clip-art styling
+- $textInstruction
+- produce one strong image concept, not a moodboard
 ''';
   }
 

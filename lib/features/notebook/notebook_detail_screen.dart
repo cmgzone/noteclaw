@@ -139,119 +139,162 @@ class NotebookDetailScreen extends ConsumerWidget {
             ],
           ),
 
-          // Quick Actions (Horizontal Stories Style)
           SliverToBoxAdapter(
             child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Row(
-                  children: [
-                    _QuickActionItem(
-                      icon: Icons.chat_bubble_outline,
-                      label: 'Chat',
-                      color: const Color(0xFF8B5CF6),
-                      onTap: () => context.push('/notebook/$notebookId/chat'),
+              padding: const EdgeInsets.fromLTRB(16, 18, 16, 0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _NotebookOverviewCard(
+                    notebook: notebook,
+                    sourceCount: sources.length,
+                    updatedLabel: _formatNotebookRelativeDate(notebook.updatedAt),
+                    onAddSource: () => _showAddSourceSheet(context),
+                  ).animate().fadeIn(delay: 150.ms).slideY(begin: 0.08),
+                  const SizedBox(height: 24),
+                  Text(
+                    'Notebook workspace',
+                    style: text.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w800,
                     ),
-                    const SizedBox(width: 16),
-                    _QuickActionItem(
-                      icon: Icons.search,
-                      label: 'Research',
-                      color: const Color(0xFF0EA5E9),
-                      onTap: () =>
-                          context.push('/notebook/$notebookId/research'),
-                    ),
-                    const SizedBox(width: 16),
-                    _QuickActionItem(
-                      icon: Icons.mic,
-                      label: 'Audio',
-                      color: const Color(0xFFEC4899),
-                      onTap: () => context.push('/notebook/$notebookId/studio'),
-                    ),
-                    const SizedBox(width: 16),
-                    _QuickActionItem(
-                      icon: Icons.style_outlined,
-                      label: 'Flashcards',
-                      color: Colors.orange,
-                      onTap: () =>
-                          context.push('/notebook/$notebookId/flashcards'),
-                    ),
-                    const SizedBox(width: 16),
-                    _QuickActionItem(
-                      icon: Icons.quiz_outlined,
-                      label: 'Quizzes',
-                      color: Colors.teal,
-                      onTap: () => context.push('/notebook/$notebookId/quizzes'),
-                    ),
-                    const SizedBox(width: 16),
-                    _QuickActionItem(
-                      icon: Icons.account_tree_outlined,
-                      label: 'Mind Map',
-                      color: Colors.amber,
-                      onTap: () => _showMindMapsSheet(context),
-                    ),
-                    const SizedBox(width: 16),
-                    _QuickActionItem(
-                      icon: Icons.school_outlined,
-                      label: 'Tutor',
-                      color: const Color(0xFF10B981),
-                      onTap: () =>
-                          context.push('/notebook/$notebookId/tutor-sessions'),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-
-          // Stats Dashboard
-          SliverPadding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            sliver: SliverToBoxAdapter(
-              child: Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: scheme.surfaceContainer,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: scheme.outline.withValues(alpha: 0.05),
                   ),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
-                  children: [
-                    _StatItem(
-                      icon: Icons.source,
-                      label: 'Sources',
-                      value: '${sources.length}',
-                      color: scheme.primary,
+                  const SizedBox(height: 6),
+                  Text(
+                    'Start with chat or research, then turn this notebook into study tools and visual outputs.',
+                    style: text.bodyMedium?.copyWith(
+                      color: scheme.secondaryText,
                     ),
-                    Container(
-                      width: 1,
-                      height: 40,
-                      color: scheme.outline.withValues(alpha: 0.1),
-                    ),
-                    _StatItem(
-                      icon: Icons.schedule,
-                      label: 'Created',
-                      value: _formatDate(notebook.createdAt),
-                      color: scheme.secondary,
-                    ),
-                    Container(
-                      width: 1,
-                      height: 40,
-                      color: scheme.outline.withValues(alpha: 0.1),
-                    ),
-                    _StatItem(
-                      icon: Icons.auto_awesome,
-                      label: 'AI Ready',
-                      value: sources.isEmpty ? 'No' : 'Yes',
-                      color: scheme.tertiary,
-                    ),
-                  ],
-                ),
-              ).animate().fadeIn(delay: 200.ms).slideY(begin: 0.1),
+                  ),
+                  const SizedBox(height: 14),
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final isWide = constraints.maxWidth >= 760;
+                      final secondaryColumns = constraints.maxWidth >= 980 ? 3 : 2;
+                      const spacing = 12.0;
+                      final tileWidth =
+                          (constraints.maxWidth - (spacing * (secondaryColumns - 1))) /
+                              secondaryColumns;
+
+                      final secondaryTiles = [
+                        SizedBox(
+                          width: tileWidth,
+                          child: _NotebookFeatureTile(
+                            icon: Icons.mic_none_rounded,
+                            title: 'Studio',
+                            subtitle: 'Audio, podcast, and voice workflows',
+                            color: const Color(0xFFEC4899),
+                            onTap: () =>
+                                context.push('/notebook/$notebookId/studio'),
+                          ),
+                        ),
+                        SizedBox(
+                          width: tileWidth,
+                          child: _NotebookFeatureTile(
+                            icon: Icons.style_outlined,
+                            title: 'Flashcards',
+                            subtitle: 'Turn sources into study cards',
+                            color: Colors.orange,
+                            onTap: () =>
+                                context.push('/notebook/$notebookId/flashcards'),
+                          ),
+                        ),
+                        SizedBox(
+                          width: tileWidth,
+                          child: _NotebookFeatureTile(
+                            icon: Icons.quiz_outlined,
+                            title: 'Quizzes',
+                            subtitle: 'Check what you actually retained',
+                            color: Colors.teal,
+                            onTap: () =>
+                                context.push('/notebook/$notebookId/quizzes'),
+                          ),
+                        ),
+                        SizedBox(
+                          width: tileWidth,
+                          child: _NotebookFeatureTile(
+                            icon: Icons.school_outlined,
+                            title: 'Tutor',
+                            subtitle: 'Practice with guided explanations',
+                            color: const Color(0xFF10B981),
+                            onTap: () => context
+                                .push('/notebook/$notebookId/tutor-sessions'),
+                          ),
+                        ),
+                        SizedBox(
+                          width: tileWidth,
+                          child: _NotebookFeatureTile(
+                            icon: Icons.account_tree_outlined,
+                            title: 'Mind maps',
+                            subtitle: 'Visualize structure and relationships',
+                            color: Colors.amber.shade700,
+                            onTap: () => _showMindMapsSheet(context),
+                          ),
+                        ),
+                      ];
+
+                      return Column(
+                        children: [
+                          if (isWide)
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: _NotebookPrimaryActionCard(
+                                    icon: Icons.chat_bubble_outline_rounded,
+                                    title: 'Chat with this notebook',
+                                    subtitle:
+                                        'Ask grounded questions across all attached sources.',
+                                    accent: const Color(0xFF8B5CF6),
+                                    onTap: () =>
+                                        context.push('/notebook/$notebookId/chat'),
+                                  ),
+                                ),
+                                const SizedBox(width: spacing),
+                                Expanded(
+                                  child: _NotebookPrimaryActionCard(
+                                    icon: Icons.travel_explore_rounded,
+                                    title: 'Research deeper',
+                                    subtitle:
+                                        'Run broader analysis and source-aware exploration.',
+                                    accent: const Color(0xFF0EA5E9),
+                                    onTap: () => context
+                                        .push('/notebook/$notebookId/research'),
+                                  ),
+                                ),
+                              ],
+                            )
+                          else ...[
+                            _NotebookPrimaryActionCard(
+                              icon: Icons.chat_bubble_outline_rounded,
+                              title: 'Chat with this notebook',
+                              subtitle:
+                                  'Ask grounded questions across all attached sources.',
+                              accent: const Color(0xFF8B5CF6),
+                              onTap: () =>
+                                  context.push('/notebook/$notebookId/chat'),
+                            ),
+                            const SizedBox(height: spacing),
+                            _NotebookPrimaryActionCard(
+                              icon: Icons.travel_explore_rounded,
+                              title: 'Research deeper',
+                              subtitle:
+                                  'Run broader analysis and source-aware exploration.',
+                              accent: const Color(0xFF0EA5E9),
+                              onTap: () =>
+                                  context.push('/notebook/$notebookId/research'),
+                            ),
+                          ],
+                          const SizedBox(height: spacing),
+                          Wrap(
+                            spacing: spacing,
+                            runSpacing: spacing,
+                            children: secondaryTiles,
+                          ),
+                        ],
+                      );
+                    },
+                  ).animate().fadeIn(delay: 250.ms).slideY(begin: 0.06),
+                ],
+              ),
             ),
           ),
 
@@ -261,17 +304,30 @@ class NotebookDetailScreen extends ConsumerWidget {
               padding: const EdgeInsets.fromLTRB(20, 32, 20, 12),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Text(
-                    'Sources (${sources.length})',
-                    style: text.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Notebook sources',
+                        style: text.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${sources.length} item${sources.length == 1 ? '' : 's'} attached to this notebook',
+                        style: text.bodySmall?.copyWith(
+                          color: scheme.secondaryText,
+                        ),
+                      ),
+                    ],
                   ),
                   FilledButton.icon(
                     onPressed: () => _showAddSourceSheet(context),
                     icon: const Icon(Icons.add, size: 16),
-                    label: const Text('Add'),
+                    label: const Text('Add source'),
                     style: FilledButton.styleFrom(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 16, vertical: 8),
@@ -307,11 +363,6 @@ class NotebookDetailScreen extends ConsumerWidget {
 
           const SliverToBoxAdapter(child: SizedBox(height: 80)),
         ],
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _showAddSourceSheet(context),
-        icon: const Icon(Icons.add),
-        label: const Text('Add Source'),
       ),
     );
   }
@@ -514,19 +565,6 @@ class NotebookDetailScreen extends ConsumerWidget {
     ).animate().fadeIn(
           delay: Duration(milliseconds: index * 50),
         );
-  }
-
-  String _formatDate(DateTime date) {
-    final now = DateTime.now();
-    final diff = now.difference(date);
-
-    if (diff.inDays > 30) {
-      return '${(diff.inDays / 30).floor()}mo';
-    } else if (diff.inDays > 0) {
-      return '${diff.inDays}d';
-    } else {
-      return 'Today';
-    }
   }
 
   void _showAddSourceSheet(BuildContext context) {
@@ -904,100 +942,434 @@ class NotebookDetailScreen extends ConsumerWidget {
   }
 }
 
-class _QuickActionItem extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final Color color;
-  final VoidCallback onTap;
-
-  const _QuickActionItem({
-    required this.icon,
-    required this.label,
-    required this.color,
-    required this.onTap,
+class _NotebookOverviewCard extends StatelessWidget {
+  const _NotebookOverviewCard({
+    required this.notebook,
+    required this.sourceCount,
+    required this.updatedLabel,
+    required this.onAddSource,
   });
+
+  final Notebook notebook;
+  final int sourceCount;
+  final String updatedLabel;
+  final VoidCallback onAddSource;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 72,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Material(
-            color: Colors.transparent,
-            child: InkWell(
-              onTap: onTap,
-              borderRadius: BorderRadius.circular(20),
-              child: Container(
-                width: 56,
-                height: 56,
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: color.withValues(alpha: 0.2),
-                    width: 1,
-                  ),
-                ),
-                child: Icon(icon, color: color, size: 28),
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            label,
-            maxLines: 1,
-            textAlign: TextAlign.center,
-            softWrap: false,
-            style: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-            ),
-            overflow: TextOverflow.ellipsis,
+    final scheme = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+    final description = notebook.description.trim().isNotEmpty
+        ? notebook.description.trim()
+        : sourceCount == 0
+            ? 'Add your first source to unlock grounded chat, research, and study workflows.'
+            : 'This notebook is ready for grounded answers, source-aware research, and learning tools.';
+    final notebookType = notebook.isAgentNotebook
+        ? (notebook.agentName?.trim().isNotEmpty == true
+            ? notebook.agentName!.trim()
+            : 'Agent')
+        : 'Personal';
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            scheme.surface,
+            scheme.surfaceContainerHighest.withValues(alpha: 0.72),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(
+          color: scheme.outline.withValues(alpha: 0.12),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: scheme.primary.withValues(alpha: 0.08),
+            blurRadius: 24,
+            offset: const Offset(0, 10),
           ),
         ],
       ),
-    ).animate().scale(duration: 400.ms, curve: Curves.easeOutBack);
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Notebook hub',
+                      style: text.labelLarge?.copyWith(
+                        color: scheme.primary,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      description,
+                      style: text.bodyMedium?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                        height: 1.45,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 16),
+              FilledButton.icon(
+                onPressed: onAddSource,
+                icon: const Icon(Icons.add_rounded, size: 18),
+                label: const Text('Add source'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _NotebookMetaChip(
+                icon: Icons.folder_open_rounded,
+                label: notebook.category,
+                color: scheme.primary,
+              ),
+              _NotebookMetaChip(
+                icon: sourceCount == 0
+                    ? Icons.info_outline_rounded
+                    : Icons.auto_awesome_rounded,
+                label: sourceCount == 0 ? 'Needs sources' : 'AI ready',
+                color: sourceCount == 0 ? scheme.secondary : scheme.tertiary,
+              ),
+              _NotebookMetaChip(
+                icon:
+                    notebook.isPublic ? Icons.public_rounded : Icons.lock_outline,
+                label: notebook.isPublic ? 'Public' : 'Private',
+                color: notebook.isPublic ? scheme.secondary : scheme.outline,
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          Row(
+            children: [
+              Expanded(
+                child: _NotebookOverviewStat(
+                  icon: Icons.source_outlined,
+                  label: 'Sources',
+                  value: '$sourceCount',
+                  color: scheme.primary,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _NotebookOverviewStat(
+                  icon: Icons.schedule_rounded,
+                  label: 'Updated',
+                  value: updatedLabel,
+                  color: scheme.secondary,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _NotebookOverviewStat(
+                  icon: notebook.isAgentNotebook
+                      ? Icons.hub_outlined
+                      : Icons.person_outline_rounded,
+                  label: 'Type',
+                  value: notebookType,
+                  color: scheme.tertiary,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 }
 
-class _StatItem extends StatelessWidget {
+String _formatNotebookRelativeDate(DateTime date) {
+  final now = DateTime.now();
+  final diff = now.difference(date);
+
+  if (diff.inDays > 30) {
+    return '${(diff.inDays / 30).floor()}mo';
+  }
+  if (diff.inDays > 0) {
+    return '${diff.inDays}d';
+  }
+  return 'Today';
+}
+
+class _NotebookMetaChip extends StatelessWidget {
+  const _NotebookMetaChip({
+    required this.icon,
+    required this.label,
+    required this.color,
+  });
+
   final IconData icon;
   final String label;
-  final String value;
   final Color color;
 
-  const _StatItem({
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.18)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 15, color: color),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  color: color,
+                  fontWeight: FontWeight.w700,
+                ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _NotebookOverviewStat extends StatelessWidget {
+  const _NotebookOverviewStat({
     required this.icon,
     required this.label,
     required this.value,
     required this.color,
   });
 
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color color;
+
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Icon(icon, color: color, size: 24),
-        const SizedBox(height: 4),
-        Text(
-          value,
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: color,
+    final scheme = Theme.of(context).colorScheme;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+      decoration: BoxDecoration(
+        color: scheme.surface.withValues(alpha: 0.74),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: scheme.outline.withValues(alpha: 0.08)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: color, size: 18),
+          const SizedBox(height: 10),
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  color: scheme.onSurface,
+                ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: scheme.secondaryText,
+                ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _NotebookPrimaryActionCard extends StatelessWidget {
+  const _NotebookPrimaryActionCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.accent,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Color accent;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(24),
+        child: Container(
+          height: 170,
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(24),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                accent.withValues(alpha: 0.14),
+                scheme.surface,
+              ],
+            ),
+            border: Border.all(
+              color: accent.withValues(alpha: 0.18),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: accent.withValues(alpha: 0.10),
+                blurRadius: 20,
+                offset: const Offset(0, 10),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Icon(icon, color: accent, size: 22),
+              ),
+              const Spacer(),
+              Text(
+                title,
+                style: text.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                subtitle,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: text.bodyMedium?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                  height: 1.35,
+                ),
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Text(
+                    'Open',
+                    style: text.labelLarge?.copyWith(
+                      color: accent,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const Spacer(),
+                  Icon(Icons.arrow_forward_rounded, color: accent, size: 20),
+                ],
+              ),
+            ],
           ),
         ),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 11,
-            color:
-                Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+      ),
+    );
+  }
+}
+
+class _NotebookFeatureTile extends StatelessWidget {
+  const _NotebookFeatureTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.color,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(22),
+        child: Container(
+          height: 132,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: scheme.surface,
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(
+              color: scheme.outline.withValues(alpha: 0.10),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: color.withValues(alpha: 0.08),
+                blurRadius: 16,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(icon, size: 18, color: color),
+              ),
+              const Spacer(),
+              Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: text.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                subtitle,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: text.bodySmall?.copyWith(
+                  color: scheme.secondaryText,
+                  height: 1.3,
+                ),
+              ),
+            ],
           ),
         ),
-      ],
+      ),
     );
   }
 }

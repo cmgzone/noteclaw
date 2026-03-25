@@ -528,7 +528,7 @@ class _PrivacyToggle extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  isPrivate ? 'Private Plan' : 'Shared Plan',
+                  isPrivate ? 'Private Project' : 'Shared Project',
                   style: text.titleSmall?.copyWith(
                     fontWeight: FontWeight.w600,
                   ),
@@ -716,7 +716,7 @@ class _SharedAgentCard extends StatelessWidget {
     final name = (agent.agentName ?? '').toLowerCase();
     if (name.contains('claude')) return Icons.smart_toy_outlined;
     if (name.contains('kiro')) return Icons.auto_awesome;
-    if (name.contains('cursor')) return Icons.code;
+    if (name.contains('openclaw') || name.contains('cursor')) return Icons.code;
     if (name.contains('copilot')) return Icons.assistant;
     return Icons.terminal;
   }
@@ -853,7 +853,7 @@ class _AvailableAgentCard extends StatelessWidget {
     final name = agent.name.toLowerCase();
     if (name.contains('claude')) return Icons.smart_toy_outlined;
     if (name.contains('kiro')) return Icons.auto_awesome;
-    if (name.contains('cursor')) return Icons.code;
+    if (name.contains('openclaw') || name.contains('cursor')) return Icons.code;
     if (name.contains('copilot')) return Icons.assistant;
     return Icons.terminal;
   }
@@ -1052,12 +1052,12 @@ class _ManualShareSectionState extends State<_ManualShareSection> {
                   const SizedBox(height: 12),
                   TextField(
                     controller: _nameController,
-                    decoration: InputDecoration(
-                      labelText: 'Agent Name (optional)',
-                      hintText: 'e.g., Claude, Kiro, Cursor',
-                      prefixIcon: const Icon(LucideIcons.bot, size: 18),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
+                      decoration: InputDecoration(
+                        labelText: 'Agent Name (optional)',
+                        hintText: 'e.g., Claude, Kiro, OpenClaw',
+                        prefixIcon: const Icon(LucideIcons.bot, size: 18),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
                       ),
                     ),
                   ),

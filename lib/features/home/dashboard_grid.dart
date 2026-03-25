@@ -19,7 +19,7 @@ class DashboardGrid extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Research & Analysis',
+              'Research & AI Agents',
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.bold,
                     color: Theme.of(context).colorScheme.primary,
@@ -35,6 +35,16 @@ class DashboardGrid extends ConsumerWidget {
               color: const Color(0xFF8B5CF6), // Violet
               onTap: () => context.push('/search'),
               height: 140,
+              isWide: true,
+            ),
+            const SizedBox(height: 12),
+            _BentoCard(
+              title: 'Connect AI Agents',
+              subtitle: 'Link Codex, Claude Code, OpenClaw, and more',
+              icon: LucideIcons.terminal,
+              color: const Color(0xFFF97316), // Orange 500
+              onTap: () => context.push('/agent-connections'),
+              height: 132,
               isWide: true,
             ),
             const SizedBox(height: 12),
@@ -74,8 +84,8 @@ class DashboardGrid extends ConsumerWidget {
                 const SizedBox(width: 12),
                 Expanded(
                   child: _BentoCard(
-                    title: 'Architecture Plan',
-                    subtitle: 'Design & structure projects',
+                    title: 'Project Workspace',
+                    subtitle: 'Plan, organize, and ship projects',
                     icon: LucideIcons.clipboardList,
                     color: const Color(0xFFF472B6), // Pink 400
                     onTap: () => context.push('/planning'),
@@ -85,30 +95,14 @@ class DashboardGrid extends ConsumerWidget {
               ],
             ),
             const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: _BentoCard(
-                    title: 'GitHub',
-                    subtitle: 'Connect repos and browse projects',
-                    icon: LucideIcons.github,
-                    color: const Color(0xFF94A3B8), // Slate 400
-                    onTap: () => context.push('/github'),
-                    height: 120,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _BentoCard(
-                    title: 'Studio',
-                    subtitle: 'Generate and review AI artifacts',
-                    icon: LucideIcons.palette,
-                    color: const Color(0xFFF59E0B), // Amber 500
-                    onTap: () => context.push('/studio'),
-                    height: 120,
-                  ),
-                ),
-              ],
+            _BentoCard(
+              title: 'GitHub',
+              subtitle: 'Connect repos and browse projects',
+              icon: LucideIcons.github,
+              color: const Color(0xFF94A3B8), // Slate 400
+              onTap: () => context.push('/github'),
+              height: 120,
+              isWide: true,
             ),
             const SizedBox(height: 12),
             const SizedBox(height: 24),

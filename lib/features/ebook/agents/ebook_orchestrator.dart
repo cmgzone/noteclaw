@@ -7,6 +7,7 @@ import '../ebook_provider.dart';
 import 'research_agent.dart';
 import 'content_agent.dart';
 import 'designer_agent.dart';
+import 'editor_agent.dart';
 import '../../sources/source_provider.dart';
 import '../../gamification/gamification_provider.dart';
 import '../../../core/services/wakelock_service.dart';
@@ -17,6 +18,35 @@ class EbookOrchestrator extends StateNotifier<EbookProject?> {
   final Ref ref;
 
   EbookOrchestrator(this.ref) : super(null);
+
+  String _buildIllustrationStyle(EbookProject project) {
+    final audience = project.targetAudience.trim().isEmpty
+        ? 'general readers'
+        : project.targetAudience.trim();
+    final author = project.branding.authorName.trim();
+    final authorLine = author.isEmpty ? '' : ' inspired by $author';
+    return 'cohesive editorial illustration system for $audience$authorLine, with elegant lighting, clean composition, and consistent visual storytelling';
+  }
+
+  String _chapterPolishInstruction(EbookProject project, EbookChapter chapter) {
+    return '''
+Polish this ebook chapter for final publication.
+
+Audience: ${project.targetAudience}
+Chapter: ${chapter.title}
+
+Editing goals:
+- improve flow, rhythm, and transitions
+- remove repetition and generic filler
+- keep the Markdown structure intact
+- preserve every grounded fact and nuance
+- make the writing clearer, more vivid, and more purposeful
+- keep the tone professional and engaging for the target audience
+- keep or strengthen the closing takeaway section
+
+Return only the revised chapter text.
+''';
+  }
 
   Future<void> startGeneration(EbookProject project,
       {List<String> context = const []}) async {
@@ -119,6 +149,7 @@ class EbookOrchestrator extends StateNotifier<EbookProject?> {
       final researchSummary = await researchAgent.researchTopic(project.topic,
           context: effectiveContext,
           notebookId: project.notebookId,
+          targetAudience: project.targetAudience,
           model: project.selectedModel);
 
       //2. Outline Phase
@@ -146,6 +177,8 @@ class EbookOrchestrator extends StateNotifier<EbookProject?> {
       // For now, sequential to avoid rate limits and better state updates
       List<EbookChapter> updatedChapters = [];
       int webImageIndex = 0;
+      final editorAgent = ref.read(editorAgentProvider);
+      final illustrationStyle = _buildIllustrationStyle(project);
 
       for (var i = 0; i < chapters.length; i++) {
         final chapter = chapters[i];
@@ -169,8 +202,19 @@ class EbookOrchestrator extends StateNotifier<EbookProject?> {
         }
 
         // Write content
-        final content =
+        final draftedContent =
             await contentAgent.writeChapter(project, chapter, researchSummary);
+        state = state!.copyWith(
+            currentPhase:
+                'Editor Agent: Polishing chapter ${i + 1}/${chapters.length}: ${chapter.title}...');
+        await overlayBubbleService.updateStatus(
+          'Polishing Ch ${i + 1}: ${chapter.title}',
+          progress: progress,
+        );
+        final content = await editorAgent.refineText(
+          draftedContent,
+          _chapterPolishInstruction(project, chapter),
+        );
 
         // Generate or fetch illustration based on image source setting
         String illustrationUrl;
@@ -205,7 +249,10 @@ class EbookOrchestrator extends StateNotifier<EbookProject?> {
             progress: progress,
           );
           illustrationUrl = await designerAgent.generateChapterIllustration(
-              chapter, "consistent book style");
+            project,
+            chapter,
+            illustrationStyle,
+          );
           imagePrompt = 'AI illustration for ${chapter.title}';
         }
 

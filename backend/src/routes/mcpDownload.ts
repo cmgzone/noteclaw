@@ -27,25 +27,125 @@ const getProjectRoot = () => {
   return path.resolve(__dirname, '../..');
 };
 
+const getMcpBundlePath = () =>
+  path.join(getProjectRoot(), 'mcp-server/github-install/index.cjs');
+
+const getMcpPackageJsonPath = () =>
+  path.join(getProjectRoot(), 'mcp-server/package.json');
+
+const getBackendBaseUrl = (req: Request) =>
+  process.env.BACKEND_URL || `${req.protocol}://${req.get('host')}`;
+
+const getMcpPackageInfo = () => {
+  const packageJsonPath = getMcpPackageJsonPath();
+
+  if (!fs.existsSync(packageJsonPath)) {
+    throw new Error('MCP package metadata not found');
+  }
+
+  const raw = fs.readFileSync(packageJsonPath, 'utf8');
+  const parsed = JSON.parse(raw) as {
+    name?: string;
+    version?: string;
+    description?: string;
+  };
+
+  return {
+    name: parsed.name || '@noteclaw/mcp-server',
+    version: parsed.version || '0.0.0',
+    description:
+      parsed.description ||
+      'NoteClaw MCP server for coding agents and project workspaces',
+  };
+};
+
+const buildManifest = (req: Request) => {
+  const backendUrl = getBackendBaseUrl(req);
+  const pkg = getMcpPackageInfo();
+
+  return {
+    ...pkg,
+    serverName: 'coding-agent-mcp',
+    runtimeUrl: `${backendUrl}/api/mcp/index.cjs`,
+    downloadUrl: `${backendUrl}/api/mcp/download`,
+    manifestUrl: `${backendUrl}/api/mcp/manifest`,
+    installScripts: {
+      windows: `${backendUrl}/api/mcp/install.ps1`,
+      macLinux: `${backendUrl}/api/mcp/install.sh`,
+    },
+    githubFallback: {
+      runtimeUrl: RAW_MCP_CJS_URL,
+      windows: RAW_INSTALL_PS1_URL,
+      macLinux: RAW_INSTALL_SH_URL,
+    },
+    toolAliases: {
+      legacy: ['list_plans', 'get_plan', 'create_plan'],
+      project: ['list_projects', 'get_project', 'create_project'],
+    },
+  };
+};
+
+/**
+ * GET /api/mcp/manifest
+ * Return metadata for the current MCP bundle and install URLs.
+ */
+router.get('/manifest', async (req: Request, res: Response) => {
+  try {
+    const bundlePath = getMcpBundlePath();
+
+    if (!fs.existsSync(bundlePath)) {
+      return res.status(404).json({ error: 'MCP bundle not found' });
+    }
+
+    res.status(200).json(buildManifest(req));
+  } catch (error: any) {
+    console.error('MCP manifest error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/mcp/download
+ * Download the current standalone MCP bundle as a file attachment.
+ */
+router.get('/download', async (req: Request, res: Response) => {
+  try {
+    const bundlePath = getMcpBundlePath();
+
+    if (!fs.existsSync(bundlePath)) {
+      return res.status(404).json({ error: 'MCP bundle not found' });
+    }
+
+    const { version } = getMcpPackageInfo();
+
+    res.setHeader('Content-Type', 'application/javascript');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="noteclaw-mcp-${version}.cjs"`,
+    );
+    res.sendFile(bundlePath);
+  } catch (error: any) {
+    console.error('MCP bundle download error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 /**
  * GET /api/mcp/package.tgz
  * Download the MCP server package as a tarball
  */
 router.get('/package.tgz', async (req: Request, res: Response) => {
   try {
-    const packagePath = path.join(getProjectRoot(), 'mcp-server/github-install/index.cjs');
+    const packagePath = getMcpBundlePath();
 
     if (!fs.existsSync(packagePath)) {
       return res.status(404).json({ error: 'MCP package not found' });
     }
 
     res.status(200).json({
-      message: 'The MCP package is distributed directly from the GitHub repository.',
-      runtimeUrl: RAW_MCP_CJS_URL,
-      installScripts: {
-        windows: RAW_INSTALL_PS1_URL,
-        macLinux: RAW_INSTALL_SH_URL,
-      },
+      message:
+        'Use the manifest, direct download, or install scripts to get the current NoteClaw MCP bundle.',
+      ...buildManifest(req),
     });
   } catch (error: any) {
     console.error('MCP package download error:', error);
@@ -59,7 +159,7 @@ router.get('/package.tgz', async (req: Request, res: Response) => {
  */
 router.get('/index.js', async (req: Request, res: Response) => {
   try {
-    const indexPath = path.join(getProjectRoot(), 'mcp-server/github-install/index.cjs');
+    const indexPath = getMcpBundlePath();
     
     if (!fs.existsSync(indexPath)) {
       return res.status(404).json({ error: 'MCP server not found' });
@@ -79,7 +179,7 @@ router.get('/index.js', async (req: Request, res: Response) => {
  */
 router.get('/index.cjs', async (req: Request, res: Response) => {
   try {
-    const indexPath = path.join(getProjectRoot(), 'mcp-server/github-install/index.cjs');
+    const indexPath = getMcpBundlePath();
 
     if (!fs.existsSync(indexPath)) {
       return res.status(404).json({ error: 'MCP server not found' });
@@ -99,7 +199,7 @@ router.get('/index.cjs', async (req: Request, res: Response) => {
  */
 router.get('/package.json', async (req: Request, res: Response) => {
   try {
-    const packageJsonPath = path.join(getProjectRoot(), 'mcp-server/package.json');
+    const packageJsonPath = getMcpPackageJsonPath();
     
     if (!fs.existsSync(packageJsonPath)) {
       return res.status(404).json({ error: 'package.json not found' });
@@ -118,10 +218,13 @@ router.get('/package.json', async (req: Request, res: Response) => {
  * Serve an install script for easy setup
  */
 router.get('/install.sh', async (req: Request, res: Response) => {
-  const backendUrl = process.env.BACKEND_URL || `${req.protocol}://${req.get('host')}`;
+  const backendUrl = getBackendBaseUrl(req);
+  const { version } = getMcpPackageInfo();
+  const runtimeUrl = `${backendUrl}/api/mcp/index.cjs`;
   
   const script = `#!/bin/bash
 # NoteClaw MCP Server Installer
+# Installs NoteClaw MCP v${version}
 # Usage: curl -fsSL ${backendUrl}/api/mcp/install.sh | bash
 
 set -euo pipefail
@@ -129,17 +232,17 @@ set -euo pipefail
 GITHUB_REPO="${GITHUB_REPO}"
 BACKEND_URL="${backendUrl}"
 MCP_DIR="$HOME/.noteclaw-mcp"
-DOWNLOAD_URL="${RAW_MCP_CJS_URL}"
+DOWNLOAD_URL="${runtimeUrl}"
 TARGET_FILE="$MCP_DIR/index.cjs"
 
-echo "Installing NoteClaw MCP Server from the GitHub repository..."
+echo "Installing NoteClaw MCP Server v${version}..."
 
 if ! command -v node >/dev/null 2>&1; then
     echo "Node.js is required to run the NoteClaw MCP Server. Install Node.js 20+ and try again." >&2
     exit 1
 fi
 
-echo "Downloading standalone MCP runtime from GitHub..."
+echo "Downloading the current MCP runtime from $BACKEND_URL..."
 rm -rf "$MCP_DIR"
 mkdir -p "$MCP_DIR"
 if ! curl -fsSL "$DOWNLOAD_URL" -o "$TARGET_FILE"; then
@@ -148,7 +251,7 @@ if ! curl -fsSL "$DOWNLOAD_URL" -o "$TARGET_FILE"; then
 fi
 
 echo ""
-echo "NoteClaw MCP Server installed to $MCP_DIR"
+echo "NoteClaw MCP Server v${version} installed to $MCP_DIR"
 echo ""
 echo "Add this to your MCP config:"
 echo ""
@@ -177,24 +280,27 @@ echo "Get your API token from Settings -> Agent Connections in the app"
  * Serve a PowerShell install script for Windows
  */
 router.get('/install.ps1', async (req: Request, res: Response) => {
-  const backendUrl = process.env.BACKEND_URL || `${req.protocol}://${req.get('host')}`;
+  const backendUrl = getBackendBaseUrl(req);
+  const { version } = getMcpPackageInfo();
+  const runtimeUrl = `${backendUrl}/api/mcp/index.cjs`;
   
   const script = `# NoteClaw MCP Server Installer for Windows
+# Installs NoteClaw MCP v${version}
 # Usage: irm ${backendUrl}/api/mcp/install.ps1 | iex
 
 $GitHubRepo = "${GITHUB_REPO}"
 $BackendUrl = "${backendUrl}"
 $MCP_DIR = "$env:USERPROFILE\\.noteclaw-mcp"
-$DownloadUrl = "${RAW_MCP_CJS_URL}"
+$DownloadUrl = "${runtimeUrl}"
 $TargetFile = Join-Path $MCP_DIR "index.cjs"
 
-Write-Host "Installing NoteClaw MCP Server from the GitHub repository..." -ForegroundColor Cyan
+Write-Host "Installing NoteClaw MCP Server v${version}..." -ForegroundColor Cyan
 
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
     throw "Node.js is required to run the NoteClaw MCP Server. Install Node.js 20+ and try again."
 }
 
-Write-Host "Downloading standalone MCP runtime from GitHub..." -ForegroundColor Yellow
+Write-Host "Downloading the current MCP runtime from $BackendUrl..." -ForegroundColor Yellow
 if (Test-Path $MCP_DIR) {
     Remove-Item -Recurse -Force $MCP_DIR
 }
@@ -207,7 +313,7 @@ try {
 }
 
 Write-Host ""
-Write-Host "NoteClaw MCP Server installed to $MCP_DIR" -ForegroundColor Green
+Write-Host "NoteClaw MCP Server v${version} installed to $MCP_DIR" -ForegroundColor Green
 Write-Host ""
 Write-Host "Add this to your MCP config:" -ForegroundColor Cyan
 Write-Host ""
@@ -238,7 +344,7 @@ Write-Host "Get your API token from Settings -> Agent Connections in the app" -F
  * Get a ready-to-use MCP config template
  */
 router.get('/config', async (req: Request, res: Response) => {
-  const backendUrl = process.env.BACKEND_URL || `${req.protocol}://${req.get('host')}`;
+  const backendUrl = getBackendBaseUrl(req);
   const windowsConfig = {
     mcpServers: {
       noteclaw: {
@@ -271,9 +377,9 @@ router.get('/config', async (req: Request, res: Response) => {
       macLinux: unixConfig,
     },
     instructions: {
-      windows: `irm ${RAW_INSTALL_PS1_URL} | iex`,
-      macLinux: `curl -fsSL ${RAW_INSTALL_SH_URL} | bash`,
-      manual: `Download the standalone bundle from ${RAW_MCP_CJS_URL}`,
+      windows: `irm ${backendUrl}/api/mcp/install.ps1 | iex`,
+      macLinux: `curl -fsSL ${backendUrl}/api/mcp/install.sh | bash`,
+      manual: `Download the standalone bundle from ${backendUrl}/api/mcp/download`,
     },
   });
 });

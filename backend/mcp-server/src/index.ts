@@ -43,10 +43,13 @@
  * - github_add_as_source: Import GitHub file as notebook source
  * - github_analyze_repo: AI analysis of repository
  * 
- * Planning Mode Tools (Requirements 5.1, 5.2, 5.3, 5.4, 5.5, 5.6):
+ * Planning / Project Workspace Tools (Requirements 5.1, 5.2, 5.3, 5.4, 5.5, 5.6):
  * - list_plans: List all accessible plans
  * - get_plan: Get a specific plan with full details
  * - create_plan: Create a new plan
+ * - list_projects: Project-focused alias for list_plans
+ * - get_project: Project-focused alias for get_plan
+ * - create_project: Project-focused alias for create_plan
  * - create_task: Create a task in a plan
  * - update_task_status: Update task status
  * - add_task_output: Add output to a task
@@ -247,7 +250,7 @@ Returns:
       properties: {
         agentName: {
           type: 'string',
-          description: 'Display name of the coding agent (e.g., "Claude", "Kiro", "Cursor")',
+          description: 'Display name of the coding agent (e.g., "Claude", "Kiro", "OpenClaw")',
         },
         agentIdentifier: {
           type: 'string',
@@ -1516,6 +1519,107 @@ Use this to start a new project or feature plan.`,
     },
   },
   {
+    name: 'list_projects',
+    description: `List all project workspaces accessible to the authenticated user.
+
+This is a project-focused alias for list_plans so coding agents can match the app's current user-facing wording.
+
+Returns projects with:
+- id, title, description, status
+- isPrivate: Whether the project is private
+- taskSummary: Count of tasks by status
+- createdAt, updatedAt
+
+Use this to discover project workspaces to work on.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        status: {
+          type: 'string',
+          description: 'Filter by status: draft, active, completed, archived',
+          enum: ['draft', 'active', 'completed', 'archived'],
+        },
+        includeArchived: {
+          type: 'boolean',
+          description: 'Include archived projects',
+          default: false,
+        },
+        limit: {
+          type: 'number',
+          description: 'Maximum results to return (default: 50)',
+          default: 50,
+        },
+        offset: {
+          type: 'number',
+          description: 'Pagination offset (default: 0)',
+          default: 0,
+        },
+      },
+    },
+  },
+  {
+    name: 'get_project',
+    description: `Get a specific project workspace with full details.
+
+This is a project-focused alias for get_plan so agents can use project terminology without losing compatibility with the planning backend.
+
+Returns the complete project including:
+- id, title, description, status, isPrivate
+- requirements: Array of requirements with EARS patterns
+- designNotes: Array of design notes linked to requirements
+- tasks: Array of tasks with status and hierarchy
+- taskSummary: Count of tasks by status
+- completionPercentage: Overall progress
+- createdAt, updatedAt, completedAt`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectId: {
+          type: 'string',
+          description: 'The ID of the project workspace to retrieve',
+        },
+        includeRelations: {
+          type: 'boolean',
+          description: 'Include requirements, design notes, and tasks (default: true)',
+          default: true,
+        },
+      },
+      required: ['projectId'],
+    },
+  },
+  {
+    name: 'create_project',
+    description: `Create a new project workspace following the same structured format as create_plan.
+
+This is a project-focused alias for create_plan so agents can match the app's current project workspace terminology.
+
+Creates a project with:
+- title: Project title (required)
+- description: Project description
+- isPrivate: Whether the project is private (default: true)
+
+The project is created with 'draft' status and an empty task list.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        title: {
+          type: 'string',
+          description: 'Project title (required)',
+        },
+        description: {
+          type: 'string',
+          description: 'Project description',
+        },
+        isPrivate: {
+          type: 'boolean',
+          description: 'Whether the project is private (default: true)',
+          default: true,
+        },
+      },
+      required: ['title'],
+    },
+  },
+  {
     name: 'create_task',
     description: `Create a new task in a plan.
     
@@ -2145,6 +2249,11 @@ const GetPlanSchema = z.object({
   includeRelations: z.boolean().optional().default(true),
 });
 
+const GetProjectSchema = z.object({
+  projectId: z.string().min(1),
+  includeRelations: z.boolean().optional().default(true),
+});
+
 const CreatePlanSchema = z.object({
   title: z.string().min(1),
   description: z.string().optional(),
@@ -2243,7 +2352,7 @@ const ebookApi = axios.create({
 const server = new Server(
   {
     name: 'coding-agent-mcp',
-    version: '1.1.0',
+    version: '1.2.0',
   },
   {
     capabilities: {
@@ -2880,7 +2989,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
 
       // ==================== PLANNING MODE TOOL HANDLERS ====================
 
-      case 'list_plans': {
+      case 'list_plans':
+      case 'list_projects': {
         const input = ListPlansSchema.parse(args);
         const params = new URLSearchParams();
         if (input.status) params.append('status', input.status);
@@ -2915,7 +3025,24 @@ server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
         };
       }
 
-      case 'create_plan': {
+      case 'get_project': {
+        const input = GetProjectSchema.parse(args);
+        const params = input.includeRelations !== undefined
+          ? `?includeRelations=${input.includeRelations}`
+          : '';
+        const response = await planningApi.get(`/${input.projectId}${params}`);
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(response.data, null, 2),
+            },
+          ],
+        };
+      }
+
+      case 'create_plan':
+      case 'create_project': {
         const input = CreatePlanSchema.parse(args);
         const response = await planningApi.post('/', input);
         return {

@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../core/api/api_service.dart';
+
+import '../api/api_service.dart';
 
 final aiModelServiceProvider = Provider<AIModelService>((ref) {
   return AIModelService(ref);
@@ -16,7 +17,7 @@ class AIModel {
   final int contextWindow;
   final bool isActive;
   final bool isPremium;
-  final bool canAccess; // Whether current user can use this model
+  final bool canAccess;
   final bool isUserModel;
   final bool hasPersonalApiKey;
 
@@ -31,7 +32,7 @@ class AIModel {
     this.contextWindow = 0,
     this.isActive = true,
     this.isPremium = false,
-    this.canAccess = true, // Default to true for backward compatibility
+    this.canAccess = true,
     this.isUserModel = false,
     this.hasPersonalApiKey = false,
   });
@@ -160,8 +161,5 @@ class AIModelService {
     await _api.deletePersonalAIModel(id);
   }
 
-  // Table is managed by backend, no need to create it from Flutter
-  Future<void> ensureTableExists() async {
-    // No-op - backend manages tables
-  }
+  Future<void> ensureTableExists() async {}
 }

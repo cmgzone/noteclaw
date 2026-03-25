@@ -141,11 +141,6 @@ class SubscriptionService {
     await getUserSubscription(userId);
   }
 
-  /// Get all subscription plans
-  Future<List<Map<String, dynamic>>> getAllPlans() async {
-    return await _api.getAdminPlans();
-  }
-
   /// Get active subscription plans (for mobile app)
   Future<List<Map<String, dynamic>>> getPublicPlans() async {
     return await _api.getSubscriptionPlans();

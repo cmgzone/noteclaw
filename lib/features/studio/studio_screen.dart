@@ -374,7 +374,7 @@ class _StudioScreenState extends ConsumerState<StudioScreen> {
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      'Choose a title, style, and focus to generate a custom podcast.',
+                      'Build a custom podcast with a guided step-by-step setup.',
                       style: text.bodyMedium?.copyWith(
                         color: scheme.onSurfaceVariant,
                       ),
@@ -1397,6 +1397,36 @@ class _PodcastTypeOption {
   final IconData icon;
 }
 
+class _PodcastWizardStep {
+  const _PodcastWizardStep({
+    required this.label,
+    required this.icon,
+    required this.subtitle,
+  });
+
+  final String label;
+  final IconData icon;
+  final String subtitle;
+}
+
+const _podcastWizardSteps = [
+  _PodcastWizardStep(
+    label: 'Format',
+    icon: Icons.tune_rounded,
+    subtitle: 'Choose the podcast style',
+  ),
+  _PodcastWizardStep(
+    label: 'Angle',
+    icon: Icons.edit_note_rounded,
+    subtitle: 'Set the title and focus',
+  ),
+  _PodcastWizardStep(
+    label: 'Hosts',
+    icon: Icons.people_alt_outlined,
+    subtitle: 'Name the hosts and review',
+  ),
+];
+
 _PodcastTypeOption _podcastTypeById(String id) {
   return _podcastTypeOptions.firstWhere(
     (option) => option.id == id,
@@ -1404,7 +1434,7 @@ _PodcastTypeOption _podcastTypeById(String id) {
   );
 }
 
-/// Podcast Settings Dialog with voice customization (Refined UI)
+/// Step-by-step podcast setup dialog for Studio.
 class _PodcastSettingsDialog extends StatefulWidget {
   final String notebookTitle;
   final List<String> initialHosts;
@@ -1429,9 +1459,10 @@ class _PodcastSettingsDialogState extends State<_PodcastSettingsDialog> {
   late final TextEditingController _titleController;
   late final TextEditingController _primaryHostController;
   late final TextEditingController _secondaryHostController;
+  late final TextEditingController _topicController;
   String _selectedType = _podcastTypeOptions.first.id;
-  String? _topic;
   bool _hasCustomTitle = false;
+  int _currentStep = 0;
 
   @override
   void initState() {
@@ -1451,6 +1482,7 @@ class _PodcastSettingsDialogState extends State<_PodcastSettingsDialog> {
           ? widget.initialHosts[1].trim()
           : _defaultPodcastSecondaryHost,
     );
+    _topicController = TextEditingController();
   }
 
   @override
@@ -1458,6 +1490,7 @@ class _PodcastSettingsDialogState extends State<_PodcastSettingsDialog> {
     _titleController.dispose();
     _primaryHostController.dispose();
     _secondaryHostController.dispose();
+    _topicController.dispose();
     super.dispose();
   }
 
@@ -1484,262 +1517,675 @@ class _PodcastSettingsDialogState extends State<_PodcastSettingsDialog> {
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final selectedType = _podcastTypeById(_selectedType);
+  String get _resolvedTitle {
+    final title = _titleController.text.trim();
+    return title.isEmpty ? _podcastTypeById(_selectedType).defaultTitle : title;
+  }
 
-    // Return a refined Dialog
-    return Dialog(
-      backgroundColor: Colors.transparent,
-      child: GlassContainer(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Header
-            Row(
-              children: [
-                Icon(LucideIcons.settings,
-                    color: Theme.of(context).colorScheme.primary),
-                const SizedBox(width: 12),
-                Text('Podcast Settings',
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleLarge
-                        ?.copyWith(fontWeight: FontWeight.bold)),
-              ],
+  String? get _resolvedTopic {
+    final topic = _topicController.text.trim();
+    return topic.isEmpty ? null : topic;
+  }
+
+  List<String> get _resolvedHosts => [
+        _primaryHostController.text.trim().isEmpty
+            ? _defaultPodcastPrimaryHost
+            : _primaryHostController.text.trim(),
+        _secondaryHostController.text.trim().isEmpty
+            ? _defaultPodcastSecondaryHost
+            : _secondaryHostController.text.trim(),
+      ];
+
+  bool get _isLastStep => _currentStep == _podcastWizardSteps.length - 1;
+
+  void _moveStep(int delta) {
+    final nextStep = _currentStep + delta;
+    if (nextStep < 0 || nextStep >= _podcastWizardSteps.length) return;
+    setState(() => _currentStep = nextStep);
+  }
+
+  Future<void> _submit() async {
+    Navigator.pop(context);
+    await widget.onGenerate(
+      _resolvedTitle,
+      _selectedType,
+      _resolvedTopic,
+      _resolvedHosts,
+    );
+  }
+
+  Widget _buildStepIndicator(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    return Row(
+      children: List.generate(_podcastWizardSteps.length, (index) {
+        final step = _podcastWizardSteps[index];
+        final isActive = index == _currentStep;
+        final isComplete = index < _currentStep;
+        final accentColor = isComplete || isActive
+            ? scheme.primary
+            : scheme.outline.withValues(alpha: 0.7);
+
+        return Expanded(
+          child: Padding(
+            padding: EdgeInsets.only(
+              right: index == _podcastWizardSteps.length - 1 ? 0 : 12,
             ),
-            const SizedBox(height: 24),
-            Container(
-              width: double.infinity,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 220),
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Theme.of(context)
-                    .colorScheme
-                    .primary
-                    .withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(12),
+                color: isActive
+                    ? scheme.primary.withValues(alpha: 0.12)
+                    : scheme.surface.withValues(alpha: 0.4),
+                borderRadius: BorderRadius.circular(16),
                 border: Border.all(
-                  color: Theme.of(context)
-                      .colorScheme
-                      .primary
-                      .withValues(alpha: 0.16),
+                  color: accentColor.withValues(alpha: isActive ? 0.45 : 0.2),
                 ),
               ),
               child: Row(
                 children: [
-                  Icon(
-                    LucideIcons.bookOpen,
-                    size: 16,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Using notebook: ${widget.notebookTitle}',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            fontWeight: FontWeight.w600,
+                  Container(
+                    width: 30,
+                    height: 30,
+                    decoration: BoxDecoration(
+                      color: isComplete || isActive
+                          ? accentColor
+                          : accentColor.withValues(alpha: 0.16),
+                      shape: BoxShape.circle,
+                    ),
+                    alignment: Alignment.center,
+                    child: isComplete
+                        ? Icon(
+                            Icons.check,
+                            size: 16,
+                            color: scheme.onPrimary,
+                          )
+                        : Icon(
+                            step.icon,
+                            size: 16,
+                            color: isActive
+                                ? scheme.onPrimary
+                                : scheme.onSurfaceVariant,
                           ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          step.label,
+                          style:
+                              Theme.of(context).textTheme.labelLarge?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          step.subtitle,
+                          style:
+                              Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: scheme.onSurfaceVariant,
+                                  ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: 16),
-            // Content
-            // Content
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Podcast Name',
-                    style: Theme.of(context).textTheme.labelMedium),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: _titleController,
-                  decoration: InputDecoration(
-                    isDense: true,
-                    hintText: selectedType.defaultTitle,
-                    filled: true,
-                    fillColor: Theme.of(context)
-                        .colorScheme
-                        .surface
-                        .withValues(alpha: 0.5),
-                    border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12)),
-                  ),
-                  onChanged: (value) {
-                    final trimmed = value.trim();
-                    _hasCustomTitle = trimmed.isNotEmpty &&
-                        trimmed != _podcastTypeById(_selectedType).defaultTitle;
-                  },
+          ),
+        );
+      }),
+    );
+  }
+
+  Widget _buildSectionCard(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+    required String description,
+    required Widget child,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: scheme.surface.withValues(alpha: 0.38),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: scheme.outline.withValues(alpha: 0.14)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: scheme.primary.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                const SizedBox(height: 16),
-                Text('Podcast Type',
-                    style: Theme.of(context).textTheme.labelMedium),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: _podcastTypeOptions.map((option) {
-                    final isSelected = option.id == _selectedType;
-                    return ChoiceChip(
-                      selected: isSelected,
-                      label: Row(
-                        mainAxisSize: MainAxisSize.min,
+                child: Icon(icon, color: scheme.primary, size: 18),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      description,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                          ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          child,
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSummaryChip(
+    BuildContext context, {
+    required IconData icon,
+    required String label,
+    required String value,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: scheme.surface.withValues(alpha: 0.45),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: scheme.outline.withValues(alpha: 0.16)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: scheme.primary),
+          const SizedBox(width: 8),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 240),
+            child: Text.rich(
+              TextSpan(
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurface,
+                    ),
+                children: [
+                  TextSpan(
+                    text: '$label: ',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  TextSpan(text: value),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStepContent(
+    BuildContext context,
+    _PodcastTypeOption selectedType,
+  ) {
+    switch (_currentStep) {
+      case 0:
+        return _buildSectionCard(
+          context,
+          icon: Icons.podcasts_rounded,
+          title: 'Pick the format',
+          description:
+              'Start with the podcast style. The next step will shape the title and focus around this choice.',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: _podcastTypeOptions.map((option) {
+                  final isSelected = option.id == _selectedType;
+                  return ChoiceChip(
+                    selected: isSelected,
+                    label: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(option.icon, size: 16),
+                        const SizedBox(width: 6),
+                        Text(option.label),
+                      ],
+                    ),
+                    onSelected: (_) => _selectPodcastType(option.id),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 14),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: Theme.of(context)
+                      .colorScheme
+                      .primary
+                      .withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .primary
+                        .withValues(alpha: 0.14),
+                  ),
+                ),
+                child: Text(
+                  selectedType.description,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                ),
+              ),
+            ],
+          ),
+        );
+      case 1:
+        return _buildSectionCard(
+          context,
+          icon: Icons.edit_rounded,
+          title: 'Set the angle',
+          description:
+              'Give the episode a clear title and optionally point the hosts toward a specific topic or question.',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Episode Title',
+                style: Theme.of(context).textTheme.labelMedium,
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _titleController,
+                decoration: InputDecoration(
+                  isDense: true,
+                  hintText: selectedType.defaultTitle,
+                  filled: true,
+                  fillColor: Theme.of(context)
+                      .colorScheme
+                      .surface
+                      .withValues(alpha: 0.5),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                onChanged: (value) {
+                  final trimmed = value.trim();
+                  _hasCustomTitle = trimmed.isNotEmpty &&
+                      trimmed != _podcastTypeById(_selectedType).defaultTitle;
+                  setState(() {});
+                },
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Focus Topic (Optional)',
+                style: Theme.of(context).textTheme.labelMedium,
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _topicController,
+                minLines: 2,
+                maxLines: 3,
+                decoration: InputDecoration(
+                  hintText:
+                      'e.g. "Key financial metrics" or "What changed after the new policy"',
+                  filled: true,
+                  fillColor: Theme.of(context)
+                      .colorScheme
+                      .surface
+                      .withValues(alpha: 0.5),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                onChanged: (_) => setState(() {}),
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  _buildSummaryChip(
+                    context,
+                    icon: LucideIcons.layers,
+                    label: 'Format',
+                    value: selectedType.label,
+                  ),
+                  _buildSummaryChip(
+                    context,
+                    icon: LucideIcons.type,
+                    label: 'Suggested title',
+                    value: _resolvedTitle,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      default:
+        final hosts = _resolvedHosts;
+        return _buildSectionCard(
+          context,
+          icon: LucideIcons.users,
+          title: 'Name the hosts',
+          description:
+              'Pick the two AI host names for this episode. Your last custom names will still be remembered.',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _primaryHostController,
+                      decoration: InputDecoration(
+                        isDense: true,
+                        hintText: _defaultPodcastPrimaryHost,
+                        labelText: 'Host 1',
+                        prefixIcon: const Icon(Icons.person_outline),
+                        filled: true,
+                        fillColor: Theme.of(context)
+                            .colorScheme
+                            .surface
+                            .withValues(alpha: 0.5),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      onChanged: (_) => setState(() {}),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: TextField(
+                      controller: _secondaryHostController,
+                      decoration: InputDecoration(
+                        isDense: true,
+                        hintText: _defaultPodcastSecondaryHost,
+                        labelText: 'Host 2',
+                        prefixIcon: const Icon(Icons.person_outline),
+                        filled: true,
+                        fillColor: Theme.of(context)
+                            .colorScheme
+                            .surface
+                            .withValues(alpha: 0.5),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      onChanged: (_) => setState(() {}),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 18),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Theme.of(context)
+                      .colorScheme
+                      .surface
+                      .withValues(alpha: 0.45),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .outline
+                        .withValues(alpha: 0.14),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Ready to generate',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 10,
+                      children: [
+                        _buildSummaryChip(
+                          context,
+                          icon: LucideIcons.bookOpen,
+                          label: 'Notebook',
+                          value: widget.notebookTitle,
+                        ),
+                        _buildSummaryChip(
+                          context,
+                          icon: Icons.podcasts_rounded,
+                          label: 'Format',
+                          value: selectedType.label,
+                        ),
+                        _buildSummaryChip(
+                          context,
+                          icon: LucideIcons.type,
+                          label: 'Title',
+                          value: _resolvedTitle,
+                        ),
+                        if (_resolvedTopic != null)
+                          _buildSummaryChip(
+                            context,
+                            icon: Icons.gps_fixed_rounded,
+                            label: 'Focus',
+                            value: _resolvedTopic!,
+                          ),
+                        _buildSummaryChip(
+                          context,
+                          icon: LucideIcons.users,
+                          label: 'Hosts',
+                          value: '${hosts[0]} and ${hosts[1]}',
+                        ),
+                        _buildSummaryChip(
+                          context,
+                          icon: LucideIcons.coins,
+                          label: 'Cost',
+                          value:
+                              '${CreditCosts.podcastGeneration} AI Credits',
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final selectedType = _podcastTypeById(_selectedType);
+    final currentStep = _podcastWizardSteps[_currentStep];
+    final useCompactActions = MediaQuery.of(context).size.width < 430;
+
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: 760,
+          maxHeight: MediaQuery.of(context).size.height * 0.9,
+        ),
+        child: GlassContainer(
+          padding: const EdgeInsets.all(24),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      LucideIcons.headphones,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Icon(option.icon, size: 16),
-                          const SizedBox(width: 6),
-                          Text(option.label),
+                          Text(
+                            'Podcast Generator',
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleLarge
+                                ?.copyWith(fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Step ${_currentStep + 1} of ${_podcastWizardSteps.length}: ${currentStep.label}',
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                                ?.copyWith(
+                                  color:
+                                      Theme.of(context).colorScheme.secondary,
+                                ),
+                          ),
                         ],
                       ),
-                      onSelected: (_) => _selectPodcastType(option.id),
-                    );
-                  }).toList(),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 18),
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
                     color: Theme.of(context)
                         .colorScheme
-                        .surface
-                        .withValues(alpha: 0.35),
+                        .primary
+                        .withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
                       color: Theme.of(context)
                           .colorScheme
-                          .outline
-                          .withValues(alpha: 0.15),
+                          .primary
+                          .withValues(alpha: 0.16),
                     ),
                   ),
-                  child: Text(
-                    selectedType.description,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context).colorScheme.secondary,
-                        ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Text('Focus Topic (Optional)',
-                    style: Theme.of(context).textTheme.labelMedium),
-                const SizedBox(height: 8),
-                TextField(
-                  decoration: InputDecoration(
-                    isDense: true,
-                    hintText: 'e.g. "Key financial metrics"',
-                    filled: true,
-                    fillColor: Theme.of(context)
-                        .colorScheme
-                        .surface
-                        .withValues(alpha: 0.5),
-                    border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12)),
-                  ),
-                  onChanged: (val) => _topic = val,
-                ),
-                const SizedBox(height: 16),
-                Text('Host Names',
-                    style: Theme.of(context).textTheme.labelMedium),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _primaryHostController,
-                        decoration: InputDecoration(
-                          isDense: true,
-                          hintText: _defaultPodcastPrimaryHost,
-                          prefixIcon: const Icon(Icons.person_outline),
-                          filled: true,
-                          fillColor: Theme.of(context)
-                              .colorScheme
-                              .surface
-                              .withValues(alpha: 0.5),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: TextField(
-                        controller: _secondaryHostController,
-                        decoration: InputDecoration(
-                          isDense: true,
-                          hintText: _defaultPodcastSecondaryHost,
-                          prefixIcon: const Icon(Icons.person_outline),
-                          filled: true,
-                          fillColor: Theme.of(context)
-                              .colorScheme
-                              .surface
-                              .withValues(alpha: 0.5),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(LucideIcons.users,
+                  child: Row(
+                    children: [
+                      Icon(
+                        LucideIcons.bookOpen,
                         size: 16,
-                        color: Theme.of(context).colorScheme.secondary),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Choose the two AI host names for this episode. Your last custom names will be remembered.',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color:
-                                  Theme.of(context).colorScheme.onSurfaceVariant,
-                            ),
+                        color: Theme.of(context).colorScheme.primary,
                       ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Using notebook: ${widget.notebookTitle}',
+                          style:
+                              Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 18),
+                _buildStepIndicator(context),
+                const SizedBox(height: 18),
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 240),
+                  child: KeyedSubtree(
+                    key: ValueKey(_currentStep),
+                    child: _buildStepContent(context, selectedType),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                if (useCompactActions) ...[
+                  Row(
+                    children: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('Cancel'),
+                      ),
+                      const Spacer(),
+                      if (_currentStep > 0)
+                        OutlinedButton(
+                          onPressed: () => _moveStep(-1),
+                          child: const Text('Back'),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed:
+                          _isLastStep ? _submit : () => _moveStep(1),
+                      icon: Icon(
+                        _isLastStep
+                            ? LucideIcons.sparkles
+                            : LucideIcons.arrowRight,
+                        size: 18,
+                      ),
+                      label: Text(_isLastStep ? 'Generate Podcast' : 'Next'),
                     ),
-                  ],
-                ),
+                  ),
+                ] else
+                  Row(
+                    children: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('Cancel'),
+                      ),
+                      const Spacer(),
+                      if (_currentStep > 0) ...[
+                        OutlinedButton(
+                          onPressed: () => _moveStep(-1),
+                          child: const Text('Back'),
+                        ),
+                        const SizedBox(width: 10),
+                      ],
+                      FilledButton.icon(
+                        onPressed:
+                            _isLastStep ? _submit : () => _moveStep(1),
+                        icon: Icon(
+                          _isLastStep
+                              ? LucideIcons.sparkles
+                              : LucideIcons.arrowRight,
+                          size: 18,
+                        ),
+                        label:
+                            Text(_isLastStep ? 'Generate Podcast' : 'Next'),
+                      ),
+                    ],
+                  ),
               ],
             ),
-            const SizedBox(height: 24),
-            // Actions
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text('Cancel')),
-                const SizedBox(width: 8),
-                FilledButton.icon(
-                  onPressed: () async {
-                    final title = _titleController.text.trim().isEmpty
-                        ? selectedType.defaultTitle
-                        : _titleController.text.trim();
-                    final hosts = [
-                      _primaryHostController.text.trim().isEmpty
-                          ? _defaultPodcastPrimaryHost
-                          : _primaryHostController.text.trim(),
-                      _secondaryHostController.text.trim().isEmpty
-                          ? _defaultPodcastSecondaryHost
-                          : _secondaryHostController.text.trim(),
-                    ];
-                    Navigator.pop(context);
-                    await widget.onGenerate(
-                      title,
-                      _selectedType,
-                      _topic,
-                      hosts,
-                    );
-                  },
-                  icon: const Icon(LucideIcons.sparkles, size: 18),
-                  label: const Text('Generate'),
-                ),
-              ],
-            ),
-          ],
+          ),
         ),
       ),
     );

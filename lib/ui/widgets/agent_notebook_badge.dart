@@ -14,7 +14,7 @@ class AgentNotebookBadge extends StatelessWidget {
     this.onCoverImage = false,
   });
 
-  /// The name of the coding agent (e.g., "Claude", "Kiro", "Cursor")
+  /// The name of the coding agent (e.g., "Claude", "Kiro", "OpenClaw")
   final String agentName;
 
   /// Connection status: 'active', 'expired', or 'disconnected'
@@ -45,7 +45,7 @@ class AgentNotebookBadge extends StatelessWidget {
       return Icons.smart_toy_outlined;
     } else if (name.contains('kiro')) {
       return Icons.auto_awesome;
-    } else if (name.contains('cursor')) {
+    } else if (name.contains('openclaw') || name.contains('cursor')) {
       return Icons.code;
     } else if (name.contains('copilot')) {
       return Icons.assistant;

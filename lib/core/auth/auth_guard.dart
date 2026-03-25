@@ -16,7 +16,6 @@ const protectedRoutePrefixes = [
   '/home',
   '/sources',
   '/chat',
-  '/studio',
   '/search',
   '/artifact',
   '/research',

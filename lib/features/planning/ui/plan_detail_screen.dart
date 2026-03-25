@@ -206,7 +206,7 @@ class _PlanDetailScreenState extends ConsumerState<PlanDetailScreen>
                         children: [
                           Icon(LucideIcons.edit, size: 18),
                           SizedBox(width: 8),
-                          Text('Edit Plan'),
+                          Text('Edit Project'),
                         ],
                       ),
                     ),
@@ -315,6 +315,19 @@ class _PlanDetailScreenState extends ConsumerState<PlanDetailScreen>
               ),
             ),
 
+          if (plan != null)
+            SliverToBoxAdapter(
+              child: _PlanToolsSection(
+                plan: plan,
+                onAddTask: () => _showAddTaskDialog(context, plan),
+                onAskAi: () => context.push('/planning/${plan.id}/ai'),
+                onBuildPrototype: () =>
+                    context.push('/planning/${plan.id}/prototype'),
+                onDesignUi: () =>
+                    context.push('/planning/${plan.id}/ui-designer'),
+              ),
+            ),
+
           // Loading indicator
           if (state.isLoadingTasks)
             const SliverToBoxAdapter(
@@ -330,7 +343,10 @@ class _PlanDetailScreenState extends ConsumerState<PlanDetailScreen>
                 controller: _tabController,
                 children: [
                   // Tasks tab
-                  _TasksSection(plan: plan),
+                  _TasksSection(
+                    plan: plan,
+                    onAddTask: () => _showAddTaskDialog(context, plan),
+                  ),
                   // Requirements tab
                   _RequirementsSection(requirements: plan.requirements),
                   // Design notes tab
@@ -342,57 +358,13 @@ class _PlanDetailScreenState extends ConsumerState<PlanDetailScreen>
             const SliverToBoxAdapter(
               child: _EmptyState(
                 icon: LucideIcons.fileQuestion,
-                title: 'Plan Not Found',
-                subtitle: 'The plan you\'re looking for doesn\'t exist',
+                title: 'Project Not Found',
+                subtitle:
+                    'The project workspace you\'re looking for doesn\'t exist',
               ),
             ),
         ],
       ),
-      floatingActionButton: plan != null
-          ? Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Project Prototype FAB
-                FloatingActionButton(
-                  heroTag: 'prototype',
-                  onPressed: () =>
-                      context.push('/planning/${plan.id}/prototype'),
-                  backgroundColor: scheme.primaryContainer,
-                  foregroundColor: scheme.onPrimaryContainer,
-                  child: const Icon(LucideIcons.layoutDashboard),
-                ).animate().scale(delay: 50.ms),
-                const SizedBox(height: 12),
-                // UI Designer FAB
-                FloatingActionButton(
-                  heroTag: 'ui_designer',
-                  onPressed: () =>
-                      context.push('/planning/${plan.id}/ui-designer'),
-                  backgroundColor: scheme.tertiaryContainer,
-                  foregroundColor: scheme.onTertiaryContainer,
-                  child: const Icon(LucideIcons.palette),
-                ).animate().scale(delay: 100.ms),
-                const SizedBox(height: 12),
-                // AI Assistant FAB
-                FloatingActionButton(
-                  heroTag: 'planning_ai',
-                  onPressed: () => context.push('/planning/${plan.id}/ai'),
-                  backgroundColor: scheme.secondaryContainer,
-                  foregroundColor: scheme.onSecondaryContainer,
-                  child: const Icon(LucideIcons.brain),
-                ).animate().scale(delay: 200.ms),
-                const SizedBox(height: 12),
-                // Add Task FAB
-                FloatingActionButton.extended(
-                  heroTag: 'add_task',
-                  onPressed: () => _showAddTaskDialog(context, plan),
-                  icon: const Icon(LucideIcons.plus),
-                  label: const Text('Add Task'),
-                  backgroundColor: scheme.primary,
-                  foregroundColor: scheme.onPrimary,
-                ).animate().scale(delay: 300.ms),
-              ],
-            )
-          : null,
     );
   }
 
@@ -455,7 +427,7 @@ class _PlanDetailScreenState extends ConsumerState<PlanDetailScreen>
           children: [
             Icon(LucideIcons.edit),
             SizedBox(width: 12),
-            Text('Edit Plan'),
+            Text('Edit Project'),
           ],
         ),
         content: Column(
@@ -510,7 +482,7 @@ class _PlanDetailScreenState extends ConsumerState<PlanDetailScreen>
         await ref.read(planningProvider.notifier).archivePlan(plan.id);
     if (result != null && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Plan "${plan.title}" archived')),
+        SnackBar(content: Text('Project "${plan.title}" archived')),
       );
       context.pop();
     }
@@ -520,7 +492,7 @@ class _PlanDetailScreenState extends ConsumerState<PlanDetailScreen>
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Delete Plan?'),
+        title: const Text('Delete Project?'),
         content: Text(
           'Are you sure you want to delete "${plan.title}"? '
           'This will also delete all tasks and cannot be undone.',
@@ -537,7 +509,7 @@ class _PlanDetailScreenState extends ConsumerState<PlanDetailScreen>
                   await ref.read(planningProvider.notifier).deletePlan(plan.id);
               if (success && mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Plan "${plan.title}" deleted')),
+                  SnackBar(content: Text('Project "${plan.title}" deleted')),
                 );
                 context.pop();
               }
@@ -729,6 +701,319 @@ class _ConnectionIndicator extends StatelessWidget {
   }
 }
 
+class _PlanToolsSection extends StatelessWidget {
+  final Plan plan;
+  final VoidCallback onAddTask;
+  final VoidCallback onAskAi;
+  final VoidCallback onBuildPrototype;
+  final VoidCallback onDesignUi;
+
+  const _PlanToolsSection({
+    required this.plan,
+    required this.onAddTask,
+    required this.onAskAi,
+    required this.onBuildPrototype,
+    required this.onDesignUi,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      child: Container(
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: scheme.outline.withValues(alpha: 0.08)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 18,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: scheme.primary.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Icon(
+                      LucideIcons.sparkles,
+                      color: scheme.primary,
+                      size: 20,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Project Tools',
+                          style: text.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Keep your main build actions close without covering the workspace.',
+                          style: text.bodySmall?.copyWith(
+                            color: scheme.onSurface.withValues(alpha: 0.68),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 18),
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: [
+                  FilledButton.icon(
+                    onPressed: onAddTask,
+                    icon: const Icon(LucideIcons.plus, size: 18),
+                    label: const Text('Add Task'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: onAskAi,
+                    icon: const Icon(LucideIcons.brain, size: 18),
+                    label: const Text('Ask AI'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final isWide = constraints.maxWidth >= 720;
+
+                  final prototypeCard = _PlanToolCard(
+                    icon: LucideIcons.layoutDashboard,
+                    title: 'Build Prototype',
+                    subtitle:
+                        'Turn this project into a working product prototype when the flow is ready.',
+                    onTap: onBuildPrototype,
+                    accentColor: scheme.primary,
+                    badge: 'Build',
+                  );
+                  final uiCard = _PlanToolCard(
+                    icon: LucideIcons.palette,
+                    title: 'UI Concepts',
+                    subtitle:
+                        'Generate interface directions as a secondary design step, not the main workflow.',
+                    onTap: onDesignUi,
+                    accentColor: scheme.tertiary,
+                    badge: 'Advanced',
+                  );
+
+                  if (isWide) {
+                    return Row(
+                      children: [
+                        Expanded(child: prototypeCard),
+                        const SizedBox(width: 12),
+                        Expanded(child: uiCard),
+                      ],
+                    );
+                  }
+
+                  return Column(
+                    children: [
+                      prototypeCard,
+                      const SizedBox(height: 12),
+                      uiCard,
+                    ],
+                  );
+                },
+              ),
+              if (plan.tasks.isEmpty) ...[
+                const SizedBox(height: 16),
+                Text(
+                  'Start by adding a task, then use prototype and UI tools once the project has enough structure.',
+                  style: text.bodySmall?.copyWith(
+                    color: scheme.onSurface.withValues(alpha: 0.62),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ).animate().fadeIn(delay: 120.ms).slideY(begin: 0.06),
+    );
+  }
+}
+
+class _PlanToolCard extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final String badge;
+  final Color accentColor;
+  final VoidCallback onTap;
+
+  const _PlanToolCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.badge,
+    required this.accentColor,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: Ink(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: scheme.surface,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: scheme.outline.withValues(alpha: 0.08)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: accentColor.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(icon, size: 18, color: accentColor),
+                  ),
+                  const Spacer(),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: accentColor.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      badge,
+                      style: text.labelSmall?.copyWith(
+                        color: accentColor,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              Text(
+                title,
+                style: text.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                subtitle,
+                style: text.bodySmall?.copyWith(
+                  color: scheme.onSurface.withValues(alpha: 0.7),
+                  height: 1.45,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SectionToolbar extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final String actionLabel;
+  final VoidCallback onAction;
+
+  const _SectionToolbar({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.actionLabel,
+    required this.onAction,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: scheme.outline.withValues(alpha: 0.08)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: scheme.primary.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(icon, color: scheme.primary, size: 18),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: text.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              subtitle,
+              style: text.bodySmall?.copyWith(
+                color: scheme.onSurface.withValues(alpha: 0.68),
+              ),
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: onAction,
+              icon: const Icon(LucideIcons.plus, size: 16),
+              label: Text(actionLabel),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// Empty state widget
 class _EmptyState extends StatelessWidget {
   final IconData icon;
@@ -782,16 +1067,36 @@ class _EmptyState extends StatelessWidget {
 /// Uses TaskListWidget from task_list_widget.dart for full task management
 class _TasksSection extends StatelessWidget {
   final Plan plan;
+  final VoidCallback onAddTask;
 
-  const _TasksSection({required this.plan});
+  const _TasksSection({
+    required this.plan,
+    required this.onAddTask,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return TaskListWidget(
-      tasks: plan.tasks,
-      showEmptyState: true,
-      emptyTitle: 'No Tasks Yet',
-      emptySubtitle: 'Add tasks to start tracking your progress',
+    return Column(
+      children: [
+        _SectionToolbar(
+          icon: LucideIcons.listChecks,
+          title: 'Execution Tasks',
+          subtitle:
+              'Break the project into concrete steps, then track progress here.',
+          actionLabel: 'Add Task',
+          onAction: onAddTask,
+        ),
+        Expanded(
+          child: TaskListWidget(
+            tasks: plan.tasks,
+            showEmptyState: true,
+            onAddTask: onAddTask,
+            emptyTitle: 'No Tasks Yet',
+            emptySubtitle:
+                'Add tasks to start turning this project into action.',
+          ),
+        ),
+      ],
     );
   }
 }
@@ -805,34 +1110,34 @@ class _RequirementsSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return Stack(
+    return Column(
       children: [
-        if (requirements.isEmpty)
-          const _EmptyState(
-            icon: LucideIcons.fileText,
-            title: 'No Requirements Yet',
-            subtitle: 'Tap + to add requirements or use AI to generate them',
-          )
-        else
-          ListView.builder(
-            padding: const EdgeInsets.all(16).copyWith(bottom: 80),
-            itemCount: requirements.length,
-            itemBuilder: (context, index) {
-              final requirement = requirements[index];
-              return _RequirementCard(requirement: requirement)
-                  .animate()
-                  .fadeIn(delay: Duration(milliseconds: index * 50));
-            },
-          ),
-        // Add Requirement FAB
-        Positioned(
-          right: 16,
-          bottom: 16,
-          child: FloatingActionButton(
-            heroTag: 'add_requirement',
-            onPressed: () => _showAddRequirementDialog(context, ref),
-            child: const Icon(LucideIcons.plus),
-          ).animate().scale(delay: 200.ms),
+        _SectionToolbar(
+          icon: LucideIcons.fileText,
+          title: 'Requirements',
+          subtitle:
+              'Capture the outcomes, constraints, and acceptance criteria this project needs.',
+          actionLabel: 'Add Requirement',
+          onAction: () => _showAddRequirementDialog(context, ref),
+        ),
+        Expanded(
+          child: requirements.isEmpty
+              ? const _EmptyState(
+                  icon: LucideIcons.fileText,
+                  title: 'No Requirements Yet',
+                  subtitle:
+                      'Document the core needs of this project before you build.',
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                  itemCount: requirements.length,
+                  itemBuilder: (context, index) {
+                    final requirement = requirements[index];
+                    return _RequirementCard(requirement: requirement)
+                        .animate()
+                        .fadeIn(delay: Duration(milliseconds: index * 50));
+                  },
+                ),
         ),
       ],
     );
@@ -1182,34 +1487,34 @@ class _DesignNotesSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return Stack(
+    return Column(
       children: [
-        if (designNotes.isEmpty)
-          const _EmptyState(
-            icon: LucideIcons.lightbulb,
-            title: 'No Design Notes Yet',
-            subtitle: 'Tap + to add design notes or use AI to generate them',
-          )
-        else
-          ListView.builder(
-            padding: const EdgeInsets.all(16).copyWith(bottom: 80),
-            itemCount: designNotes.length,
-            itemBuilder: (context, index) {
-              final note = designNotes[index];
-              return _DesignNoteCard(note: note)
-                  .animate()
-                  .fadeIn(delay: Duration(milliseconds: index * 50));
-            },
-          ),
-        // Add Design Note FAB
-        Positioned(
-          right: 16,
-          bottom: 16,
-          child: FloatingActionButton(
-            heroTag: 'add_design_note',
-            onPressed: () => _showAddDesignNoteDialog(context, ref),
-            child: const Icon(LucideIcons.plus),
-          ).animate().scale(delay: 200.ms),
+        _SectionToolbar(
+          icon: LucideIcons.lightbulb,
+          title: 'Design Notes',
+          subtitle:
+              'Keep architecture decisions, UX rationale, and implementation notes in one place.',
+          actionLabel: 'Add Note',
+          onAction: () => _showAddDesignNoteDialog(context, ref),
+        ),
+        Expanded(
+          child: designNotes.isEmpty
+              ? const _EmptyState(
+                  icon: LucideIcons.lightbulb,
+                  title: 'No Design Notes Yet',
+                  subtitle:
+                      'Capture design decisions here so the build stays consistent.',
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                  itemCount: designNotes.length,
+                  itemBuilder: (context, index) {
+                    final note = designNotes[index];
+                    return _DesignNoteCard(note: note)
+                        .animate()
+                        .fadeIn(delay: Duration(milliseconds: index * 50));
+                  },
+                ),
         ),
       ],
     );

@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/api/api_service.dart';
 import '../../core/extensions/color_compat.dart';
@@ -665,7 +666,7 @@ class _TokenGenerationDialogState extends State<TokenGenerationDialog> {
               controller: _nameController,
               decoration: const InputDecoration(
                 labelText: 'Token Name',
-                hintText: 'e.g., Claude Desktop, Cursor IDE',
+                hintText: 'e.g., Claude Desktop, OpenClaw',
               ),
               textCapitalization: TextCapitalization.words,
             ),
@@ -1693,36 +1694,52 @@ class _McpTagChip extends StatelessWidget {
 
 /// Widget displaying MCP configuration instructions
 /// Requirements: 5.4
-class McpConfigInstructions extends StatefulWidget {
+class McpConfigInstructions extends ConsumerStatefulWidget {
   const McpConfigInstructions({super.key});
 
   @override
-  State<McpConfigInstructions> createState() => _McpConfigInstructionsState();
+  ConsumerState<McpConfigInstructions> createState() =>
+      _McpConfigInstructionsState();
 }
 
-class _McpConfigInstructionsState extends State<McpConfigInstructions> {
+class _McpConfigInstructionsState extends ConsumerState<McpConfigInstructions> {
   bool _isExpanded = false;
 
-  static const String _windowsInstallCommand =
-      'irm https://raw.githubusercontent.com/cmgzone/noteclaw/HEAD/scripts/install-mcp.ps1 | iex';
+  Uri get _apiBaseUri => Uri.parse(ref.read(apiServiceProvider).baseUrl);
 
-  static const String _macLinuxInstallCommand =
-      'curl -fsSL https://raw.githubusercontent.com/cmgzone/noteclaw/HEAD/scripts/install-mcp.sh | bash';
+  String get _backendOrigin {
+    final apiUri = _apiBaseUri;
+    return apiUri.replace(path: '', query: null, fragment: null).toString();
+  }
 
-  static const String _mcpConfigExample = '''{
+  String _mcpPath(String path) => _apiBaseUri.resolve('mcp/$path').toString();
+
+  String get _windowsInstallCommand =>
+      'irm ${_mcpPath('install.ps1')} | iex';
+
+  String get _macLinuxInstallCommand =>
+      'curl -fsSL ${_mcpPath('install.sh')} | bash';
+
+  String get _directDownloadUrl => _mcpPath('download');
+
+  String get _manifestUrl => _mcpPath('manifest');
+
+  String get _mcpConfigExample => '''{
   "mcpServers": {
     "noteclaw": {
       "command": "node",
       "args": ["C:\\\\Users\\\\YOUR_NAME\\\\.noteclaw-mcp\\\\index.cjs"],
       "env": {
-        "BACKEND_URL": "https://noteclaw.onrender.com",
+        "BACKEND_URL": "$_backendOrigin",
         "CODING_AGENT_API_KEY": "nclaw_your_personal_api_token_here"
       },
       "disabled": false,
       "autoApprove": [
         "verify_code",
         "analyze_code",
-        "get_followup_messages"
+        "get_followup_messages",
+        "list_projects",
+        "get_project"
       ]
     }
   }
@@ -1736,6 +1753,30 @@ class _McpConfigInstructionsState extends State<McpConfigInstructions> {
         backgroundColor: Colors.green,
       ),
     );
+  }
+
+  Future<void> _openExternal(String url, String label) async {
+    final uri = Uri.tryParse(url);
+    if (uri == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not open $label'),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
+      return;
+    }
+
+    final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!launched && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not open $label'),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
+    }
   }
 
   Widget _buildSnippetCard({
@@ -1833,6 +1874,11 @@ class _McpConfigInstructionsState extends State<McpConfigInstructions> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final windowsInstallCommand = _windowsInstallCommand;
+    final macLinuxInstallCommand = _macLinuxInstallCommand;
+    final mcpConfigExample = _mcpConfigExample;
+    final directDownloadUrl = _directDownloadUrl;
+    final manifestUrl = _manifestUrl;
 
     return Container(
       margin: const EdgeInsets.all(16),
@@ -1897,7 +1943,7 @@ class _McpConfigInstructionsState extends State<McpConfigInstructions> {
                     children: [
                       _McpTagChip(
                         icon: Icons.cloud_download_outlined,
-                        label: 'GitHub Release',
+                        label: 'Current Bundle',
                       ),
                       _McpTagChip(
                         icon: Icons.code_rounded,
@@ -1911,19 +1957,43 @@ class _McpConfigInstructionsState extends State<McpConfigInstructions> {
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    'Install the latest tagged MCP release from GitHub, then paste the config into your agent connection file.',
+                    'Install the current NoteClaw MCP build from your active backend, or download the bundle directly if you want to place `index.cjs` manually.',
                     style: TextStyle(
                       fontSize: 12,
                       color: scheme.secondaryText,
                     ),
                   ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      FilledButton.tonalIcon(
+                        onPressed: () =>
+                            _openExternal(directDownloadUrl, 'MCP bundle'),
+                        icon: const Icon(Icons.download_rounded),
+                        label: const Text('Download MCP'),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: () =>
+                            _copyText(directDownloadUrl, 'MCP bundle URL'),
+                        icon: const Icon(Icons.link_rounded),
+                        label: const Text('Copy Bundle URL'),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: () => _copyText(manifestUrl, 'MCP manifest URL'),
+                        icon: const Icon(Icons.receipt_long_outlined),
+                        label: const Text('Copy Manifest'),
+                      ),
+                    ],
+                  ),
                   const SizedBox(height: 8),
                   _buildSnippetCard(
                     context: context,
                     title: 'Windows PowerShell',
-                    code: _windowsInstallCommand,
+                    code: windowsInstallCommand,
                     description:
-                        'Downloads the standalone NoteClaw MCP runtime directly from the GitHub repo into %USERPROFILE%\\.noteclaw-mcp.',
+                        'Downloads the current NoteClaw MCP runtime from your backend into %USERPROFILE%\\.noteclaw-mcp.',
                     copyLabel: 'Windows install command',
                     icon: Icons.desktop_windows_rounded,
                     badge: 'PowerShell',
@@ -1932,9 +2002,9 @@ class _McpConfigInstructionsState extends State<McpConfigInstructions> {
                   _buildSnippetCard(
                     context: context,
                     title: 'macOS / Linux',
-                    code: _macLinuxInstallCommand,
+                    code: macLinuxInstallCommand,
                     description:
-                        'Downloads the same standalone bundle into ~/.noteclaw-mcp for shell-based MCP clients.',
+                        'Downloads the same current MCP bundle into ~/.noteclaw-mcp for shell-based MCP clients.',
                     copyLabel: 'macOS/Linux install command',
                     icon: Icons.code_rounded,
                     badge: 'bash',
@@ -1943,7 +2013,7 @@ class _McpConfigInstructionsState extends State<McpConfigInstructions> {
                   _buildSnippetCard(
                     context: context,
                     title: 'MCP Config Example',
-                    code: _mcpConfigExample,
+                    code: mcpConfigExample,
                     description:
                         'After install, point your agent to the local NoteClaw MCP server and replace the API token placeholder.',
                     copyLabel: 'MCP config',
@@ -1987,7 +2057,13 @@ class _McpConfigInstructionsState extends State<McpConfigInstructions> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          'The scripts install directly from the GitHub repo. Users do not need npm, npx, or GitHub Releases, but they still need Node.js 20+ to run index.cjs.',
+                          'The install scripts use your current NoteClaw backend, so users always pull the latest deployed MCP bundle without needing npm, npx, or GitHub Releases.',
+                          style:
+                              TextStyle(fontSize: 11, color: scheme.onSurface),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'The current MCP build includes both legacy plan tools and project aliases like list_projects, get_project, and create_project.',
                           style:
                               TextStyle(fontSize: 11, color: scheme.onSurface),
                         ),
@@ -2025,7 +2101,7 @@ class _McpConfigInstructionsState extends State<McpConfigInstructions> {
                   const _InstructionStep(
                     number: '4',
                     text:
-                        'Paste the config into Claude/Kiro/Cursor, restart the client, then watch usage in the dashboard above',
+                        'Paste the config into Codex/Claude Code/OpenClaw/Kiro, restart the client, then watch usage in the dashboard above',
                   ),
                 ],
               ),

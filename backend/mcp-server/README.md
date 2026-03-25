@@ -28,7 +28,7 @@ curl -fsSL https://raw.githubusercontent.com/cmgzone/noteclaw/HEAD/scripts/insta
 - **Ebook Access**: Read existing ebooks, create them directly, or generate them with AI through MCP
 - **Batch Processing**: Verify multiple code snippets at once
 - **Multi-Language Support**: JavaScript, TypeScript, Python, Dart, JSON, and more
-- **Planning Mode**: Create and manage implementation plans with tasks
+- **Project Workspace**: Create and manage structured projects with tasks
 - **Task Tracking**: Update task status, add outputs, and track progress
 - **GitHub Integration**: Access repositories, files, and create issues
 
@@ -151,9 +151,15 @@ Start backend AI generation for an ebook. The call returns quickly with a projec
 }
 ```
 
-## Planning Mode Tools
+## Project Workspace Tools
 
-The MCP server also provides tools for managing plans and tasks, enabling agents to work on structured plans for coding, research, writing, operations, and other general workflows.
+The MCP server also provides tools for managing plans and tasks, enabling agents to work on structured projects for coding, research, writing, operations, and other general workflows.
+
+Project-focused aliases are also available so agents can use the same language users now see in the app:
+
+- `list_projects` -> alias for `list_plans`
+- `get_project` -> alias for `get_plan`
+- `create_project` -> alias for `create_plan`
 
 ### `list_plans`
 List all plans accessible to the authenticated user.

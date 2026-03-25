@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../../features/admin/services/ai_model_service.dart';
+import 'ai_model_service.dart';
 
 final availableModelsProvider =
     FutureProvider<Map<String, List<AIModelOption>>>((ref) async {

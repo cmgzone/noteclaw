@@ -38,13 +38,49 @@ class GeminiImageService {
 
   GeminiImageService({String? apiKey}) : apiKey = apiKey ?? GeminiConfig.apiKey;
 
+  String _normalizeAspectRatio(String? aspectRatio) {
+    switch (aspectRatio) {
+      case '16:9':
+      case '9:16':
+      case '4:5':
+      case '3:4':
+      case '3:2':
+      case '2:3':
+      case '1:1':
+        return aspectRatio!;
+      default:
+        return '1:1';
+    }
+  }
+
+  List<int> _dimensionsForAspectRatio(String aspectRatio) {
+    switch (aspectRatio) {
+      case '16:9':
+        return const [1536, 864];
+      case '9:16':
+        return const [864, 1536];
+      case '4:5':
+        return const [1024, 1280];
+      case '3:4':
+        return const [960, 1280];
+      case '3:2':
+        return const [1440, 960];
+      case '2:3':
+        return const [960, 1440];
+      case '1:1':
+      default:
+        return const [1024, 1024];
+    }
+  }
+
   /// Generate an image using Nano Banana API
   Future<String> generateImage(String prompt,
-      {String? model, String? provider}) async {
+      {String? model, String? provider, String? aspectRatio}) async {
     final result = await generateImageResult(
       prompt,
       model: model,
       provider: provider,
+      aspectRatio: aspectRatio,
     );
     return result.imageUrl;
   }
@@ -53,12 +89,16 @@ class GeminiImageService {
     String prompt, {
     String? model,
     String? provider,
+    String? aspectRatio,
   }) async {
+    final normalizedAspectRatio = _normalizeAspectRatio(aspectRatio);
+
     try {
       if (provider == 'openrouter') {
         if (apiKey.isEmpty) {
           return _pollinationsResult(
             prompt,
+            aspectRatio: normalizedAspectRatio,
             note:
                 'OpenRouter is selected, but no OpenRouter API key is available. Using the free fallback instead.',
           );
@@ -66,12 +106,17 @@ class GeminiImageService {
         if (model == null || model.isEmpty) {
           return _pollinationsResult(
             prompt,
+            aspectRatio: normalizedAspectRatio,
             note:
                 'OpenRouter is selected, but no image-capable model is selected. Using the free fallback instead.',
           );
         }
 
-        final imageUrl = await _generateImageOpenRouter(prompt, model);
+        final imageUrl = await _generateImageOpenRouter(
+          prompt,
+          model,
+          normalizedAspectRatio,
+        );
         return ImageGenerationResult(
           imageUrl: imageUrl,
           backend: ImageGenerationBackend.openRouter,
@@ -82,6 +127,7 @@ class GeminiImageService {
           '[GeminiImageService] Falling back to Pollinations image generation.');
       return _pollinationsResult(
         prompt,
+        aspectRatio: normalizedAspectRatio,
         note:
             'Image generation currently uses Pollinations when Gemini is selected.',
       );
@@ -95,6 +141,7 @@ class GeminiImageService {
       try {
         return _pollinationsResult(
           prompt,
+          aspectRatio: normalizedAspectRatio,
           note:
               'Primary image generation failed, so the free fallback was used instead.',
         );
@@ -110,24 +157,33 @@ class GeminiImageService {
 
   Future<ImageGenerationResult> _pollinationsResult(
     String prompt, {
+    required String aspectRatio,
     String? note,
   }) async {
     return ImageGenerationResult(
-      imageUrl: await _generateWithPollinations(prompt),
+      imageUrl: await _generateWithPollinations(prompt, aspectRatio),
       backend: ImageGenerationBackend.pollinations,
       note: note,
     );
   }
 
-  Future<String> _generateWithPollinations(String prompt) async {
+  Future<String> _generateWithPollinations(
+    String prompt,
+    String aspectRatio,
+  ) async {
+    final dimensions = _dimensionsForAspectRatio(aspectRatio);
     final encodedPrompt = Uri.encodeComponent(prompt);
-    return 'https://image.pollinations.ai/prompt/$encodedPrompt?width=1024&height=1024&nologo=true&model=flux';
+    return 'https://image.pollinations.ai/prompt/$encodedPrompt?width=${dimensions[0]}&height=${dimensions[1]}&nologo=true&model=flux';
   }
 
   /// Generate image using OpenRouter's chat completions with image-capable models
   /// IMPORTANT: Must use models with "image" in output_modalities AND set modalities parameter
   /// Compatible models: google/gemini-2.0-flash-exp:free, google/gemini-2.5-flash-preview, etc.
-  Future<String> _generateImageOpenRouter(String prompt, String model) async {
+  Future<String> _generateImageOpenRouter(
+    String prompt,
+    String model,
+    String aspectRatio,
+  ) async {
     try {
       // Use the provided model directly (trusting user selection)
       final imageModel = model;
@@ -155,7 +211,7 @@ class GeminiImageService {
           'modalities': ['image', 'text'],
           // Optional: Configure image output
           'image_config': {
-            'aspect_ratio': '1:1',
+            'aspect_ratio': aspectRatio,
           },
           'max_tokens': 4096,
         }),
@@ -299,6 +355,6 @@ class GeminiImageService {
     int sampleCount = 1,
     String safetyLevel = 'block_some',
   }) async {
-    return await generateImage(prompt);
+    return await generateImage(prompt, aspectRatio: aspectRatio);
   }
 }

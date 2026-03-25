@@ -52,6 +52,8 @@ class _PlanningAIScreenState extends ConsumerState<PlanningAIScreen> {
   String _getWelcomeMessage() {
     final timeService = ref.read(timeContextServiceProvider);
     final timeInfo = timeService.getShortTimeContext();
+    return _getProjectAssistantWelcomeMessage(timeInfo);
+    /*
     
     return '''👋 **Welcome to Planning Mode AI!**
 
@@ -74,6 +76,34 @@ I'm here to help you brainstorm, organize ideas, and create structured plans. He
 1. Tell me about your project idea or goal
 2. I'll help you break it down into clear requirements
 3. We'll create actionable tasks from those requirements
+
+What would you like to work on today?''';
+    */
+  }
+
+  String _getProjectAssistantWelcomeMessage(String timeInfo) {
+    return '''Welcome to Project Assistant.
+
+$timeInfo
+
+I can help you brainstorm, organize ideas, and turn them into a structured project workspace. This can support product builds, research, operations, content systems, and other non-coding work too.
+
+- Brainstorm: Explore and refine your ideas
+- Research: Search the web for current information, dependencies, and best practices
+- Generate Requirements: Create EARS-pattern requirements
+- Design: Create design notes and architectural decisions
+- Create Tasks: Break work into actionable tasks
+
+Web Search is ${_webSearchEnabled ? 'ENABLED' : 'DISABLED'}.
+I can search for:
+- Latest package versions and dependencies
+- Best practices and documentation
+- Technology comparisons and recommendations
+
+How to get started:
+1. Tell me about your project, workflow, or goal
+2. I will help you break it down into clear requirements
+3. We will create actionable tasks from those requirements
 
 What would you like to work on today?''';
   }
@@ -745,7 +775,7 @@ Generate design notes that provide clear technical guidance for implementation.'
         content: Text(
           'Add the generated $typeLabel '
           'to "${currentPlan.title}"?\n\n'
-          'You can edit them later from the plan detail screen.',
+          'You can edit them later from the project workspace.',
         ),
         actions: [
           TextButton(
@@ -772,11 +802,11 @@ Generate design notes that provide clear technical guidance for implementation.'
           children: [
             Icon(LucideIcons.alertCircle, color: Colors.orange),
             SizedBox(width: 12),
-            Text('No Plan Selected'),
+            Text('No Project Selected'),
           ],
         ),
         content: const Text(
-          'Please create or select a plan first before adding requirements or tasks.',
+          'Please create or select a project workspace first before adding requirements, tasks, or design notes.',
         ),
         actions: [
           TextButton(
@@ -794,7 +824,7 @@ Generate design notes that provide clear technical guidance for implementation.'
 
     if (currentPlan == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No plan selected')),
+        const SnackBar(content: Text('No project selected')),
       );
       return;
     }
@@ -846,9 +876,10 @@ Generate design notes that provide clear technical guidance for implementation.'
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Added ${requirements.length} requirements to plan'),
+            content:
+                Text('Added ${requirements.length} requirements to project'),
             action: SnackBarAction(
-              label: 'View Plan',
+              label: 'View Project',
               onPressed: () => Navigator.of(context).pop(),
             ),
           ),
@@ -871,9 +902,9 @@ Generate design notes that provide clear technical guidance for implementation.'
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Added ${tasks.length} tasks to plan'),
+            content: Text('Added ${tasks.length} tasks to project'),
             action: SnackBarAction(
-              label: 'View Plan',
+              label: 'View Project',
               onPressed: () => Navigator.of(context).pop(),
             ),
           ),
@@ -895,9 +926,9 @@ Generate design notes that provide clear technical guidance for implementation.'
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Added ${notes.length} design notes to plan'),
+            content: Text('Added ${notes.length} design notes to project'),
             action: SnackBarAction(
-              label: 'View Plan',
+              label: 'View Project',
               onPressed: () => Navigator.of(context).pop(),
             ),
           ),
@@ -1322,14 +1353,14 @@ Generate design notes that provide clear technical guidance for implementation.'
                                   child: Column(
                                     crossAxisAlignment:
                                         CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        'Planning AI',
-                                        style: text.titleLarge?.copyWith(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.bold,
+                                      children: [
+                                        Text(
+                                          'Project Assistant',
+                                          style: text.titleLarge?.copyWith(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.bold,
+                                          ),
                                         ),
-                                      ),
                                       if (currentPlan != null)
                                         Text(
                                           currentPlan.title,
@@ -1361,7 +1392,7 @@ Generate design notes that provide clear technical guidance for implementation.'
               // Mode selector
               PopupMenuButton<_PlanningMode>(
                 icon: const Icon(Icons.tune, color: Colors.white),
-                tooltip: 'Planning Mode',
+                tooltip: 'Assistant Modes',
                 onSelected: (mode) => setState(() => _currentMode = mode),
                 itemBuilder: (ctx) => [
                   _buildModeMenuItem(

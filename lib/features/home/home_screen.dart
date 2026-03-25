@@ -676,6 +676,17 @@ class _AppDrawer extends ConsumerWidget {
                         },
                       ),
                       const Divider(height: 32),
+                      const _DrawerSection(title: 'AI Agents'),
+                      _DrawerItem(
+                        icon: LucideIcons.terminal,
+                        label: 'Connect AI Agents',
+                        isActive: true,
+                        onTap: () {
+                          Navigator.pop(context);
+                          context.push('/agent-connections');
+                        },
+                      ),
+                      const Divider(height: 32),
                       const _DrawerSection(title: 'Library'),
                       _DrawerItem(
                         icon: LucideIcons.library,
@@ -691,14 +702,6 @@ class _AppDrawer extends ConsumerWidget {
                         onTap: () {
                           Navigator.pop(context);
                           context.push('/sources');
-                        },
-                      ),
-                      _DrawerItem(
-                        icon: LucideIcons.palette,
-                        label: 'Studio',
-                        onTap: () {
-                          Navigator.pop(context);
-                          context.push('/studio');
                         },
                       ),
                       const Divider(height: 32),
@@ -730,7 +733,7 @@ class _AppDrawer extends ConsumerWidget {
                       ),
                       _DrawerItem(
                         icon: LucideIcons.clipboardList,
-                        label: 'Planning Mode',
+                        label: 'Projects',
                         onTap: () {
                           Navigator.pop(context);
                           context.push('/planning');
@@ -863,14 +866,6 @@ class _AppDrawer extends ConsumerWidget {
                         onTap: () {
                           Navigator.pop(context);
                           context.push('/settings');
-                        },
-                      ),
-                      _DrawerItem(
-                        icon: LucideIcons.terminal,
-                        label: 'Agent Connections',
-                        onTap: () {
-                          Navigator.pop(context);
-                          context.push('/agent-connections');
                         },
                       ),
                       _DrawerItem(

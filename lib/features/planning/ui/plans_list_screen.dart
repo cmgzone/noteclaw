@@ -116,7 +116,7 @@ class _PlansListScreenState extends ConsumerState<PlansListScreen>
                                   ),
                                   const SizedBox(width: 12),
                                   Text(
-                                    'Planning Mode',
+                                    'Project Workspace',
                                     style: text.headlineSmall?.copyWith(
                                       color: Colors.white,
                                       fontWeight: FontWeight.bold,
@@ -126,7 +126,7 @@ class _PlansListScreenState extends ConsumerState<PlansListScreen>
                               ).animate().fadeIn().slideX(),
                               const SizedBox(height: 8),
                               Text(
-                                'Create and manage your project plans',
+                                'Plan, organize, and execute projects of any kind',
                                 style: text.bodyMedium?.copyWith(
                                   color: Colors.white.withValues(alpha: 0.8),
                                 ),
@@ -157,7 +157,7 @@ class _PlansListScreenState extends ConsumerState<PlansListScreen>
               IconButton(
                 icon: const Icon(Icons.add, color: Colors.white),
                 onPressed: () => _showCreatePlanDialog(context),
-                tooltip: 'New Plan',
+                tooltip: 'New Project',
               ),
             ],
             bottom: TabBar(
@@ -242,7 +242,7 @@ class _PlansListScreenState extends ConsumerState<PlansListScreen>
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _showCreatePlanDialog(context),
         icon: const Icon(LucideIcons.plus),
-        label: const Text('New Plan'),
+        label: const Text('New Project'),
         backgroundColor: scheme.primary,
         foregroundColor: scheme.onPrimary,
       ).animate().scale(delay: 300.ms),
@@ -299,7 +299,7 @@ class _PlansListScreenState extends ConsumerState<PlansListScreen>
     if (result != null && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Plan "${plan.title}" archived'),
+          content: Text('Project "${plan.title}" archived'),
           action: SnackBarAction(
             label: 'Undo',
             onPressed: () => _unarchivePlan(plan),
@@ -314,7 +314,7 @@ class _PlansListScreenState extends ConsumerState<PlansListScreen>
         await ref.read(planningProvider.notifier).unarchivePlan(plan.id);
     if (result != null && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Plan "${plan.title}" restored')),
+        SnackBar(content: Text('Project "${plan.title}" restored')),
       );
     }
   }
@@ -323,7 +323,7 @@ class _PlansListScreenState extends ConsumerState<PlansListScreen>
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Delete Plan?'),
+        title: const Text('Delete Project?'),
         content: Text(
           'Are you sure you want to delete "${plan.title}"? '
           'This will also delete all tasks and cannot be undone.',
@@ -340,7 +340,7 @@ class _PlansListScreenState extends ConsumerState<PlansListScreen>
                   await ref.read(planningProvider.notifier).deletePlan(plan.id);
               if (success && mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Plan "${plan.title}" deleted')),
+                  SnackBar(content: Text('Project "${plan.title}" deleted')),
                 );
               }
             },
@@ -410,14 +410,14 @@ class _EmptyState extends StatelessWidget {
             ).animate().scale(duration: 600.ms, curve: Curves.elasticOut),
             const SizedBox(height: 24),
             Text(
-              isArchived ? 'No Archived Plans' : 'No Plans Yet',
+              isArchived ? 'No Archived Projects' : 'No Projects Yet',
               style: text.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
             ).animate().fadeIn(delay: 200.ms),
             const SizedBox(height: 8),
             Text(
               isArchived
-                  ? 'Archived plans will appear here'
-                  : 'Create your first plan to start organizing your projects',
+                  ? 'Archived projects will appear here'
+                  : 'Create your first project workspace to organize ideas, tasks, and design notes',
               style: text.bodyLarge?.copyWith(
                 color: scheme.onSurface.withValues(alpha: 0.6),
               ),
@@ -428,7 +428,7 @@ class _EmptyState extends StatelessWidget {
               FilledButton.icon(
                 onPressed: onCreatePressed,
                 icon: const Icon(LucideIcons.plus),
-                label: const Text('Create Plan'),
+                label: const Text('Create Project'),
               ).animate().fadeIn(delay: 600.ms),
             ],
           ],
@@ -800,7 +800,7 @@ class _CreatePlanDialogState extends ConsumerState<_CreatePlanDialog> {
         children: [
           Icon(LucideIcons.filePlus, color: scheme.primary),
           const SizedBox(width: 12),
-          const Text('Create New Plan'),
+          const Text('Create New Project'),
         ],
       ),
       content: Form(
@@ -813,8 +813,8 @@ class _CreatePlanDialogState extends ConsumerState<_CreatePlanDialog> {
               TextFormField(
                 controller: _titleController,
                 decoration: const InputDecoration(
-                  labelText: 'Plan Title',
-                  hintText: 'Enter a title for your plan',
+                  labelText: 'Project Title',
+                  hintText: 'Enter a title for your project',
                   prefixIcon: Icon(LucideIcons.type),
                 ),
                 validator: (value) {
@@ -831,7 +831,7 @@ class _CreatePlanDialogState extends ConsumerState<_CreatePlanDialog> {
                 controller: _descriptionController,
                 decoration: const InputDecoration(
                   labelText: 'Description (optional)',
-                  hintText: 'Describe what this plan is about',
+                  hintText: 'Describe what this project or workflow is about',
                   prefixIcon: Icon(LucideIcons.alignLeft),
                 ),
                 maxLines: 3,
@@ -839,7 +839,7 @@ class _CreatePlanDialogState extends ConsumerState<_CreatePlanDialog> {
               ),
               const SizedBox(height: 16),
               SwitchListTile(
-                title: const Text('Private Plan'),
+                title: const Text('Private Project'),
                 subtitle: Text(
                   _isPrivate
                       ? 'Only you and shared agents can access'
@@ -892,7 +892,7 @@ class _CreatePlanDialogState extends ConsumerState<_CreatePlanDialog> {
         widget.onCreated(plan);
       } else if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to create plan')),
+          const SnackBar(content: Text('Failed to create project')),
         );
         setState(() => _isLoading = false);
       }

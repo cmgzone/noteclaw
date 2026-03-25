@@ -53,6 +53,7 @@ class ResearchAgent {
   Future<String> researchTopic(String topic,
       {List<String> context = const [],
       String? notebookId,
+      String? targetAudience,
       String? model}) async {
     try {
       String sourceContext = context.join('\n\n');
@@ -61,13 +62,42 @@ class ResearchAgent {
       // The orchestrator passes sources via the context parameter
 
       final prompt = '''
-You are a Research Agent tasked with gathering key information for an ebook about: "$topic".
+You are the lead research agent for a high-quality ebook.
+
+Topic: "$topic"
+Target audience: ${targetAudience?.trim().isNotEmpty == true ? targetAudience!.trim() : 'General readers'}
 
 Existing Context (from User's Notebook):
 $sourceContext
 
-Please provide a comprehensive summary of key facts, important dates, main concepts, and interesting details that should be included in this ebook. 
-Focus on accuracy and depth, prioritizing the provided context.
+Create a structured research brief in Markdown with these sections:
+
+## Core Thesis
+What the ebook should help the reader understand.
+
+## Must-Include Facts And Examples
+Bullet points with the strongest supporting details drawn from the context.
+
+## Key Terms And Concepts
+Definitions, frameworks, and recurring ideas the reader must understand.
+
+## Timeline Or Historical Anchors
+Important dates, phases, or sequences if they exist.
+
+## Audience Angle
+What matters most for this target audience and what level of explanation they need.
+
+## Misconceptions, Nuance, And Cautions
+Ambiguities, tradeoffs, and places where the writing should avoid overclaiming.
+
+## Strong Chapter Opportunities
+6-10 promising chapter angles or questions the book should cover.
+
+Rules:
+- Stay grounded in the provided context.
+- Do not invent statistics, quotes, or dates.
+- If something is uncertain, say that clearly.
+- Favor specific, high-signal details over generic summary.
 ''';
 
       return await _generateContent(prompt, model: model);

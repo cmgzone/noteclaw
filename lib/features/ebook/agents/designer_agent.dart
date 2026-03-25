@@ -13,6 +13,15 @@ class DesignerAgent {
 
   DesignerAgent(this.ref);
 
+  String _brandHex(int colorValue) =>
+      '#${colorValue.toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}';
+
+  String _compactText(String value, {int maxLength = 220}) {
+    final normalized = value.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (normalized.length <= maxLength) return normalized;
+    return '${normalized.substring(0, maxLength)}...';
+  }
+
   Future<GeminiImageService> _getImageService(
       {required String? providerOverride}) async {
     final settings = await AISettingsService.getSettingsWithDefault(ref.read);
@@ -52,12 +61,22 @@ class DesignerAgent {
 
   Future<String> generateCoverArt(EbookProject project) async {
     final settings = await AISettingsService.getSettingsWithDefault(ref.read);
+    final authorName = project.branding.authorName.trim();
 
     final prompt = '''
-Book cover design for a book titled "${project.title}".
+Create a premium ebook cover illustration for a book titled "${project.title}".
 Topic: ${project.topic}
-Style: Professional, modern, minimalist, high quality, 4k.
-Primary color: ${project.branding.primaryColorValue.toRadixString(16)}
+Target audience: ${project.targetAudience}
+${authorName.isEmpty ? '' : 'Author: $authorName'}
+Primary brand color: ${_brandHex(project.branding.primaryColorValue)}
+
+Art direction:
+- modern, polished, publishing-quality cover design
+- a single strong focal idea tied to the topic
+- cinematic lighting and clean composition
+- visually distinctive, not generic stock imagery
+- no readable title text, subtitles, or watermarks rendered into the image
+- leave breathing room for cover layout if text is added later
 ''';
 
     try {
@@ -69,7 +88,7 @@ Primary color: ${project.branding.primaryColorValue.toRadixString(16)}
       if (_isPlaceholder(url)) {
         // AI model returned placeholder — try web image
         final webUrl = await _fetchWebImage(
-            '${project.title} ${project.topic} book cover professional');
+            '${project.title} ${project.topic} editorial book cover illustration');
         return webUrl ?? url; // return web image or keep placeholder as last resort
       }
       return url;
@@ -77,25 +96,39 @@ Primary color: ${project.branding.primaryColorValue.toRadixString(16)}
       debugPrint(
           '[DesignerAgent] Cover art AI generation failed: $e — trying web fallback');
       final webUrl = await _fetchWebImage(
-          '${project.title} ${project.topic} book cover professional');
+          '${project.title} ${project.topic} editorial book cover illustration');
       if (webUrl != null) return webUrl;
       return _buildColoredPlaceholder(project.topic);
     }
   }
 
   Future<String> generateChapterIllustration(
-      EbookChapter chapter, String style) async {
+    EbookProject project,
+    EbookChapter chapter,
+    String style,
+  ) async {
     final settings = await AISettingsService.getSettingsWithDefault(ref.read);
 
-    // Safely get content preview
-    final contentPreview = chapter.content.isEmpty
-        ? chapter.title
-        : chapter.content.substring(0, chapter.content.length.clamp(0, 100));
+    final contentPreview =
+        _compactText(chapter.content.isEmpty ? chapter.title : chapter.content);
 
     final prompt = '''
-Illustration for a book chapter titled "${chapter.title}".
-Context: $contentPreview...
-Style: $style, consistent, professional.
+Create a refined chapter illustration for an ebook.
+
+Book title: ${project.title}
+Topic: ${project.topic}
+Target audience: ${project.targetAudience}
+Chapter title: ${chapter.title}
+Chapter context: $contentPreview
+Brand accent color: ${_brandHex(project.branding.primaryColorValue)}
+Visual continuity: $style
+
+Art direction:
+- consistent with the ebook cover and the rest of the book
+- editorial, polished, and specific to the chapter's real subject matter
+- use symbolic or scene-based imagery that reinforces the chapter idea
+- clean composition with one clear focal point
+- avoid readable text, labels, UI chrome, and watermarks
 ''';
 
     try {
@@ -106,16 +139,16 @@ Style: $style, consistent, professional.
 
       if (_isPlaceholder(url)) {
         // AI model returned placeholder — try web image
-        final webUrl =
-            await _fetchWebImage('${chapter.title} illustration professional');
+        final webUrl = await _fetchWebImage(
+            '${project.topic} ${chapter.title} editorial illustration');
         return webUrl ?? url;
       }
       return url;
     } catch (e) {
       debugPrint(
           '[DesignerAgent] Chapter illustration AI generation failed: $e — trying web fallback');
-      final webUrl =
-          await _fetchWebImage('${chapter.title} illustration professional');
+      final webUrl = await _fetchWebImage(
+          '${project.topic} ${chapter.title} editorial illustration');
       if (webUrl != null) return webUrl;
       return _buildColoredPlaceholder(chapter.title);
     }

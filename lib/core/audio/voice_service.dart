@@ -443,7 +443,7 @@ class VoiceService {
   }
 
   static String sanitizeNarrationText(String text) {
-    String cleaned = text;
+    String cleaned = _normalizeTtsArtifacts(text);
 
     cleaned = cleaned.replaceAll('&nbsp;', ' ');
     cleaned = cleaned.replaceAll('&amp;', ' and ');
@@ -458,6 +458,11 @@ class VoiceService {
     cleaned = cleaned.replaceAll(RegExp(r'```[\s\S]*?```'), ' code block ');
     cleaned = cleaned.replaceAll(RegExp(r'`[^`]+`'), ' code ');
     cleaned = cleaned.replaceAll(RegExp(r'^#{1,6}\s*', multiLine: true), '');
+    cleaned = cleaned.replaceAll(RegExp(r'^\s*>+\s*', multiLine: true), '');
+    cleaned = cleaned.replaceAll(
+      RegExp(r'^\s*[-*+]\s+\[[ xX]\]\s*', multiLine: true),
+      '',
+    );
 
     cleaned = cleaned.replaceAllMapped(
       RegExp(r'\*\*([^*]+)\*\*'),
@@ -487,6 +492,7 @@ class VoiceService {
       (m) => m.group(1) ?? '',
     );
     cleaned = cleaned.replaceAll(RegExp(r'\[\^[^\]]+\]'), ' ');
+    cleaned = cleaned.replaceAll(RegExp(r'(?<!\w)\[\d{1,3}\](?!\w)'), ' ');
     cleaned = cleaned.replaceAll(RegExp(r'https?://[^\s]+'), ' link ');
 
     cleaned = cleaned.replaceAll(
@@ -542,6 +548,18 @@ class VoiceService {
       RegExp(r'(\d+)%'),
       (m) => '${m.group(1)} percent',
     );
+    cleaned = cleaned.replaceAll(
+      RegExp(
+        r'^\s*(?:note|warning|important|tip|fyi|heads up)\s*[:\-]\s+',
+        caseSensitive: false,
+        multiLine: true,
+      ),
+      '',
+    );
+    cleaned = cleaned.replaceAll(
+      RegExp(r'^\s*(?:[^\x00-\x7F]{1,8}\s*)+(?=[A-Za-z0-9])', multiLine: true),
+      '',
+    );
 
     cleaned = cleaned.replaceAll(
       RegExp(r'^[\s\W_]{3,}$', multiLine: true),
@@ -568,8 +586,38 @@ class VoiceService {
     cleaned = cleaned.replaceAll(RegExp(r'\n{3,}'), '\n\n');
     cleaned = cleaned.replaceAll(RegExp(r'[ \t]{2,}'), ' ');
     cleaned = cleaned.replaceAll(RegExp(r' *([,.;!?]) *'), r'$1 ');
+    cleaned = cleaned.replaceAll(RegExp(r' *\n *'), '\n');
 
     return cleaned.trim();
+  }
+
+  static String _normalizeTtsArtifacts(String text) {
+    String cleaned = text;
+
+    const replacements = <String, String>{
+      '\u00A0': ' ',
+      '\u200B': ' ',
+      '\u200C': ' ',
+      '\u200D': ' ',
+      '\u2060': ' ',
+      '\uFE0F': ' ',
+      '\u00C2': ' ',
+      '\u00E2\u20AC\u2122': '\'',
+      '\u00E2\u20AC\u02DC': '\'',
+      '\u00E2\u20AC\u0153': '"',
+      '\u00E2\u20AC\u009D': '"',
+      '\u00E2\u20AC\u00A6': '...',
+      '\u00E2\u20AC\u0094': ', ',
+      '\u00E2\u20AC\u0093': ', ',
+      '\u00E2\u20AC\u00A2': ' ',
+      '\u00E2\u0161\u00A0\u00EF\u00B8\u008F': ' ',
+    };
+
+    replacements.forEach((pattern, replacement) {
+      cleaned = cleaned.replaceAll(pattern, replacement);
+    });
+
+    return cleaned;
   }
 
   Future<void> speak(String text,

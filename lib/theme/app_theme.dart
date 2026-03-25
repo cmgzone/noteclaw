@@ -59,6 +59,8 @@ class AppTheme {
     final surface = isDark ? const Color(0xFF0F172A) : const Color(0xFFFFFFFF);
     final surfaceContainer =
         isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9);
+    final menuSurface =
+        isDark ? const Color(0xFF111827) : const Color(0xFFFFFFFF);
 
     final colorScheme = ColorScheme.fromSeed(
       brightness: brightness,
@@ -78,6 +80,11 @@ class AppTheme {
       shadow: isDark
           ? Colors.black.withValues(alpha: 0.5)
           : Colors.black.withValues(alpha: 0.1),
+    );
+    final menuBorderColor = colorScheme.outline.withValues(alpha: 0.45);
+    final menuShape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(18),
+      side: BorderSide(color: menuBorderColor),
     );
 
     final baseTextTheme = GoogleFonts.plusJakartaSansTextTheme()
@@ -130,6 +137,7 @@ class AppTheme {
       colorScheme: colorScheme,
       textTheme: textTheme,
       scaffoldBackgroundColor: background,
+      canvasColor: menuSurface,
 
       // --- AppBar ---
       appBarTheme: AppBarTheme(
@@ -249,6 +257,60 @@ class AppTheme {
         surfaceTintColor: Colors.transparent,
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+        ),
+      ),
+      popupMenuTheme: PopupMenuThemeData(
+        color: menuSurface,
+        surfaceTintColor: Colors.transparent,
+        shadowColor: colorScheme.shadow.withValues(alpha: 0.25),
+        elevation: 12,
+        shape: menuShape,
+        textStyle: textTheme.bodyMedium?.copyWith(
+          color: colorScheme.onSurface,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+      menuTheme: MenuThemeData(
+        style: MenuStyle(
+          backgroundColor: WidgetStatePropertyAll(menuSurface),
+          surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
+          shadowColor:
+              WidgetStatePropertyAll(colorScheme.shadow.withValues(alpha: 0.25)),
+          elevation: const WidgetStatePropertyAll(12),
+          shape: WidgetStatePropertyAll(menuShape),
+          side: WidgetStatePropertyAll(BorderSide(color: menuBorderColor)),
+        ),
+      ),
+      dropdownMenuTheme: DropdownMenuThemeData(
+        textStyle: textTheme.bodyMedium?.copyWith(
+          color: colorScheme.onSurface,
+          fontWeight: FontWeight.w500,
+        ),
+        menuStyle: MenuStyle(
+          backgroundColor: WidgetStatePropertyAll(menuSurface),
+          surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
+          shadowColor:
+              WidgetStatePropertyAll(colorScheme.shadow.withValues(alpha: 0.25)),
+          elevation: const WidgetStatePropertyAll(12),
+          shape: WidgetStatePropertyAll(menuShape),
+          side: WidgetStatePropertyAll(BorderSide(color: menuBorderColor)),
+        ),
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: isDark ? const Color(0xFF111827) : Colors.white,
+          hintStyle: TextStyle(color: colorScheme.onSurfaceVariant),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: BorderSide(color: colorScheme.outline),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: BorderSide(color: colorScheme.outline),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: BorderSide(color: primary, width: 2),
+          ),
         ),
       ),
     );

@@ -11,6 +11,15 @@ class ContentAgent {
 
   ContentAgent(this.ref);
 
+  String _projectVoice(EbookProject project) {
+    final audience = project.targetAudience.trim();
+    if (audience.isEmpty) {
+      return 'clear, credible, and engaging for a broad audience';
+    }
+
+    return 'clear, credible, engaging, and well-paced for $audience';
+  }
+
   Future<String> _generateContent(String prompt, {String? model}) async {
     // Determine provider and model
     String provider;
@@ -56,16 +65,30 @@ class ContentAgent {
   Future<List<EbookChapter>> generateOutline(
       EbookProject project, String researchSummary) async {
     final prompt = '''
-You are an expert author and editor. Create a detailed chapter outline for an ebook.
+You are a developmental editor designing a strong nonfiction ebook.
 
 Title: ${project.title}
 Topic: ${project.topic}
 Target Audience: ${project.targetAudience}
+Desired voice: ${_projectVoice(project)}
 
 Research Context:
 $researchSummary
 
-Generate a list of 5-8 chapters. For each chapter, provide a title and a brief description of what it will cover.
+Create a chapter plan with 6-8 chapters that:
+- moves from foundations to deeper insight or practical application
+- avoids overlap between chapters
+- gives each chapter a distinct reader outcome
+- feels specific to the research context instead of generic
+
+Each line must follow this exact format:
+1. [Chapter Title]: [1-2 sentence chapter brief]
+
+In each chapter brief, include:
+- what the reader will learn
+- the key angle, tension, or question the chapter covers
+- the most useful examples or evidence to highlight
+
 Return ONLY the list in this format:
 1. [Chapter Title]: [Description]
 2. [Chapter Title]: [Description]
@@ -98,12 +121,16 @@ Return ONLY the list in this format:
 
   Future<String> writeChapter(EbookProject project, EbookChapter chapter,
       String researchSummary) async {
+    final authorLine = project.branding.authorName.trim().isEmpty
+        ? ''
+        : 'Author voice reference: ${project.branding.authorName.trim()}\n';
     final prompt = '''
-You are an expert author. Write the full content for Chapter ${chapter.orderIndex + 1}: "${chapter.title}".
+You are an expert nonfiction author writing a polished ebook chapter.
 
 Book Title: ${project.title}
 Audience: ${project.targetAudience}
-Tone: Professional yet engaging
+Tone: ${_projectVoice(project)}
+$authorLine
 
 Research Context:
 $researchSummary
@@ -111,9 +138,23 @@ $researchSummary
 Chapter Description:
 ${chapter.content}
 
-Write a comprehensive, well-structured chapter in Markdown format. 
-Include headings, bullet points, and clear paragraphs. 
-Do not include the chapter title at the top (it will be added by the layout).
+Write a chapter that is substantive, well-structured, and clearly grounded in the research context.
+
+Requirements:
+- Write in Markdown.
+- Do not include the chapter title at the top; the app adds it separately.
+- Open with a strong hook or framing paragraph.
+- Use 4-6 meaningful section headings.
+- Explain ideas with concrete examples, comparisons, or scenarios when helpful.
+- Use bullets only when they improve clarity.
+- End with a short takeaway or recap section.
+- Aim for roughly 900-1400 words unless the material clearly needs less.
+
+Quality bar:
+- Avoid filler, repetition, and vague generalities.
+- Do not invent facts, quotes, or statistics.
+- If the source material is uncertain, write carefully and acknowledge nuance.
+- Make the chapter feel purposeful and readable, not like raw model output.
 ''';
 
     return await _generateContent(prompt, model: project.selectedModel);

@@ -1365,11 +1365,6 @@ class ApiService {
     );
   }
 
-  Future<List<Map<String, dynamic>>> getAdminPlans() async {
-    final response = await get<Map<String, dynamic>>('/subscriptions/plans');
-    return List<Map<String, dynamic>>.from(response['plans'] ?? []);
-  }
-
   Future<List<Map<String, dynamic>>> getSubscriptionPlans() async {
     final response = await get<Map<String, dynamic>>('/subscriptions/plans');
     return List<Map<String, dynamic>>.from(response['plans'] ?? []);
@@ -1802,53 +1797,6 @@ class ApiService {
   }
 
   // ============ ONBOARDING ============
-
-  Future<List<Map<String, dynamic>>> getAdminSubscriptionPlans() async {
-    final response = await get<Map<String, dynamic>>('/admin/plans');
-    return List<Map<String, dynamic>>.from(response['plans'] ?? []);
-  }
-
-  Future<Map<String, dynamic>> createAdminSubscriptionPlan(
-      Map<String, dynamic> data) async {
-    final response = await post<Map<String, dynamic>>('/admin/plans', data);
-    return Map<String, dynamic>.from(response['plan'] ?? {});
-  }
-
-  Future<Map<String, dynamic>> updateAdminSubscriptionPlan(
-    String id,
-    Map<String, dynamic> data,
-  ) async {
-    final response = await put<Map<String, dynamic>>('/admin/plans/$id', data);
-    return Map<String, dynamic>.from(response['plan'] ?? {});
-  }
-
-  Future<void> deleteAdminSubscriptionPlan(String id) async {
-    await delete('/admin/plans/$id');
-  }
-
-  Future<List<Map<String, dynamic>>> getAdminCreditPackages() async {
-    final response = await get<Map<String, dynamic>>('/admin/packages');
-    return List<Map<String, dynamic>>.from(response['packages'] ?? []);
-  }
-
-  Future<Map<String, dynamic>> createAdminCreditPackage(
-      Map<String, dynamic> data) async {
-    final response = await post<Map<String, dynamic>>('/admin/packages', data);
-    return Map<String, dynamic>.from(response['package'] ?? {});
-  }
-
-  Future<Map<String, dynamic>> updateAdminCreditPackage(
-    String id,
-    Map<String, dynamic> data,
-  ) async {
-    final response =
-        await put<Map<String, dynamic>>('/admin/packages/$id', data);
-    return Map<String, dynamic>.from(response['package'] ?? {});
-  }
-
-  Future<void> deleteAdminCreditPackage(String id) async {
-    await delete('/admin/packages/$id');
-  }
 
   Future<List<Map<String, dynamic>>> getOnboardingScreens() async {
     final response = await get<Map<String, dynamic>>('/admin/onboarding');

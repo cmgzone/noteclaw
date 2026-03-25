@@ -13,7 +13,7 @@ import '../../theme/motion.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../core/audio/murf_service.dart';
 import '../../core/ai/ai_models_provider.dart';
-import '../admin/services/ai_model_service.dart';
+import '../../core/ai/ai_model_service.dart';
 
 // Providers for selected models
 final selectedAIModelProvider = StateProvider<String>((ref) {
@@ -1022,8 +1022,8 @@ class _AIModelSettingsScreenState extends ConsumerState<AIModelSettingsScreen> {
                 onTap: () => context.push('/agent-skills'),
               ),
               _ActionTile(
-                title: 'Agent Connections',
-                subtitle: 'Connect external coding agents',
+                title: 'Connect AI Agents',
+                subtitle: 'Link Codex, Claude Code, OpenClaw, and other agents',
                 icon: Icons.terminal,
                 color: Colors.deepOrange,
                 onTap: () => context.push('/agent-connections'),
@@ -1034,13 +1034,6 @@ class _AIModelSettingsScreenState extends ConsumerState<AIModelSettingsScreen> {
                 icon: Icons.support_agent,
                 color: Colors.indigo,
                 onTap: () => context.push('/migrate-agent-id'),
-              ),
-              _ActionTile(
-                title: 'Manage AI Models',
-                subtitle: 'Add or configure AI models (Admin)',
-                icon: Icons.psychology,
-                color: Colors.deepPurple,
-                onTap: () => context.push('/admin/ai-models'),
               ),
             ],
           ).animate().premiumFade(delay: 400.ms).premiumSlide(delay: 400.ms),

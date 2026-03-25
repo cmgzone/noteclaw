@@ -1193,6 +1193,15 @@ class _NotebookChatComposer extends ConsumerWidget {
                 tooltip: 'Chat tools',
                 padding: EdgeInsets.zero,
                 position: PopupMenuPosition.under,
+                color: scheme.surface,
+                surfaceTintColor: Colors.transparent,
+                elevation: 12,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(18),
+                  side: BorderSide(
+                    color: scheme.outline.withValues(alpha: 0.45),
+                  ),
+                ),
                 onSelected: (value) {
                   switch (value) {
                     case _NotebookChatToolAction.webBrowsing:

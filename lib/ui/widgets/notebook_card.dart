@@ -293,7 +293,7 @@ class NotebookCard extends StatelessWidget {
             ElevatedButton.icon(
               onPressed: () {
                 Navigator.pop(context);
-                context.go('/studio');
+                context.go('/notebook/$notebookId/studio');
               },
               icon: const Icon(Icons.mic_none),
               label: const Text('Generate Audio'),
