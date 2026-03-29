@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:go_router/go_router.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'flashcard.dart';
 import 'flashcard_provider.dart';
@@ -40,7 +41,13 @@ class _FlashcardDeckScreenState extends ConsumerState<FlashcardDeckScreen> {
 
     if (deck.cards.isEmpty) {
       return Scaffold(
-        appBar: AppBar(title: Text(deck.title)),
+        appBar: AppBar(
+          title: Text(deck.title),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () => _goBackToFlashcards(deck.notebookId),
+          ),
+        ),
         body: const Center(
           child: Text('No flashcards in this deck'),
         ),
@@ -49,16 +56,21 @@ class _FlashcardDeckScreenState extends ConsumerState<FlashcardDeckScreen> {
 
     final scheme = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
-    final card = deck.cards[_currentIndex];
     final isComplete = _currentIndex >= deck.cards.length;
 
     if (isComplete) {
       return _buildCompletionScreen(context, deck, scheme, text);
     }
 
+    final card = deck.cards[_currentIndex];
+
     return Scaffold(
       appBar: AppBar(
         title: Text(deck.title),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => _goBackToFlashcards(deck.notebookId),
+        ),
         actions: [
           Padding(
             padding: const EdgeInsets.only(right: 16),
@@ -291,7 +303,13 @@ class _FlashcardDeckScreenState extends ConsumerState<FlashcardDeckScreen> {
     final percentage = ((_correctCount / total) * 100).round();
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Session Complete')),
+      appBar: AppBar(
+        title: const Text('Session Complete'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => _goBackToFlashcards(deck.notebookId),
+        ),
+      ),
       body: Center(
         child: Padding(
           padding: const EdgeInsets.all(32),
@@ -360,8 +378,8 @@ class _FlashcardDeckScreenState extends ConsumerState<FlashcardDeckScreen> {
               ).animate().fadeIn(delay: 1000.ms),
               const SizedBox(height: 16),
               TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Back to Deck'),
+                onPressed: () => _goBackToFlashcards(deck.notebookId),
+                child: const Text('Back to Flashcards'),
               ),
             ],
           ),
@@ -450,5 +468,14 @@ class _FlashcardDeckScreenState extends ConsumerState<FlashcardDeckScreen> {
       _correctCount = 0;
       _incorrectCount = 0;
     });
+  }
+
+  void _goBackToFlashcards(String notebookId) {
+    if (!mounted) return;
+    if (notebookId.isNotEmpty) {
+      context.go('/notebook/$notebookId/flashcards');
+      return;
+    }
+    context.go('/home');
   }
 }

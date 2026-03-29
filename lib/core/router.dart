@@ -62,6 +62,7 @@ import '../features/planning/ui/plan_detail_screen.dart';
 import '../features/planning/ui/planning_ai_screen.dart';
 import '../features/planning/ui/ui_design_generator_screen.dart';
 import '../features/planning/ui/project_prototype_screen.dart';
+import '../features/code_review/code_review_detail_screen.dart';
 import '../features/code_review/code_review_screen.dart';
 import '../features/social/ui/social_hub_screen.dart';
 import '../features/social/ui/friends_screen.dart';
@@ -480,6 +481,16 @@ GoRouter createRouter(bool hasSeenOnboarding, ProviderContainer container) {
             name: 'code-review',
             pageBuilder: (context, state) =>
                 buildTransitionPage(child: const CodeReviewScreen()),
+          ),
+          GoRoute(
+            path: '/code-review/:reviewId',
+            name: 'code-review-detail',
+            pageBuilder: (context, state) {
+              final reviewId = state.pathParameters['reviewId'] ?? '';
+              return buildTransitionPage(
+                child: CodeReviewDetailScreen(reviewId: reviewId),
+              );
+            },
           ),
           // Notifications route
           GoRoute(

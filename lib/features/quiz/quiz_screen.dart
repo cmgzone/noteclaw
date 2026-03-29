@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:go_router/go_router.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'quiz.dart';
 import 'quiz_provider.dart';
@@ -20,6 +21,7 @@ class _QuizScreenState extends ConsumerState<QuizScreen> {
   int? _selectedOption;
   bool _showResult = false;
   List<int?> _userAnswers = [];
+  bool _attemptRecorded = false;
   final Stopwatch _stopwatch = Stopwatch();
 
   @override
@@ -51,7 +53,13 @@ class _QuizScreenState extends ConsumerState<QuizScreen> {
 
     if (quiz.questions.isEmpty) {
       return Scaffold(
-        appBar: AppBar(title: Text(quiz.title)),
+        appBar: AppBar(
+          title: Text(quiz.title),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () => _goBackToQuizzes(quiz.notebookId),
+          ),
+        ),
         body: const Center(
           child: Text('No questions in this quiz'),
         ),
@@ -76,6 +84,10 @@ class _QuizScreenState extends ConsumerState<QuizScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(quiz.title),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => _goBackToQuizzes(quiz.notebookId),
+        ),
         actions: [
           Padding(
             padding: const EdgeInsets.only(right: 16),
@@ -307,17 +319,26 @@ class _QuizScreenState extends ConsumerState<QuizScreen> {
     final timeTaken = _stopwatch.elapsed;
 
     // Record the attempt
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(quizProvider.notifier).recordAttempt(
-            quiz.id,
-            correctCount,
-            quiz.questions.length,
-            timeTaken,
-          );
-    });
+    if (!_attemptRecorded) {
+      _attemptRecorded = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ref.read(quizProvider.notifier).recordAttempt(
+              quiz.id,
+              correctCount,
+              quiz.questions.length,
+              timeTaken,
+            );
+      });
+    }
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Quiz Results')),
+      appBar: AppBar(
+        title: const Text('Quiz Results'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => _goBackToQuizzes(quiz.notebookId),
+        ),
+      ),
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(32),
@@ -422,6 +443,7 @@ class _QuizScreenState extends ConsumerState<QuizScreen> {
                     _selectedOption = null;
                     _showResult = false;
                     _userAnswers = [];
+                    _attemptRecorded = false;
                     _stopwatch.reset();
                     _stopwatch.start();
                   });
@@ -437,7 +459,7 @@ class _QuizScreenState extends ConsumerState<QuizScreen> {
               ).animate().fadeIn(delay: 800.ms),
               const SizedBox(height: 16),
               TextButton(
-                onPressed: () => Navigator.pop(context),
+                onPressed: () => _goBackToQuizzes(quiz.notebookId),
                 child: const Text('Back to Quizzes'),
               ),
             ],
@@ -502,5 +524,14 @@ class _QuizScreenState extends ConsumerState<QuizScreen> {
     final minutes = d.inMinutes;
     final seconds = d.inSeconds % 60;
     return '${minutes}m ${seconds}s';
+  }
+
+  void _goBackToQuizzes(String notebookId) {
+    if (!mounted) return;
+    if (notebookId.isNotEmpty) {
+      context.go('/notebook/$notebookId/quizzes');
+      return;
+    }
+    context.go('/home');
   }
 }

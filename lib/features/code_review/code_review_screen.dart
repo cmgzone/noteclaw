@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'code_review_detail_view.dart';
+import 'code_review_github_file_picker.dart';
 import 'code_review_provider.dart';
 import '../github/github_provider.dart';
 
@@ -21,6 +23,9 @@ class _CodeReviewScreenState extends ConsumerState<CodeReviewScreen>
   final _branchController = TextEditingController();
   String _selectedLanguage = 'dart';
   String _selectedReviewType = 'comprehensive';
+  String? _selectedGitHubRepoFullName;
+  String? _selectedGitHubFilePath;
+  String? _selectedGitHubBranch;
 
   // GitHub context for context-aware reviews
   bool _useGitHubContext = false;
@@ -56,6 +61,7 @@ class _CodeReviewScreenState extends ConsumerState<CodeReviewScreen>
     _tabController = TabController(length: 2, vsync: this);
     // Load history on init
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      _syncGitHubState();
       ref.read(codeReviewProvider.notifier).loadHistory();
     });
   }
@@ -68,6 +74,16 @@ class _CodeReviewScreenState extends ConsumerState<CodeReviewScreen>
     _repoController.dispose();
     _branchController.dispose();
     super.dispose();
+  }
+
+  Future<void> _syncGitHubState() async {
+    final githubNotifier = ref.read(githubProvider.notifier);
+    await githubNotifier.checkStatus();
+
+    final githubState = ref.read(githubProvider);
+    if (githubState.isConnected && githubState.repos.isEmpty) {
+      await githubNotifier.loadRepos();
+    }
   }
 
   @override
@@ -97,6 +113,9 @@ class _CodeReviewScreenState extends ConsumerState<CodeReviewScreen>
   }
 
   Widget _buildNewReviewTab(CodeReviewState state, ThemeData theme) {
+    final githubState = ref.watch(githubProvider);
+    final isGitHubConnected = githubState.isConnected;
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -144,6 +163,14 @@ class _CodeReviewScreenState extends ConsumerState<CodeReviewScreen>
                   }
                 },
               ),
+              if (isGitHubConnected) ...[
+                const SizedBox(width: 4),
+                OutlinedButton.icon(
+                  onPressed: state.isLoading ? null : _loadCodeFromGitHub,
+                  icon: const Icon(Icons.cloud_download_outlined, size: 18),
+                  label: const Text('GitHub'),
+                ),
+              ],
             ],
           ),
           const SizedBox(height: 16),
@@ -177,14 +204,20 @@ class _CodeReviewScreenState extends ConsumerState<CodeReviewScreen>
             maxLines: 12,
             style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
             decoration: InputDecoration(
-              labelText: 'Paste your code here',
-              hintText: 'Enter or paste code to review...',
+              labelText: 'Code to review',
+              hintText: isGitHubConnected
+                  ? 'Paste code or load a file from GitHub...'
+                  : 'Enter or paste code to review...',
               border: const OutlineInputBorder(),
               filled: true,
               fillColor: theme.colorScheme.surfaceContainerHighest
                   .withValues(alpha: 0.3),
             ),
           ),
+          if (_selectedGitHubFilePath != null) ...[
+            const SizedBox(height: 12),
+            _buildGitHubFileBanner(theme),
+          ],
           const SizedBox(height: 16),
 
           // GitHub Context Toggle
@@ -207,7 +240,7 @@ class _CodeReviewScreenState extends ConsumerState<CodeReviewScreen>
 
           // Results
           if (state.currentReview != null)
-            _buildReviewResults(state.currentReview!, theme),
+            CodeReviewDetailView(review: state.currentReview!),
           if (state.error != null)
             Card(
               color: theme.colorScheme.errorContainer,
@@ -220,285 +253,6 @@ class _CodeReviewScreenState extends ConsumerState<CodeReviewScreen>
             ),
         ],
       ),
-    );
-  }
-
-  Widget _buildReviewResults(CodeReview review, ThemeData theme) {
-    final scheme = theme.colorScheme;
-    final sourceColor = _sourceColor(review.source, theme);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(28),
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                scheme.surfaceContainerHighest,
-                scheme.surface,
-              ],
-            ),
-            border: Border.all(
-              color: sourceColor.withValues(alpha: 0.22),
-            ),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildScoreIndicator(review.score, theme, size: 92),
-                    const SizedBox(width: 18),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: [
-                              _buildMetaChip(
-                                label: _sourceLabel(review.source),
-                                icon: review.isMcp
-                                    ? Icons.memory_rounded
-                                    : Icons.rate_review_rounded,
-                                color: sourceColor,
-                                theme: theme,
-                              ),
-                              _buildMetaChip(
-                                label: _reviewTypeLabel(
-                                  review.reviewType,
-                                  toolName: review.toolName,
-                                ),
-                                icon: _reviewTypeIcon(
-                                  review.reviewType,
-                                  toolName: review.toolName,
-                                ),
-                                color: scheme.primary,
-                                theme: theme,
-                              ),
-                              _buildMetaChip(
-                                label: review.language.toUpperCase(),
-                                icon: Icons.code_rounded,
-                                color: scheme.secondary,
-                                theme: theme,
-                              ),
-                              if (review.isContextAware)
-                                _buildMetaChip(
-                                  label: review.relatedFilesUsed?.isNotEmpty ==
-                                          true
-                                      ? '${review.relatedFilesUsed!.length} related files'
-                                      : 'Context-aware',
-                                  icon: Icons.auto_awesome_rounded,
-                                  color: scheme.tertiary,
-                                  theme: theme,
-                                ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          Text(
-                            _reviewHeadline(
-                              review.reviewType,
-                              toolName: review.toolName,
-                            ),
-                            style: theme.textTheme.headlineSmall?.copyWith(
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            review.summary,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              height: 1.45,
-                              color: scheme.onSurfaceVariant,
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          Text(
-                            'Saved ${_formatDate(review.createdAt)}',
-                            style: theme.textTheme.labelMedium?.copyWith(
-                              color: scheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 18),
-                Wrap(
-                  spacing: 12,
-                  runSpacing: 12,
-                  children: [
-                    _buildMetricCard(
-                      label: 'Errors',
-                      value: review.errorCount,
-                      icon: Icons.error_outline_rounded,
-                      color: Colors.red,
-                      theme: theme,
-                    ),
-                    _buildMetricCard(
-                      label: 'Warnings',
-                      value: review.warningCount,
-                      icon: Icons.warning_amber_rounded,
-                      color: Colors.orange,
-                      theme: theme,
-                    ),
-                    _buildMetricCard(
-                      label: 'Info',
-                      value: review.infoCount,
-                      icon: Icons.info_outline_rounded,
-                      color: Colors.blue,
-                      theme: theme,
-                    ),
-                    _buildMetricCard(
-                      label: 'Suggestions',
-                      value: review.suggestions.length,
-                      icon: Icons.lightbulb_outline_rounded,
-                      color: Colors.amber.shade800,
-                      theme: theme,
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
-        if (review.relatedFilesUsed?.isNotEmpty ?? false) ...[
-          const SizedBox(height: 12),
-          Container(
-            decoration: BoxDecoration(
-              color: scheme.primaryContainer.withValues(alpha: 0.28),
-              borderRadius: BorderRadius.circular(22),
-              border: Border.all(
-                color: scheme.primary.withValues(alpha: 0.14),
-              ),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(Icons.folder_open, size: 16, color: scheme.primary),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Repository context used in this review',
-                        style: theme.textTheme.labelMedium?.copyWith(
-                          color: scheme.primary,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 6,
-                    children: review.relatedFilesUsed!.map((file) {
-                      return Tooltip(
-                        message: file,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 8,
-                          ),
-                          decoration: BoxDecoration(
-                            color: scheme.surface.withValues(alpha: 0.9),
-                            borderRadius: BorderRadius.circular(999),
-                            border: Border.all(
-                              color: scheme.outlineVariant,
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(Icons.insert_drive_file, size: 14),
-                              const SizedBox(width: 6),
-                              Text(
-                                file.split('/').last,
-                                style: theme.textTheme.labelSmall,
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    }).toList(),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-        if (review.issues.isNotEmpty) ...[
-          const SizedBox(height: 20),
-          _buildSectionHeader(
-            title: 'Issues Found',
-            subtitle:
-                'Each issue includes severity, category, and suggested next action.',
-            theme: theme,
-          ),
-          const SizedBox(height: 10),
-          ...review.issues.map((issue) => _buildIssueCard(issue, theme)),
-        ],
-        if (review.suggestions.isNotEmpty) ...[
-          const SizedBox(height: 20),
-          _buildSectionHeader(
-            title: 'Recommended Improvements',
-            subtitle:
-                'Fast follow-ups you can apply after this review pass.',
-            theme: theme,
-          ),
-          const SizedBox(height: 10),
-          ...review.suggestions.map(
-            (suggestion) => Container(
-              margin: const EdgeInsets.only(bottom: 10),
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.amber.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color: Colors.amber.withValues(alpha: 0.28),
-                ),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      color: Colors.amber.withValues(alpha: 0.14),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(
-                      Icons.lightbulb_outline_rounded,
-                      size: 18,
-                      color: Colors.amber.shade900,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      suggestion,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        height: 1.4,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ],
     );
   }
 
@@ -539,149 +293,6 @@ class _CodeReviewScreenState extends ConsumerState<CodeReviewScreen>
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildIssueCard(CodeReviewIssue issue, ThemeData theme) {
-    final scheme = theme.colorScheme;
-    Color severityColor;
-    IconData severityIcon;
-    switch (issue.severity) {
-      case 'error':
-        severityColor = Colors.red;
-        severityIcon = Icons.error;
-        break;
-      case 'warning':
-        severityColor = Colors.orange;
-        severityIcon = Icons.warning;
-        break;
-      default:
-        severityColor = Colors.blue;
-        severityIcon = Icons.info;
-    }
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: severityColor.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(
-          color: severityColor.withValues(alpha: 0.2),
-        ),
-      ),
-      child: Theme(
-        data: theme.copyWith(dividerColor: Colors.transparent),
-        child: ExpansionTile(
-          tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          childrenPadding:
-              const EdgeInsets.only(left: 16, right: 16, bottom: 16),
-          leading: Container(
-            width: 42,
-            height: 42,
-            decoration: BoxDecoration(
-              color: severityColor.withValues(alpha: 0.14),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Icon(severityIcon, color: severityColor),
-          ),
-          title: Text(
-            issue.message,
-            style: theme.textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          subtitle: Padding(
-            padding: const EdgeInsets.only(top: 10),
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                _buildMetaChip(
-                  label: issue.severity.toUpperCase(),
-                  icon: severityIcon,
-                  color: severityColor,
-                  theme: theme,
-                  compact: true,
-                ),
-                _buildMetaChip(
-                  label: _titleCase(issue.category),
-                  icon: Icons.sell_outlined,
-                  color: scheme.secondary,
-                  theme: theme,
-                  compact: true,
-                ),
-                if (issue.line != null)
-                  _buildMetaChip(
-                    label: issue.column != null
-                        ? 'Line ${issue.line}, Col ${issue.column}'
-                        : 'Line ${issue.line}',
-                    icon: Icons.segment_rounded,
-                    color: scheme.tertiary,
-                    theme: theme,
-                    compact: true,
-                  ),
-              ],
-            ),
-          ),
-          children: [
-            if (issue.suggestion != null) ...[
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'Suggested next step',
-                  style: theme.textTheme.labelLarge?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                issue.suggestion!,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  height: 1.45,
-                ),
-              ),
-            ],
-            if (issue.codeExample != null) ...[
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: scheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        issue.codeExample!,
-                        style: const TextStyle(
-                          fontFamily: 'monospace',
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.copy_rounded, size: 18),
-                      onPressed: () {
-                        Clipboard.setData(
-                          ClipboardData(text: issue.codeExample!),
-                        );
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Copied to clipboard'),
-                          ),
-                        );
-                      },
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ],
-        ),
       ),
     );
   }
@@ -734,7 +345,10 @@ class _CodeReviewScreenState extends ConsumerState<CodeReviewScreen>
         ),
       ),
       child: InkWell(
-        onTap: () => _viewReviewDetail(item.id),
+        onTap: () => context.pushNamed(
+          'code-review-detail',
+          pathParameters: {'reviewId': item.id},
+        ),
         borderRadius: BorderRadius.circular(24),
         child: Padding(
           padding: const EdgeInsets.all(16),
@@ -1094,31 +708,6 @@ class _CodeReviewScreenState extends ConsumerState<CodeReviewScreen>
     );
   }
 
-  Widget _buildSectionHeader({
-    required String title,
-    required String subtitle,
-    required ThemeData theme,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          title,
-          style: theme.textTheme.titleLarge?.copyWith(
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          subtitle,
-          style: theme.textTheme.bodyMedium?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-        ),
-      ],
-    );
-  }
-
   Widget _buildMetaChip({
     required String label,
     required IconData icon,
@@ -1297,7 +886,7 @@ class _CodeReviewScreenState extends ConsumerState<CodeReviewScreen>
             ] else if (_useGitHubContext) ...[
               const SizedBox(height: 12),
               Text(
-                'The AI will fetch related files from your repo to understand imports and dependencies.',
+                'Load a file with the GitHub button above, or enter a repo here so the AI can fetch related files for imports and dependencies.',
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
@@ -1371,6 +960,114 @@ class _CodeReviewScreenState extends ConsumerState<CodeReviewScreen>
     );
   }
 
+  Widget _buildGitHubFileBanner(ThemeData theme) {
+    final scheme = theme.colorScheme;
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: scheme.primaryContainer.withValues(alpha: 0.45),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: scheme.primary.withValues(alpha: 0.18),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.source_outlined, color: scheme.primary),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Loaded from GitHub',
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                if (_selectedGitHubRepoFullName != null)
+                  Text(
+                    _selectedGitHubRepoFullName!,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                Text(
+                  _selectedGitHubFilePath!,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontFamily: 'monospace',
+                  ),
+                ),
+                if (_selectedGitHubBranch != null &&
+                    _selectedGitHubBranch!.isNotEmpty)
+                  Text(
+                    'Branch: $_selectedGitHubBranch',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            tooltip: 'Clear GitHub file',
+            onPressed: () {
+              setState(() {
+                _selectedGitHubRepoFullName = null;
+                _selectedGitHubFilePath = null;
+                _selectedGitHubBranch = null;
+              });
+            },
+            icon: const Icon(Icons.close),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _loadCodeFromGitHub() async {
+    final selection = await showGitHubReviewFilePicker(
+      context,
+      initialOwner: _ownerController.text.trim().isEmpty
+          ? null
+          : _ownerController.text.trim(),
+      initialRepo: _repoController.text.trim().isEmpty
+          ? null
+          : _repoController.text.trim(),
+      initialBranch: _branchController.text.trim().isEmpty
+          ? null
+          : _branchController.text.trim(),
+    );
+
+    if (!mounted || selection == null) {
+      return;
+    }
+
+    setState(() {
+      _codeController.text = selection.content;
+      _selectedLanguage = selection.language;
+      _selectedGitHubRepoFullName = selection.repo.fullName;
+      _selectedGitHubFilePath = selection.path;
+      _selectedGitHubBranch = selection.branch;
+      _ownerController.text = selection.repo.owner;
+      _repoController.text = selection.repo.name;
+      _branchController.text = selection.branch;
+      _useGitHubContext = true;
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Loaded ${selection.path.split('/').last} from ${selection.repo.fullName}',
+        ),
+      ),
+    );
+  }
+
   Future<void> _submitReview() async {
     if (_codeController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1399,10 +1096,5 @@ class _CodeReviewScreenState extends ConsumerState<CodeReviewScreen>
           reviewType: _selectedReviewType,
           githubContext: githubContext,
         );
-  }
-
-  Future<void> _viewReviewDetail(String reviewId) async {
-    await ref.read(codeReviewProvider.notifier).getReviewDetail(reviewId);
-    _tabController.animateTo(0); // Switch to review tab to show details
   }
 }

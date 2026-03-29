@@ -94,7 +94,9 @@ class CodeReview {
           ?.map((e) => e.toString())
           .toList(),
       metadata: metadata,
-      source: json['source']?.toString() ?? metadata?['source']?.toString() ?? 'app',
+      source: json['source']?.toString() ??
+          metadata?['source']?.toString() ??
+          'app',
       toolName:
           json['toolName']?.toString() ?? metadata?['toolName']?.toString(),
       createdAt: json['createdAt'] != null
@@ -164,7 +166,9 @@ class CodeReviewHistoryItem {
       infoCount: issueCount['info'] ?? 0,
       relatedFileCount: json['relatedFileCount'] ?? 0,
       metadata: metadata,
-      source: json['source']?.toString() ?? metadata?['source']?.toString() ?? 'app',
+      source: json['source']?.toString() ??
+          metadata?['source']?.toString() ??
+          'app',
       toolName:
           json['toolName']?.toString() ?? metadata?['toolName']?.toString(),
       createdAt: json['createdAt'] != null
@@ -415,4 +419,16 @@ final codeReviewProvider =
     StateNotifierProvider<CodeReviewNotifier, CodeReviewState>((ref) {
   final apiService = ref.watch(apiServiceProvider);
   return CodeReviewNotifier(apiService);
+});
+
+final codeReviewDetailProvider = FutureProvider.autoDispose
+    .family<CodeReview, String>((ref, reviewId) async {
+  final apiService = ref.watch(apiServiceProvider);
+  final response = await apiService.get('/coding-agent/reviews/$reviewId');
+
+  if (response['success'] == true && response['review'] != null) {
+    return CodeReview.fromJson(response['review']);
+  }
+
+  throw Exception(response['error'] ?? 'Failed to load review details');
 });

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:go_router/go_router.dart';
 import 'tutor_session.dart';
 import 'tutor_provider.dart';
 import '../sources/source_provider.dart';
@@ -253,6 +254,10 @@ class _AITutorScreenState extends ConsumerState<AITutorScreen> {
 
     return Scaffold(
       appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: _goBackToTutorSessions,
+        ),
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -567,7 +572,54 @@ class _AITutorScreenState extends ConsumerState<AITutorScreen> {
           ),
 
         // Input area (only if session not complete)
-        if (!_session!.isComplete) _buildInputArea(scheme, text),
+        if (!_session!.isComplete)
+          _buildInputArea(scheme, text)
+        else
+          Container(
+            decoration: BoxDecoration(
+              color: scheme.surface,
+              boxShadow: [
+                BoxShadow(
+                  color: scheme.shadow.withValues(alpha: 0.08),
+                  blurRadius: 8,
+                  offset: const Offset(0, -2),
+                ),
+              ],
+            ),
+            padding: const EdgeInsets.all(16),
+            child: SafeArea(
+              top: false,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Session complete',
+                    style: text.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Your summary is saved in this session. You can return to the tutor session list or start a fresh one.',
+                    textAlign: TextAlign.center,
+                    style: text.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                      height: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: _goBackToTutorSessions,
+                      icon: const Icon(Icons.arrow_back),
+                      label: const Text('Back to Tutor Sessions'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
       ],
     );
   }
@@ -653,6 +705,11 @@ class _AITutorScreenState extends ConsumerState<AITutorScreen> {
         ],
       ),
     );
+  }
+
+  void _goBackToTutorSessions() {
+    if (!mounted) return;
+    context.go('/notebook/${widget.notebookId}/tutor-sessions');
   }
 }
 
