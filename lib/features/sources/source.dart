@@ -28,8 +28,43 @@ class Source with _$Source {
 
 /// Extension methods for Source to check for GitHub and agent-related properties
 extension SourceExtensions on Source {
+  static const String _previewViewportMeta =
+      '<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">';
+
+  static const String _previewBaseStyles = '''
+    <style data-noteclaw-preview-base>
+      html {
+        width: 100%;
+      }
+
+      body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        max-width: 100%;
+        overflow-x: hidden;
+      }
+
+      img,
+      video,
+      canvas,
+      svg,
+      iframe {
+        max-width: 100%;
+      }
+    </style>
+  ''';
+
   String? get mimeType {
     final rawValue = metadata['mimeType'] ?? metadata['mime_type'];
+    if (rawValue is String && rawValue.trim().isNotEmpty) {
+      return rawValue.trim();
+    }
+    return null;
+  }
+
+  String? get sourceUrl {
+    final rawValue = metadata['url'] ?? metadata['sourceUrl'];
     if (rawValue is String && rawValue.trim().isNotEmpty) {
       return rawValue.trim();
     }
@@ -85,8 +120,71 @@ extension SourceExtensions on Source {
         normalizedContent.contains('</html>');
   }
 
+  bool get hasRenderableHtmlMarkup {
+    final trimmed = content.trim();
+    if (trimmed.isEmpty) {
+      return false;
+    }
+
+    final fencedHtmlMatch = RegExp(
+      r'```html\s*([\s\S]*?)```',
+      caseSensitive: false,
+    ).firstMatch(trimmed);
+    final extracted = fencedHtmlMatch?.group(1)?.trim() ?? trimmed;
+    final lower = extracted.toLowerCase();
+
+    if (lower.contains('&lt;html') || lower.contains('&lt;body')) {
+      return false;
+    }
+
+    if (lower.contains('<!doctype html') ||
+        lower.contains('<html') ||
+        lower.contains('<body') ||
+        lower.contains('<head')) {
+      return true;
+    }
+
+    final tagMatches = RegExp(
+      r'<([a-z][a-z0-9:-]*)\b[^>]*>',
+      caseSensitive: false,
+    ).allMatches(extracted);
+
+    if (tagMatches.length < 3) {
+      return false;
+    }
+
+    const commonHtmlTags = {
+      'div',
+      'span',
+      'main',
+      'section',
+      'article',
+      'header',
+      'footer',
+      'nav',
+      'h1',
+      'h2',
+      'h3',
+      'p',
+      'a',
+      'img',
+      'button',
+      'form',
+      'input',
+      'script',
+      'style',
+    };
+
+    final matchedTags = tagMatches
+        .map((match) => (match.group(1) ?? '').toLowerCase())
+        .where(commonHtmlTags.contains)
+        .toSet();
+
+    return matchedTags.length >= 2;
+  }
+
   String? get renderableHtmlDocument {
-    if (!isHtmlSource) {
+    if (!isHtmlSource || !hasRenderableHtmlMarkup) {
       return null;
     }
 
@@ -117,10 +215,10 @@ extension SourceExtensions on Source {
       html = html.substring(0, closingHtmlIndex + 7).trim();
     }
 
-    final hasDocumentTag = RegExp(r'<html[\s>]', caseSensitive: false)
-        .hasMatch(html);
+    final hasDocumentTag =
+        RegExp(r'<html[\s>]', caseSensitive: false).hasMatch(html);
     if (hasDocumentTag) {
-      return html;
+      return _normalizePreviewHtml(html);
     }
 
     return '''
@@ -128,20 +226,59 @@ extension SourceExtensions on Source {
 <html lang="en">
   <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    $_previewViewportMeta
     <title>$title</title>
-    <style>
-      body {
-        margin: 0;
-        padding: 0;
-        background: #ffffff;
-      }
-    </style>
+    $_previewBaseStyles
   </head>
   <body>
 $html
   </body>
 </html>''';
+  }
+
+  String _normalizePreviewHtml(String html) {
+    var normalizedHtml = html;
+    final hasViewportMeta = RegExp(
+      r'<meta[^>]+name\s*=\s*["'']viewport["''][^>]*>',
+      caseSensitive: false,
+    ).hasMatch(normalizedHtml);
+    final hasBaseStyles = normalizedHtml.contains(
+      'data-noteclaw-preview-base',
+    );
+
+    if (!hasViewportMeta || !hasBaseStyles) {
+      final headMatch = RegExp(r'<head[^>]*>', caseSensitive: false)
+          .firstMatch(normalizedHtml);
+      if (headMatch != null) {
+        final insertionOffset = headMatch.end;
+        final buffer = StringBuffer();
+        buffer.write(normalizedHtml.substring(0, insertionOffset));
+        if (!hasViewportMeta) {
+          buffer.write(_previewViewportMeta);
+        }
+        if (!hasBaseStyles) {
+          buffer.write(_previewBaseStyles);
+        }
+        buffer.write(normalizedHtml.substring(insertionOffset));
+        normalizedHtml = buffer.toString();
+      } else {
+        normalizedHtml = '''
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    ${hasViewportMeta ? '' : _previewViewportMeta}
+    ${hasBaseStyles ? '' : _previewBaseStyles}
+    <title>$title</title>
+  </head>
+  <body>
+$normalizedHtml
+  </body>
+</html>''';
+      }
+    }
+
+    return normalizedHtml;
   }
 
   /// Get the GitHub URL if this is a GitHub source

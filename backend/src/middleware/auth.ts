@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import pool from '../config/database.js';
 import { tokenService, TOKEN_PREFIX } from '../services/tokenService.js';
 import { getJwtSecret } from '../config/secrets.js';
+import { getBooleanAppSetting } from '../services/appSettingsService.js';
 
 export interface AuthRequest extends Request {
     userId?: string;
@@ -18,6 +19,46 @@ export interface AuthRequest extends Request {
 const isApiToken = (token: string): boolean => {
     return token.startsWith(TOKEN_PREFIX);
 };
+
+const REQUIRE_EMAIL_VERIFICATION_KEY = 'require_email_verification';
+
+async function enforceVerifiedUserIfRequired(
+    userId: string,
+    res: Response,
+): Promise<boolean> {
+    const requireEmailVerification = await getBooleanAppSetting(
+        REQUIRE_EMAIL_VERIFICATION_KEY,
+        false,
+    );
+
+    if (!requireEmailVerification) {
+        return true;
+    }
+
+    const userResult = await pool.query(
+        'SELECT email, role, email_verified FROM users WHERE id = $1',
+        [userId],
+    );
+
+    if (userResult.rows.length === 0) {
+        res.status(401).json({ error: 'User not found' });
+        return false;
+    }
+
+    const user = userResult.rows[0];
+    if (user.role !== 'admin' && !user.email_verified) {
+        res.status(403).json({
+            error: 'Please verify your email before continuing.',
+            code: 'EMAIL_VERIFICATION_REQUIRED',
+            email: user.email,
+            emailSent: false,
+            requiresEmailVerification: true,
+        });
+        return false;
+    }
+
+    return true;
+}
 
 /**
  * Middleware to authenticate JWT tokens or personal API tokens.
@@ -92,6 +133,10 @@ export const authenticateToken = async (
                 });
             }
 
+            if (!(await enforceVerifiedUserIfRequired(result.userId!, res))) {
+                return;
+            }
+
             return next();
         } catch (error) {
             console.error('API token validation error:', error);
@@ -113,6 +158,9 @@ export const authenticateToken = async (
         req.userEmail = decoded.email;
         req.authMethod = 'jwt';
         if (decoded.role) req.userRole = decoded.role;
+        if (!(await enforceVerifiedUserIfRequired(decoded.userId, res))) {
+            return;
+        }
         next();
     } catch (error: any) {
         if (shouldLog) console.log(`[Auth] JWT validation failed`);

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../ui/widgets/app_network_image.dart';
@@ -9,7 +10,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:record/record.dart';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
+
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:image_picker/image_picker.dart';
@@ -662,6 +663,7 @@ Sources to analyze:''';
     }
 
     return Scaffold(
+      backgroundColor: scheme.surface,
       appBar: AppBar(
         title: Text(selectedAgentName == null
             ? 'AI Chat'
@@ -705,8 +707,19 @@ Sources to analyze:''';
           }),
         ],
       ),
-      body: Column(
-        children: [
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              scheme.surface,
+              scheme.surfaceContainerLowest.withValues(alpha: 0.96),
+            ],
+          ),
+        ),
+        child: Column(
+          children: [
           // AI Writing Status
           if (_showAIWriting)
             Container(
@@ -758,32 +771,46 @@ Sources to analyze:''';
                 .fadeIn(duration: Motion.medium),
 
           // Messages list
-          Expanded(
-            child: messages.isEmpty
-                ? _EmptyChatView(scheme: scheme, text: text)
-                : ListView.builder(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.all(16),
-                    itemCount: messages.length,
-                    itemBuilder: (context, index) {
-                      final message = messages[index];
-                      return _MessageBubble(
-                        message: message,
-                        isLast: index == messages.length - 1,
-                        onAcceptProposal: _handleCreateNotebookProposal,
-                      )
-                          .animate()
-                          .slide(
-                              begin: const Offset(0, 0.3),
-                              duration: Motion.short)
-                          .fadeIn(
-                            duration: Motion.short,
-                            delay: Duration(
-                                milliseconds: index * Motion.baseStagger),
-                          );
-                    },
-                  ),
-          ),
+            Expanded(
+              child: messages.isEmpty
+                  ? _EmptyChatView(scheme: scheme, text: text)
+                  : DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            scheme.primary.withValues(alpha: 0.035),
+                            Colors.transparent,
+                          ],
+                        ),
+                      ),
+                      child: ListView.builder(
+                        controller: _scrollController,
+                        padding: const EdgeInsets.fromLTRB(16, 18, 16, 24),
+                        itemCount: messages.length,
+                        itemBuilder: (context, index) {
+                          final message = messages[index];
+                          return _MessageBubble(
+                            message: message,
+                            isLast: index == messages.length - 1,
+                            onAcceptProposal: _handleCreateNotebookProposal,
+                          )
+                              .animate()
+                              .slide(
+                                begin: const Offset(0, 0.18),
+                                duration: Motion.short,
+                              )
+                              .fadeIn(
+                                duration: Motion.short,
+                                delay: Duration(
+                                  milliseconds: index * Motion.baseStagger,
+                                ),
+                              );
+                        },
+                      ),
+                    ),
+            ),
 
           Consumer(builder: (context, ref, _) {
             final tokens = ref.watch(streamProvider);
@@ -799,25 +826,26 @@ Sources to analyze:''';
           }),
 
           // Input area
-          SafeArea(
-            top: false,
-            child: _ChatInputArea(
-              controller: _controller,
-              onSend: _sendMessage,
-              onChanged: (_) => setState(() {}),
-              onMic: _toggleRecord,
-              isDeepSearchEnabled: _isDeepSearchEnabled,
-              onToggleDeepSearch: _toggleDeepSearchMode,
-              isWebBrowsingEnabled: _isWebBrowsingEnabled,
-              onToggleWebBrowsing: _toggleWebBrowsingMode,
-              onPickImage: _pickImage,
-              onTakePhoto: _takePhoto,
-              selectedImage: _selectedImage,
-              onRemoveImage: _removeSelectedImage,
-              isRecording: _recording,
+            SafeArea(
+              top: false,
+              child: _ChatInputArea(
+                controller: _controller,
+                onSend: _sendMessage,
+                onChanged: (_) => setState(() {}),
+                onMic: _toggleRecord,
+                isDeepSearchEnabled: _isDeepSearchEnabled,
+                onToggleDeepSearch: _toggleDeepSearchMode,
+                isWebBrowsingEnabled: _isWebBrowsingEnabled,
+                onToggleWebBrowsing: _toggleWebBrowsingMode,
+                onPickImage: _pickImage,
+                onTakePhoto: _takePhoto,
+                selectedImage: _selectedImage,
+                onRemoveImage: _removeSelectedImage,
+                isRecording: _recording,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -894,6 +922,7 @@ class _MessageBubble extends ConsumerWidget {
 
   final Function(String)? onAcceptProposal;
 
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
@@ -915,9 +944,9 @@ class _MessageBubble extends ConsumerWidget {
     return Align(
       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
+        margin: const EdgeInsets.only(bottom: 16),
         constraints: BoxConstraints(
-          maxWidth: MediaQuery.of(context).size.width * 0.75,
+          maxWidth: MediaQuery.of(context).size.width * 0.82,
         ),
         child: Column(
           crossAxisAlignment:

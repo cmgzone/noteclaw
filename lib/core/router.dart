@@ -30,6 +30,7 @@ import '../features/subscription/screens/plan_selection_screen.dart';
 import '../features/auth/security_settings_screen.dart';
 import '../features/auth/password_reset_screen.dart';
 import '../features/auth/email_verification_screen.dart';
+import '../features/auth/email_verification_required_screen.dart';
 import '../features/ebook/ui/ebook_creator_wizard.dart';
 import '../features/ebook/ui/ebook_library_screen.dart';
 import '../features/settings/background_settings_screen.dart';
@@ -136,6 +137,21 @@ GoRouter createRouter(bool hasSeenOnboarding, ProviderContainer container) {
           final token = state.pathParameters['token'] ?? '';
           return buildTransitionPage(
             child: PasswordResetScreen(token: token),
+          );
+        },
+      ),
+      GoRoute(
+        path: '/verify-email-required',
+        name: 'verify-email-required',
+        pageBuilder: (context, state) {
+          final email = state.uri.queryParameters['email'] ?? '';
+          final emailSent =
+              (state.uri.queryParameters['sent'] ?? '').toLowerCase() == 'true';
+          return buildTransitionPage(
+            child: EmailVerificationRequiredScreen(
+              email: email,
+              emailSent: emailSent,
+            ),
           );
         },
       ),

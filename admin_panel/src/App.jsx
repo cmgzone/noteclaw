@@ -14,6 +14,7 @@ import AIModels from './pages/AIModels';
 import StorageManager from './pages/StorageManager';
 import McpSettings from './pages/McpSettings';
 import NotificationManager from './pages/NotificationManager';
+import DataManager from './pages/DataManager';
 
 function ProtectedRoute() {
   const { user, loading } = useAuth();
@@ -38,6 +39,7 @@ function Router() {
             <Route element={<Layout />}>
               <Route path="/" element={<Dashboard />} />
               <Route path="/users" element={<UserManagement />} />
+              <Route path="/content" element={<DataManager />} />
               <Route path="/notifications" element={<NotificationManager />} />
               <Route path="/subscription-plans" element={<SubscriptionPlans />} />
               <Route path="/credit-packages" element={<CreditPackages />} />
@@ -55,4 +57,3 @@ function Router() {
     </AuthProvider>
   )
 }
-

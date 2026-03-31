@@ -85,6 +85,7 @@ class McpLimitsService {
       throw err;
     }
   }
+
   /**
    * Get MCP settings
    */
@@ -95,7 +96,6 @@ class McpLimitsService {
     );
 
     if (result.rows.length === 0) {
-      // Return defaults if not found
       return {
         id: 'default',
         freeSourcesLimit: 10,
@@ -182,13 +182,11 @@ class McpLimitsService {
    * Get user's MCP usage
    */
   async getUserUsage(userId: string): Promise<UserMcpUsage> {
-    // Ensure user has a usage record
     await pool.query(
       `INSERT INTO user_mcp_usage (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING`,
       [userId]
     );
 
-    // Reset daily counter if it's a new day
     await pool.query(
       `UPDATE user_mcp_usage 
        SET api_calls_today = 0, last_api_call_date = CURRENT_DATE, updated_at = NOW()
@@ -325,7 +323,6 @@ class McpLimitsService {
       this.getPlanMcpLimits(userId),
     ]);
 
-    // Get actual token count (active = not revoked)
     const tokensResult = await pool.query(
       'SELECT COUNT(*) FROM api_tokens WHERE user_id = $1 AND revoked_at IS NULL',
       [userId]
@@ -427,6 +424,79 @@ class McpLimitsService {
     }
 
     return { allowed: true };
+  }
+
+  /**
+   * Check if user can create a new plan based on their subscription's plans_limit.
+   * Gracefully allows creation if the column hasn't been migrated yet (fail-open).
+   */
+  async canCreatePlan(userId: string): Promise<{ allowed: boolean; reason?: string; limit?: number; used?: number }> {
+    try {
+      let plansLimit: number | null = null;
+
+      // Try to read the limit from the user's active subscription plan
+      try {
+        const planLimitResult = await pool.query(
+          `SELECT sp.plans_limit
+           FROM user_subscriptions us
+           JOIN subscription_plans sp ON us.plan_id = sp.id
+           WHERE us.user_id = $1
+           LIMIT 1`,
+          [userId]
+        );
+        plansLimit = planLimitResult.rows[0]?.plans_limit ?? null;
+      } catch (err: any) {
+        const msg = String(err?.message || '').toLowerCase();
+        if (msg.includes('plans_limit') && msg.includes('does not exist')) {
+          // Column not yet added by migration — fail open
+          return { allowed: true };
+        }
+        throw err;
+      }
+
+      // No subscription row found — fall back to free plan default
+      if (plansLimit === null) {
+        try {
+          const freePlanResult = await pool.query(
+            `SELECT plans_limit FROM subscription_plans WHERE is_free_plan = TRUE LIMIT 1`
+          );
+          plansLimit = freePlanResult.rows[0]?.plans_limit ?? null;
+        } catch (err: any) {
+          const msg = String(err?.message || '').toLowerCase();
+          if (msg.includes('plans_limit') && msg.includes('does not exist')) {
+            return { allowed: true };
+          }
+          throw err;
+        }
+      }
+
+      // No limit configured — allow unlimited
+      if (typeof plansLimit !== 'number' || plansLimit <= 0) {
+        return { allowed: true };
+      }
+
+      // Count non-archived plans for this user
+      const countResult = await pool.query(
+        `SELECT COUNT(*)::int AS count FROM plans WHERE user_id = $1 AND status != 'archived'`,
+        [userId]
+      );
+      const used: number = countResult.rows[0]?.count ?? 0;
+
+      if (used >= plansLimit) {
+        return {
+          allowed: false,
+          reason: `Plan limit reached (${used}/${plansLimit}). Upgrade your subscription to create more plans.`,
+          limit: plansLimit,
+          used,
+        };
+      }
+
+      return { allowed: true, limit: plansLimit, used };
+    } catch (err) {
+      console.error('[McpLimitsService] canCreatePlan check failed:', err);
+      // Fail open — don't block users due to unexpected errors
+      return { allowed: true };
+    }
   }
 
   /**

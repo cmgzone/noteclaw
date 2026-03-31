@@ -117,6 +117,11 @@ class _CustomLoginScreenState extends ConsumerState<CustomLoginScreen>
           if (mounted) context.go(dest);
         }
       }
+    } on AuthEmailVerificationRequiredException catch (e) {
+      if (mounted) {
+        final email = Uri.encodeComponent(e.email);
+        context.go('/verify-email-required?email=$email&sent=${e.emailSent}');
+      }
     } on AuthException catch (e) {
       _showError(e.message);
     } catch (e) {

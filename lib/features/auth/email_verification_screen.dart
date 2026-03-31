@@ -33,6 +33,7 @@ class _EmailVerificationScreenState
   Future<void> _verifyEmail() async {
     try {
       await ref.read(customAuthServiceProvider).verifyEmail(widget.token);
+      ref.read(customAuthStateProvider.notifier).clearPendingVerification();
       setState(() {
         _isVerified = true;
         _isLoading = false;
@@ -93,6 +94,11 @@ class _EmailVerificationScreenState
     }
 
     if (_isVerified) {
+      final authState = ref.watch(customAuthStateProvider);
+      final nextRoute = authState.isAuthenticated ? '/home' : '/login';
+      final nextLabel =
+          authState.isAuthenticated ? 'Continue to App' : 'Continue to Login';
+
       return Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -117,8 +123,8 @@ class _EmailVerificationScreenState
           ),
           const SizedBox(height: 32),
           PremiumButton(
-            onPressed: () => context.go('/home'),
-            label: 'Continue to App',
+            onPressed: () => context.go(nextRoute),
+            label: nextLabel,
           ),
         ],
       );

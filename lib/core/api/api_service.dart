@@ -25,6 +25,21 @@ class InsufficientCreditsException implements Exception {
   String toString() => message;
 }
 
+class EmailVerificationRequiredException implements Exception {
+  final String message;
+  final String email;
+  final bool emailSent;
+
+  EmailVerificationRequiredException({
+    required this.message,
+    required this.email,
+    this.emailSent = false,
+  });
+
+  @override
+  String toString() => message;
+}
+
 final apiServiceProvider = Provider<ApiService>((ref) {
   return ApiService(ref);
 });
@@ -391,12 +406,55 @@ class ApiService {
 
   Exception _handleError(dynamic error) {
     if (error is DioException) {
+      final statusCode = error.response?.statusCode;
       if (error.response?.data is Map<String, dynamic>) {
         final body = error.response?.data as Map<String, dynamic>;
         final message = body['message'] ?? body['error'] ?? 'Unknown error';
+        if (statusCode == 402 ||
+            body['payment_required'] == true ||
+            (message is String &&
+                message.toLowerCase().contains('insufficient credits'))) {
+          return InsufficientCreditsException(
+            message: message.toString(),
+            required: body['required'] as int? ?? 0,
+            available: body['available'] as int? ?? 0,
+          );
+        }
+        if (body['code'] == 'EMAIL_VERIFICATION_REQUIRED') {
+          return EmailVerificationRequiredException(
+            message: message.toString(),
+            email: body['email'] as String? ?? '',
+            emailSent: body['emailSent'] == true,
+          );
+        }
         return Exception(message);
       }
       switch (error.type) {
+        case DioExceptionType.badResponse:
+          if (statusCode == 402) {
+            return InsufficientCreditsException(
+              message:
+                  'You do not have enough credits to complete this request.',
+              required: 0,
+              available: 0,
+            );
+          }
+          if (statusCode == 401) {
+            return Exception('Your session has expired. Please sign in again.');
+          }
+          if (statusCode == 403) {
+            return Exception(
+              'This request is not allowed for your current plan, model, or account permissions.',
+            );
+          }
+          if (statusCode == 429) {
+            return Exception(
+              'The AI service is rate-limited right now. Please try again in a moment.',
+            );
+          }
+          return Exception(
+            'Request failed${statusCode != null ? ' ($statusCode)' : ''}. Please try again.',
+          );
         case DioExceptionType.connectionTimeout:
         case DioExceptionType.sendTimeout:
         case DioExceptionType.receiveTimeout:
@@ -506,12 +564,14 @@ class ApiService {
     await post('/auth/2fa/resend', {'userId': userId});
   }
 
-  Future<void> resendVerification() async {
-    await post('/auth/verify/resend', {});
+  Future<void> resendVerification({String? email}) async {
+    await post('/auth/resend-verification', {
+      if (email != null && email.trim().isNotEmpty) 'email': email.trim(),
+    });
   }
 
   Future<void> verifyEmail(String token) async {
-    await post('/auth/verify', {'token': token});
+    await post('/auth/verify-email', {'token': token});
   }
 
   // ============ API TOKENS ============
@@ -1393,7 +1453,8 @@ class ApiService {
     required String purchaseToken,
     String? purchaseId,
   }) async {
-    return await post<Map<String, dynamic>>('/subscriptions/google-play/verify', {
+    return await post<Map<String, dynamic>>(
+        '/subscriptions/google-play/verify', {
       'purchaseType': purchaseType,
       'internalId': internalId,
       'productId': productId,

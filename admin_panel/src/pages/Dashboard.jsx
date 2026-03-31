@@ -1,7 +1,25 @@
 import { useState, useEffect } from 'react';
 import api from '../lib/api';
-import { Users, FileText, Shield, Settings2, Calendar, TrendingUp, CreditCard, Bot } from 'lucide-react';
+import {
+    Users,
+    Shield,
+    Settings2,
+    Calendar,
+    CreditCard,
+    Bot,
+    DollarSign,
+    TrendingUp,
+} from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+
+function formatCurrency(value) {
+    const amount = typeof value === 'number' ? value : Number(value || 0);
+    return new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: 'USD',
+        maximumFractionDigits: 2,
+    }).format(Number.isFinite(amount) ? amount : 0);
+}
 
 export default function Dashboard() {
     const { user } = useAuth();
@@ -12,7 +30,10 @@ export default function Dashboard() {
         totalModels: 0,
         totalPlans: 0,
         totalTransactions: 0,
-        recentUsers: []
+        totalRevenue: 0,
+        monthlyRevenue: 0,
+        paidTransactions: 0,
+        recentUsers: [],
     });
     const [loading, setLoading] = useState(true);
 
@@ -44,14 +65,12 @@ export default function Dashboard() {
 
     return (
         <div className="p-8">
-            {/* Header */}
             <div className="mb-8">
                 <h1 className="text-3xl font-bold mb-2">Dashboard</h1>
                 <p className="text-muted-foreground">Welcome back, {user?.displayName || user?.email}!</p>
             </div>
 
-            {/* Stats Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 mb-8">
                 <StatCard
                     title="Total Users"
                     value={stats.totalUsers}
@@ -68,17 +87,29 @@ export default function Dashboard() {
                     title="AI Models"
                     value={stats.totalModels}
                     icon={Bot}
-                    color="bg-purple-500"
+                    color="bg-violet-500"
                 />
                 <StatCard
                     title="Transactions"
                     value={stats.totalTransactions}
                     icon={CreditCard}
                     color="bg-orange-500"
+                    subtitle={`${stats.paidTransactions} monetized`}
+                />
+                <StatCard
+                    title="Total Earnings"
+                    value={formatCurrency(stats.totalRevenue)}
+                    icon={DollarSign}
+                    color="bg-emerald-500"
+                />
+                <StatCard
+                    title="This Month"
+                    value={formatCurrency(stats.monthlyRevenue)}
+                    icon={TrendingUp}
+                    color="bg-cyan-500"
                 />
             </div>
 
-            {/* Quick Actions */}
             <div className="mb-8">
                 <h2 className="text-xl font-semibold mb-4">Quick Actions</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -96,7 +127,7 @@ export default function Dashboard() {
                     />
                     <QuickActionCard
                         title="Settings"
-                        description="Configure app settings & API keys"
+                        description="Configure app settings and API keys"
                         icon={Settings2}
                         href="/settings"
                     />
@@ -109,7 +140,6 @@ export default function Dashboard() {
                 </div>
             </div>
 
-            {/* Recent Activity */}
             <div className="bg-card border border-border rounded-lg p-6">
                 <h2 className="text-xl font-semibold mb-4">Recent User Registrations</h2>
                 <div className="space-y-3">
@@ -136,7 +166,6 @@ export default function Dashboard() {
                 </div>
             </div>
 
-            {/* System Info */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-8">
                 <div className="bg-card border border-border rounded-lg p-6">
                     <h3 className="font-semibold mb-3">System Configuration</h3>
@@ -150,6 +179,10 @@ export default function Dashboard() {
                             <span className="font-medium">{stats.totalModels} models</span>
                         </div>
                         <div className="flex justify-between">
+                            <span className="text-muted-foreground">Paid Transactions:</span>
+                            <span className="font-medium">{stats.paidTransactions}</span>
+                        </div>
+                        <div className="flex justify-between">
                             <span className="text-muted-foreground">Backend:</span>
                             <span className="font-medium text-green-600">Connected</span>
                         </div>
@@ -159,10 +192,10 @@ export default function Dashboard() {
                 <div className="bg-gradient-to-br from-primary/10 to-primary/5 border border-primary/20 rounded-lg p-6">
                     <h3 className="font-semibold mb-3">Admin Tips</h3>
                     <ul className="space-y-2 text-sm text-muted-foreground">
-                        <li>• Use the User Management page to promote users to admin</li>
-                        <li>• Keep your API keys secure in the Settings page</li>
-                        <li>• Configure AI models for different providers</li>
-                        <li>• Monitor transactions in the Transactions page</li>
+                        <li>- Use the User Management page to promote users to admin</li>
+                        <li>- Keep your API keys secure in the Settings page</li>
+                        <li>- Monitor earnings and purchases in Transactions</li>
+                        <li>- Review monthly revenue trends from this dashboard</li>
                     </ul>
                 </div>
             </div>
@@ -170,7 +203,7 @@ export default function Dashboard() {
     );
 }
 
-function StatCard({ title, value, icon: Icon, color }) {
+function StatCard({ title, value, icon: Icon, color, subtitle }) {
     return (
         <div className="bg-card border border-border rounded-lg p-6">
             <div className="flex items-center justify-between mb-4">
@@ -181,6 +214,9 @@ function StatCard({ title, value, icon: Icon, color }) {
             <div>
                 <p className="text-sm text-muted-foreground mb-1">{title}</p>
                 <p className="text-3xl font-bold">{value}</p>
+                {subtitle ? (
+                    <p className="mt-2 text-xs text-muted-foreground">{subtitle}</p>
+                ) : null}
             </div>
         </div>
     );

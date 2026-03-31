@@ -1,5 +1,7 @@
-import { Pool } from 'pg';
+import { Pool as PgPool } from 'pg';
+import { Pool as NeonPool, neonConfig } from '@neondatabase/serverless';
 import dotenv from 'dotenv';
+import ws from 'ws';
 
 dotenv.config();
 
@@ -7,20 +9,38 @@ dotenv.config();
 const connectionString = process.env.DATABASE_URL ||
     `postgresql://${process.env.NEON_USERNAME}:${process.env.NEON_PASSWORD}@${process.env.NEON_HOST}:${process.env.NEON_PORT || 5432}/${process.env.NEON_DATABASE}?sslmode=require`;
 
-const pool = new Pool({
-    connectionString,
-    ssl: {
-        rejectUnauthorized: false,
-    },
-    max: 20,
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 60000, // Increased to 60s for Neon cold starts and heavy operations
-    // Keep connections alive
-    keepAlive: true,
-    keepAliveInitialDelayMillis: 10000,
-    // Query timeout for long-running operations
-    query_timeout: 60000, // 60 seconds
-});
+const isNeonConnection = connectionString.includes('.neon.tech');
+const shouldUseNeonServerless =
+    process.env.DATABASE_USE_NEON_SERVERLESS === 'true' ||
+    (process.env.DATABASE_USE_NEON_SERVERLESS !== 'false' &&
+        process.env.NODE_ENV !== 'production' &&
+        isNeonConnection);
+
+const pool: PgPool = shouldUseNeonServerless
+    ? (() => {
+        neonConfig.webSocketConstructor = ws;
+        return new NeonPool({
+            connectionString,
+            max: 10,
+            idleTimeoutMillis: 30000,
+            connectionTimeoutMillis: 30000,
+            query_timeout: 60000,
+        }) as unknown as PgPool;
+    })()
+    : new PgPool({
+        connectionString,
+        ssl: {
+            rejectUnauthorized: false,
+        },
+        max: 20,
+        idleTimeoutMillis: 30000,
+        connectionTimeoutMillis: 60000, // Increased to 60s for Neon cold starts and heavy operations
+        // Keep connections alive
+        keepAlive: true,
+        keepAliveInitialDelayMillis: 10000,
+        // Query timeout for long-running operations
+        query_timeout: 60000, // 60 seconds
+    });
 
 (globalThis as any).__noteClawPgPool = pool;
 
@@ -42,6 +62,7 @@ export async function queryWithRetry<T>(
             const isConnectionError =
                 error.message?.includes('Connection terminated') ||
                 error.message?.includes('connection timeout') ||
+                error.code === 'ENOTFOUND' ||
                 error.code === 'ECONNRESET' ||
                 error.code === 'ETIMEDOUT';
 
@@ -61,6 +82,9 @@ export async function queryWithRetry<T>(
 
 // Test the connection
 if (shouldLogDbEvents) {
+    console.log(
+        `🗄️ Database driver: ${shouldUseNeonServerless ? 'neon-serverless' : 'pg'}`
+    );
     pool.on('connect', () => {
         if (!hasLoggedDbConnect) {
             hasLoggedDbConnect = true;

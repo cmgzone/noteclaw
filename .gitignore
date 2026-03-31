@@ -36,6 +36,7 @@ admin_panel/.env
 
 # Temporary files
 tmp/
+.tmp-appdata/
 flutter_*.log
 remove_done.txt
 ersAdminDocumentsfinish productnoteclaw*

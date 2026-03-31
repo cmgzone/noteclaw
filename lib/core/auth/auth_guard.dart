@@ -9,6 +9,9 @@ const publicRoutes = {
   '/onboarding',
   '/onboarding-completion',
   '/login',
+  '/verify-email-required',
+  '/verify-email',
+  '/password-reset',
 };
 
 /// Protected route prefixes

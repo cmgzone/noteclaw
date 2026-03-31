@@ -1,14 +1,16 @@
 import express, { type Request, type Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import type { PoolClient } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
 import crypto from 'crypto';
-import pool from '../config/database.js';
+import pool, { queryWithRetry } from '../config/database.js';
 import { tokenService, MAX_TOKENS_PER_USER } from '../services/tokenService.js';
 import { authenticateToken, type AuthRequest } from '../middleware/auth.js';
 import { getJwtRefreshSecret, getJwtSecret } from '../config/secrets.js';
+import { sendPasswordResetEmail, sendVerificationEmail } from '../services/emailService.js';
+import { cleanupTextUserTablesForDeletedAccount } from '../services/accountCleanupService.js';
 import {
+    getBooleanAppSetting,
     getPrivacyPolicyContent,
     getTermsOfServiceContent,
 } from '../services/appSettingsService.js';
@@ -49,6 +51,98 @@ const checkTokenRateLimit = (userId: string): { allowed: boolean; retryAfter?: n
 const JWT_SECRET = getJwtSecret();
 const JWT_EXPIRES_SHORT = '1d';  // 1 day when not remembered
 const JWT_EXPIRES_LONG = '30d';  // 30 days when remembered
+const BASIC_EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const REQUIRE_EMAIL_VERIFICATION_KEY = 'require_email_verification';
+
+async function runAuthQuery(queryText: string, params?: unknown[]) {
+    return queryWithRetry(() => pool.query(queryText, params));
+}
+
+function isTransientDatabaseError(error: unknown): boolean {
+    if (!error || typeof error !== 'object') {
+        return false;
+    }
+
+    const code = 'code' in error ? String((error as { code?: unknown }).code ?? '') : '';
+    return ['ECONNRESET', 'ETIMEDOUT', 'ENOTFOUND'].includes(code);
+}
+
+async function isEmailVerificationRequired(): Promise<boolean> {
+    return getBooleanAppSetting(REQUIRE_EMAIL_VERIFICATION_KEY, false);
+}
+
+function buildEmailVerificationRequiredPayload(
+    email: string,
+    options: { emailSent?: boolean } = {},
+) {
+    return {
+        error: 'Please verify your email before continuing.',
+        code: 'EMAIL_VERIFICATION_REQUIRED',
+        email,
+        emailSent: options.emailSent ?? false,
+        requiresEmailVerification: true,
+    };
+}
+
+function isBcryptHash(value: unknown): value is string {
+    return typeof value === 'string' && /^\$2[aby]\$\d{2}\$/.test(value);
+}
+
+function hashLegacyPassword(password: string, salt: string): string {
+    return crypto.pbkdf2Sync(password, salt, 10000, 64, 'sha512').toString('hex');
+}
+
+function timingSafeHexEquals(expected: string, actual: string): boolean {
+    if (expected.length !== actual.length) {
+        return false;
+    }
+
+    const expectedBuffer = Buffer.from(expected, 'hex');
+    const actualBuffer = Buffer.from(actual, 'hex');
+
+    if (expectedBuffer.length !== actualBuffer.length) {
+        return false;
+    }
+
+    return crypto.timingSafeEqual(expectedBuffer, actualBuffer);
+}
+
+async function verifyPassword(
+    user: { id: string; password_hash?: string | null; password_salt?: string | null },
+    plainPassword: string,
+): Promise<boolean> {
+    if (!user.password_hash) {
+        return false;
+    }
+
+    if (isBcryptHash(user.password_hash)) {
+        return bcrypt.compare(plainPassword, user.password_hash);
+    }
+
+    if (!user.password_salt) {
+        return false;
+    }
+
+    const legacyHash = hashLegacyPassword(plainPassword, user.password_salt);
+    const isValid = timingSafeHexEquals(user.password_hash, legacyHash);
+
+    if (!isValid) {
+        return false;
+    }
+
+    try {
+        const salt = await bcrypt.genSalt(10);
+        const passwordHash = await bcrypt.hash(plainPassword, salt);
+        await runAuthQuery(
+            'UPDATE users SET password_hash = $1, password_salt = $2, updated_at = NOW() WHERE id = $3',
+            [passwordHash, salt, user.id],
+        );
+    } catch (upgradeError) {
+        console.error('Password upgrade error:', upgradeError);
+    }
+
+    return true;
+}
 
 // Helper to get user from token
 const getUserFromToken = (req: Request): string | null => {
@@ -63,84 +157,18 @@ const getUserFromToken = (req: Request): string | null => {
     }
 };
 
-const isSafeSqlIdentifier = (value: string): boolean => /^[a-z_][a-z0-9_]*$/i.test(value);
-
-const quoteSqlIdentifier = (value: string): string => {
-    if (!isSafeSqlIdentifier(value)) {
-        throw new Error(`Unsafe SQL identifier: ${value}`);
-    }
-    return `"${value}"`;
-};
-
-const tableHasColumn = async (
-    client: PoolClient,
-    tableName: string,
-    columnName: string,
-): Promise<boolean> => {
-    const result = await client.query(`
-        SELECT 1
-        FROM information_schema.columns
-        WHERE table_schema = 'public' AND table_name = $1 AND column_name = $2
-        LIMIT 1
-    `, [tableName, columnName]);
-
-    return result.rows.length > 0;
-};
-
-const deleteRowsByUserIdIfTableExists = async (
-    client: PoolClient,
-    tableName: string,
-    userId: string,
-): Promise<void> => {
-    if (!(await tableHasColumn(client, tableName, 'user_id'))) {
-        return;
-    }
-
-    await client.query(
-        `DELETE FROM ${quoteSqlIdentifier(tableName)} WHERE user_id = $1`,
-        [userId],
-    );
-};
-
-const cleanupTextUserTablesForDeletedAccount = async (
-    client: PoolClient,
-    userId: string,
-): Promise<void> => {
-    if (await tableHasColumn(client, 'api_tokens', 'user_id')) {
-        if (await tableHasColumn(client, 'token_usage_logs', 'token_id')) {
-            await client.query(
-                'DELETE FROM token_usage_logs WHERE token_id IN (SELECT id FROM api_tokens WHERE user_id = $1)',
-                [userId],
-            );
-        }
-
-        await client.query('DELETE FROM api_tokens WHERE user_id = $1', [userId]);
-    }
-
-    const directDeleteTables = [
-        'file_audit_logs',
-        'gmail_connections',
-        'agent_memory_entries',
-        'agent_sessions',
-        'media_uploads',
-        'research_jobs',
-        'agent_skills',
-        'user_ai_models',
-    ];
-
-    for (const tableName of directDeleteTables) {
-        await deleteRowsByUserIdIfTableExists(client, tableName, userId);
-    }
-};
-
 // Sign up
 router.post('/signup', async (req: Request, res: Response) => {
     try {
         const { email, password, displayName } = req.body;
         const normalizedEmail = email?.toLowerCase()?.trim();
 
-        if (!email || !password) {
+        if (!normalizedEmail || !password) {
             return res.status(400).json({ error: 'Email and password are required' });
+        }
+
+        if (!BASIC_EMAIL_PATTERN.test(normalizedEmail)) {
+            return res.status(400).json({ error: 'Please enter a valid email address' });
         }
 
         if (password.length < 6) {
@@ -159,13 +187,52 @@ router.post('/signup', async (req: Request, res: Response) => {
         const salt = await bcrypt.genSalt(10);
         const passwordHash = await bcrypt.hash(password, salt);
         const userId = uuidv4();
-        const userName = displayName || normalizedEmail.split('@')[0];
+        const userName =
+            typeof displayName === 'string' && displayName.trim().length > 0
+                ? displayName.trim()
+                : normalizedEmail.split('@')[0];
+        const verificationToken = crypto.randomBytes(32).toString('hex');
 
         await pool.query(
-            `INSERT INTO users (id, email, display_name, password_hash, password_salt, created_at, email_verified, two_factor_enabled, role) 
-             VALUES ($1, $2, $3, $4, $5, NOW(), false, false, 'user')`,
-            [userId, normalizedEmail, userName, passwordHash, salt]
+            `INSERT INTO users (
+                id, email, display_name, password_hash, password_salt,
+                verification_token, created_at, email_verified, two_factor_enabled, role
+            ) 
+             VALUES ($1, $2, $3, $4, $5, $6, NOW(), false, false, 'user')`,
+            [userId, normalizedEmail, userName, passwordHash, salt, verificationToken]
         );
+
+        let verificationEmailSent = false;
+        try {
+            verificationEmailSent = await sendVerificationEmail({
+                to: normalizedEmail,
+                displayName: userName,
+                token: verificationToken,
+            });
+        } catch (emailError) {
+            console.error('Signup verification email error:', emailError);
+        }
+
+        const requireEmailVerification = await isEmailVerificationRequired();
+
+        if (requireEmailVerification) {
+            return res.status(201).json({
+                success: true,
+                requiresEmailVerification: true,
+                verificationEmailSent,
+                message: 'Please verify your email before continuing.',
+                user: {
+                    id: userId,
+                    email: normalizedEmail,
+                    displayName: userName,
+                    emailVerified: false,
+                    twoFactorEnabled: false,
+                    avatarUrl: null,
+                    coverUrl: null,
+                    role: 'user'
+                },
+            });
+        }
 
         const token = jwt.sign(
             { userId, email: normalizedEmail, role: 'user' },
@@ -186,6 +253,7 @@ router.post('/signup', async (req: Request, res: Response) => {
             accessToken: token,
             refreshToken,
             expiresIn: 15 * 60,
+            verificationEmailSent,
             user: {
                 id: userId,
                 email: normalizedEmail,
@@ -213,8 +281,8 @@ router.post('/login', async (req: Request, res: Response) => {
         }
 
         const normalizedEmail = email.toLowerCase().trim();
-        const result = await pool.query(
-            'SELECT id, email, display_name, password_hash, email_verified, two_factor_enabled, avatar_url, cover_url, role FROM users WHERE email = $1',
+        const result = await runAuthQuery(
+            'SELECT id, email, display_name, password_hash, password_salt, email_verified, two_factor_enabled, avatar_url, cover_url, role FROM users WHERE email = $1',
             [normalizedEmail]
         );
 
@@ -223,10 +291,17 @@ router.post('/login', async (req: Request, res: Response) => {
         }
 
         const user = result.rows[0];
-        const isValid = await bcrypt.compare(password, user.password_hash);
+        const isValid = await verifyPassword(user, password);
 
         if (!isValid) {
             return res.status(401).json({ error: 'Invalid credentials' });
+        }
+
+        const requireEmailVerification = await isEmailVerificationRequired();
+        if (requireEmailVerification && user.role !== 'admin' && !user.email_verified) {
+            return res.status(403).json(
+                buildEmailVerificationRequiredPayload(user.email)
+            );
         }
 
         // Use longer expiry if rememberMe is true
@@ -265,6 +340,11 @@ router.post('/login', async (req: Request, res: Response) => {
         });
     } catch (error) {
         console.error('Login error:', error);
+        if (isTransientDatabaseError(error)) {
+            return res.status(503).json({
+                error: 'Database connection is temporarily unavailable. Please try again in a moment.',
+            });
+        }
         res.status(500).json({ error: 'Login failed' });
     }
 });
@@ -309,6 +389,14 @@ router.get('/me', authenticateToken, async (req: AuthRequest, res: Response) => 
         }
 
         const u = result.rows[0];
+
+        const requireEmailVerification = await isEmailVerificationRequired();
+        if (requireEmailVerification && u.role !== 'admin' && !u.email_verified) {
+            return res.status(403).json(
+                buildEmailVerificationRequiredPayload(u.email)
+            );
+        }
+
         res.json({
             success: true,
             user: {
@@ -335,7 +423,11 @@ router.post('/forgot-password', async (req: Request, res: Response) => {
         const { email } = req.body;
         if (!email) return res.status(400).json({ error: 'Email required' });
 
-        const userRes = await pool.query('SELECT id FROM users WHERE email = $1', [email.toLowerCase()]);
+        const normalizedEmail = email.toLowerCase().trim();
+        const userRes = await pool.query(
+            'SELECT id, email, display_name FROM users WHERE email = $1',
+            [normalizedEmail],
+        );
         if (userRes.rows.length === 0) {
             return res.json({ success: true, message: 'If account exists, reset email sent.' });
         }
@@ -345,8 +437,18 @@ router.post('/forgot-password', async (req: Request, res: Response) => {
 
         await pool.query(
             'UPDATE users SET reset_token = $1, reset_token_expiry = $2 WHERE email = $3',
-            [token, expiry, email.toLowerCase()]
+            [token, expiry, normalizedEmail]
         );
+
+        try {
+            await sendPasswordResetEmail({
+                to: userRes.rows[0].email,
+                displayName: userRes.rows[0].display_name,
+                token,
+            });
+        } catch (emailError) {
+            console.error('Forgot password email error:', emailError);
+        }
 
         res.json({ success: true, message: 'Reset email sent' });
     } catch (error) {
@@ -396,10 +498,13 @@ router.post('/delete-account', async (req: Request, res: Response) => {
         const { password } = req.body;
         if (!password) return res.status(400).json({ error: 'Password required' });
 
-        const userRes = await pool.query('SELECT password_hash FROM users WHERE id = $1', [userId]);
+        const userRes = await pool.query(
+            'SELECT id, password_hash, password_salt FROM users WHERE id = $1',
+            [userId],
+        );
         if (userRes.rows.length === 0) return res.status(404).json({ error: 'User not found' });
 
-        const valid = await bcrypt.compare(password, userRes.rows[0].password_hash);
+        const valid = await verifyPassword(userRes.rows[0], password);
         if (!valid) return res.status(401).json({ error: 'Invalid password' });
 
         await client.query('BEGIN');
@@ -440,8 +545,11 @@ router.post('/2fa/disable', async (req: Request, res: Response) => {
         if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
         const { password } = req.body;
-        const userRes = await pool.query('SELECT password_hash FROM users WHERE id = $1', [userId]);
-        const valid = await bcrypt.compare(password, userRes.rows[0].password_hash);
+        const userRes = await pool.query(
+            'SELECT id, password_hash, password_salt FROM users WHERE id = $1',
+            [userId],
+        );
+        const valid = await verifyPassword(userRes.rows[0], password);
 
         if (!valid) return res.status(401).json({ error: 'Invalid password' });
 
@@ -464,16 +572,58 @@ router.post('/2fa/resend', async (req: Request, res: Response) => {
 // Email Verification - Resend
 router.post('/resend-verification', async (req: Request, res: Response) => {
     try {
+        const requestedEmail =
+            typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
         const userId = getUserFromToken(req);
-        if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
-        const userRes = await pool.query('SELECT email FROM users WHERE id = $1', [userId]);
-        if (userRes.rows.length === 0) return res.status(404).json({ error: 'User not found' });
+        if (!userId && !requestedEmail) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+
+        const userRes = requestedEmail
+            ? await pool.query(
+                'SELECT id, email, display_name FROM users WHERE email = $1',
+                [requestedEmail],
+            )
+            : await pool.query(
+                'SELECT id, email, display_name FROM users WHERE id = $1',
+                [userId],
+            );
+
+        if (userRes.rows.length === 0) {
+            if (requestedEmail) {
+                return res.json({
+                    success: true,
+                    emailSent: false,
+                    message: 'If an account exists for that email, a verification link has been sent.',
+                });
+            }
+            return res.status(404).json({ error: 'User not found' });
+        }
 
         const token = crypto.randomBytes(32).toString('hex');
-        await pool.query('UPDATE users SET verification_token = $1 WHERE id = $2', [token, userId]);
+        await pool.query('UPDATE users SET verification_token = $1 WHERE id = $2', [token, userRes.rows[0].id]);
 
-        res.json({ success: true, message: 'Verification email resent' });
+        let emailSent = false;
+        try {
+            emailSent = await sendVerificationEmail({
+                to: userRes.rows[0].email,
+                displayName: userRes.rows[0].display_name,
+                token,
+            });
+        } catch (emailError) {
+            console.error('Resend verification email error:', emailError);
+        }
+
+        res.json({
+            success: true,
+            emailSent,
+            message: requestedEmail
+                ? 'If an account exists for that email, a verification link has been sent.'
+                : emailSent
+                    ? 'Verification email resent'
+                    : 'Verification email could not be sent. Please contact support.',
+        });
     } catch (error) {
         console.error('Resend verification error:', error);
         res.status(500).json({ error: 'Server error' });
@@ -562,10 +712,13 @@ router.post('/change-password', async (req: Request, res: Response) => {
             return res.status(400).json({ error: 'Missing passwords' });
         }
 
-        const userRes = await pool.query('SELECT password_hash FROM users WHERE id = $1', [userId]);
+        const userRes = await pool.query(
+            'SELECT id, password_hash, password_salt FROM users WHERE id = $1',
+            [userId],
+        );
         if (userRes.rows.length === 0) return res.status(404).json({ error: 'User not found' });
 
-        const valid = await bcrypt.compare(currentPassword, userRes.rows[0].password_hash);
+        const valid = await verifyPassword(userRes.rows[0], currentPassword);
         if (!valid) return res.status(401).json({ error: 'Invalid current password' });
 
         const salt = await bcrypt.genSalt(10);
@@ -597,7 +750,7 @@ router.post('/refresh', async (req: Request, res: Response) => {
 
         // Verify user still exists and is active
         const userResult = await pool.query(
-            'SELECT id, email, role FROM users WHERE id = $1',
+            'SELECT id, email, role, email_verified FROM users WHERE id = $1',
             [decoded.userId]
         );
 
@@ -606,6 +759,13 @@ router.post('/refresh', async (req: Request, res: Response) => {
         }
 
         const user = userResult.rows[0];
+
+        const requireEmailVerification = await isEmailVerificationRequired();
+        if (requireEmailVerification && user.role !== 'admin' && !user.email_verified) {
+            return res.status(403).json(
+                buildEmailVerificationRequiredPayload(user.email)
+            );
+        }
 
         // Generate new access token
         const newAccessToken = jwt.sign(

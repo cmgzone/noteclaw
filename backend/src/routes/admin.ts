@@ -1,12 +1,23 @@
 import express, { type Response } from 'express';
+import type { PoolClient } from 'pg';
 import pool from '../config/database.js';
 import { authenticateToken, requireAdmin, type AuthRequest } from '../middleware/auth.js';
 import { mcpLimitsService } from '../services/mcpLimitsService.js';
 import { notificationService, type NotificationType } from '../services/notificationService.js';
+import { cleanupTextUserTablesForDeletedAccount } from '../services/accountCleanupService.js';
+import {
+    CacheKeys,
+    clearNotebookCache,
+    clearUserCache,
+    deleteCache,
+} from '../services/cacheService.js';
 import { encryptSecret } from '../services/secretEncryptionService.js';
 import {
+    getAllAppSettings,
+    getAppSettingValue,
     getPrivacyPolicyContent,
     getTermsOfServiceContent,
+    setAppSettingValue,
     setPrivacyPolicyContent,
     setTermsOfServiceContent,
 } from '../services/appSettingsService.js';
@@ -33,6 +44,220 @@ router.use(requireAdmin);
 
 async function ensureGooglePlayCatalogReady(): Promise<void> {
     await ensureGooglePlayCatalogColumns((sql, params) => pool.query(sql, params));
+}
+
+type AdminDeleteResult<T> =
+    | { success: true; item: T }
+    | { success: false; status: number; error: string };
+
+function parseBulkIds(rawIds: unknown, maxCount = 250): string[] | null {
+    if (!Array.isArray(rawIds)) {
+        return null;
+    }
+
+    const ids = [...new Set(
+        rawIds
+            .filter((value): value is string => typeof value === 'string')
+            .map((value) => value.trim())
+            .filter(Boolean),
+    )];
+
+    if (ids.length === 0 || ids.length > maxCount) {
+        return null;
+    }
+
+    return ids;
+}
+
+async function clearPlanCaches(planId: string, userId: string): Promise<void> {
+    await Promise.all([
+        deleteCache(CacheKeys.plan(planId)),
+        deleteCache(CacheKeys.planTasks(planId)),
+        clearUserCache(userId),
+    ]);
+}
+
+function parseNumericAmount(value: unknown): number {
+    if (typeof value === 'number') {
+        return Number.isFinite(value) ? value : 0;
+    }
+
+    if (typeof value === 'string') {
+        const parsed = parseFloat(value);
+        return Number.isFinite(parsed) ? parsed : 0;
+    }
+
+    return 0;
+}
+
+async function getRevenueSummary() {
+    const result = await pool.query(`
+        WITH monetized_transactions AS (
+            SELECT
+                ct.id,
+                ct.created_at,
+                CASE
+                    WHEN ct.transaction_type = 'purchase' THEN cp.price::numeric
+                    WHEN ct.transaction_type = 'plan_upgrade' THEN sp.price::numeric
+                    ELSE NULL
+                END AS revenue_amount
+            FROM credit_transactions ct
+            LEFT JOIN credit_packages cp
+                ON ct.transaction_type = 'purchase'
+                AND cp.id::text = ct.metadata->>'package_id'
+            LEFT JOIN subscription_plans sp
+                ON ct.transaction_type = 'plan_upgrade'
+                AND sp.id::text = COALESCE(
+                    ct.metadata->>'new_plan_id',
+                    ct.metadata->>'plan_id'
+                )
+        )
+        SELECT
+            COALESCE(SUM(revenue_amount), 0)::text AS total_revenue,
+            COALESCE(
+                SUM(revenue_amount) FILTER (
+                    WHERE created_at >= date_trunc('month', CURRENT_TIMESTAMP)
+                ),
+                0
+            )::text AS monthly_revenue,
+            COUNT(*) FILTER (WHERE revenue_amount IS NOT NULL)::int AS paid_transactions
+        FROM monetized_transactions
+    `);
+
+    const row = result.rows[0] ?? {};
+    return {
+        totalRevenue: parseNumericAmount(row.total_revenue),
+        monthlyRevenue: parseNumericAmount(row.monthly_revenue),
+        paidTransactions: Number(row.paid_transactions || 0),
+    };
+}
+
+async function deleteUserForAdmin(
+    client: PoolClient,
+    currentUserId: string,
+    targetUserId: string,
+): Promise<AdminDeleteResult<{ id: string; email: string; role: string }>> {
+    if (!targetUserId) {
+        return { success: false, status: 400, error: 'User ID is required' };
+    }
+
+    if (currentUserId === targetUserId) {
+        return { success: false, status: 400, error: 'You cannot delete your own admin account' };
+    }
+
+    await client.query('BEGIN');
+
+    try {
+        const userResult = await client.query(
+            'SELECT id, email, role FROM users WHERE id = $1',
+            [targetUserId],
+        );
+
+        if (userResult.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return { success: false, status: 404, error: 'User not found' };
+        }
+
+        const targetUser = userResult.rows[0];
+        const notebookIdsResult = await client.query(
+            'SELECT id FROM notebooks WHERE user_id = $1',
+            [targetUserId],
+        );
+        const planIdsResult = await client.query(
+            'SELECT id FROM plans WHERE user_id = $1',
+            [targetUserId],
+        );
+
+        if (targetUser.role === 'admin') {
+            const adminCountResult = await client.query(
+                "SELECT COUNT(*)::int AS count FROM users WHERE role = 'admin'",
+            );
+            if ((adminCountResult.rows[0]?.count ?? 0) <= 1) {
+                await client.query('ROLLBACK');
+                return { success: false, status: 400, error: 'Cannot delete the last remaining admin' };
+            }
+        }
+
+        await cleanupTextUserTablesForDeletedAccount(client, targetUserId);
+
+        await client.query(
+            'DELETE FROM users WHERE id = $1',
+            [targetUserId],
+        );
+
+        await client.query('COMMIT');
+
+        await clearUserCache(targetUserId);
+        await Promise.all([
+            ...notebookIdsResult.rows.map((row: { id: string }) => clearNotebookCache(row.id)),
+            ...planIdsResult.rows.flatMap((row: { id: string }) => ([
+                deleteCache(CacheKeys.plan(row.id)),
+                deleteCache(CacheKeys.planTasks(row.id)),
+            ])),
+        ]);
+
+        return {
+            success: true,
+            item: {
+                id: targetUser.id,
+                email: targetUser.email,
+                role: targetUser.role,
+            },
+        };
+    } catch (error) {
+        try {
+            await client.query('ROLLBACK');
+        } catch {
+            // Ignore rollback failures after a delete error.
+        }
+        throw error;
+    }
+}
+
+async function deleteNotebookForAdmin(
+    notebookId: string,
+): Promise<AdminDeleteResult<{ id: string; user_id: string; title: string }>> {
+    if (!notebookId) {
+        return { success: false, status: 400, error: 'Notebook ID is required' };
+    }
+
+    const result = await pool.query(
+        'DELETE FROM notebooks WHERE id = $1 RETURNING id, user_id, title',
+        [notebookId],
+    );
+
+    if (result.rows.length === 0) {
+        return { success: false, status: 404, error: 'Notebook not found' };
+    }
+
+    const deletedNotebook = result.rows[0];
+    await Promise.all([
+        clearNotebookCache(deletedNotebook.id),
+        clearUserCache(deletedNotebook.user_id),
+    ]);
+
+    return { success: true, item: deletedNotebook };
+}
+
+async function deletePlanForAdmin(
+    planId: string,
+): Promise<AdminDeleteResult<{ id: string; user_id: string; title: string }>> {
+    if (!planId) {
+        return { success: false, status: 400, error: 'Plan ID is required' };
+    }
+
+    const result = await pool.query(
+        'DELETE FROM plans WHERE id = $1 RETURNING id, user_id, title',
+        [planId],
+    );
+
+    if (result.rows.length === 0) {
+        return { success: false, status: 404, error: 'Plan not found' };
+    }
+
+    const deletedPlan = result.rows[0];
+    await clearPlanCaches(deletedPlan.id, deletedPlan.user_id);
+    return { success: true, item: deletedPlan };
 }
 
 // ==================== AI MODELS ====================
@@ -234,6 +459,67 @@ router.delete('/api-keys/:service', async (req: AuthRequest, res: Response) => {
     } catch (error) {
         console.error('Error deleting API key:', error);
         res.status(500).json({ error: 'Failed to delete API key' });
+    }
+});
+
+// ==================== APP SETTINGS ====================
+
+router.get('/settings', async (req: AuthRequest, res: Response) => {
+    try {
+        const rawKeys = typeof req.query.keys === 'string' ? req.query.keys : '';
+
+        if (rawKeys.trim().length > 0) {
+            const keys = rawKeys
+                .split(',')
+                .map((key) => key.trim())
+                .filter(Boolean);
+
+            const pairs = await Promise.all(
+                keys.map(async (key) => [key, (await getAppSettingValue(key)) ?? ''] as const),
+            );
+
+            return res.json({
+                success: true,
+                settings: Object.fromEntries(pairs),
+            });
+        }
+
+        const settings = await getAllAppSettings();
+        res.json({ success: true, settings });
+    } catch (error) {
+        console.error('Error fetching app settings:', error);
+        res.status(500).json({ error: 'Failed to fetch app settings' });
+    }
+});
+
+router.put('/settings', async (req: AuthRequest, res: Response) => {
+    try {
+        const key = typeof req.body?.key === 'string' ? req.body.key.trim() : '';
+        const value = req.body?.value;
+
+        if (!key) {
+            return res.status(400).json({ error: 'key is required' });
+        }
+
+        const normalizedValue =
+            value === null || value === undefined
+                ? ''
+                : typeof value === 'string'
+                    ? value
+                    : JSON.stringify(value);
+
+        await setAppSettingValue(key, normalizedValue);
+        const updatedValue = await getAppSettingValue(key);
+
+        res.json({
+            success: true,
+            key,
+            value: updatedValue ?? '',
+            message: 'Setting updated',
+        });
+    } catch (error) {
+        console.error('Error updating app setting:', error);
+        res.status(500).json({ error: 'Failed to update app setting' });
     }
 });
 
@@ -474,6 +760,8 @@ router.get('/users', async (req: AuthRequest, res: Response) => {
         const result = await pool.query(`
             SELECT u.id, u.email, u.display_name, u.role, u.email_verified, u.is_active, u.created_at,
                    us.current_credits, sp.name as plan_name
+                   , (SELECT COUNT(*)::int FROM notebooks n WHERE n.user_id = u.id) as notebook_count
+                   , (SELECT COUNT(*)::int FROM plans p WHERE p.user_id = u.id) as plan_count
             FROM users u
             LEFT JOIN user_subscriptions us ON u.id = us.user_id
             LEFT JOIN subscription_plans sp ON us.plan_id = sp.id
@@ -537,6 +825,351 @@ router.put('/users/:id/status', async (req: AuthRequest, res: Response) => {
     }
 });
 
+router.delete('/users/:id', async (req: AuthRequest, res: Response) => {
+    try {
+        if (!req.userId) {
+            return res.status(401).json({ error: 'Authentication required' });
+        }
+
+        const client = await pool.connect();
+        let result: AdminDeleteResult<{ id: string; email: string; role: string }>;
+        try {
+            result = await deleteUserForAdmin(client, req.userId, req.params.id);
+        } finally {
+            client.release();
+        }
+
+        if (!result.success) {
+            return res.status(result.status).json({ error: result.error });
+        }
+
+        res.json({
+            success: true,
+            message: 'User and associated data deleted',
+            deletedUser: result.item,
+        });
+    } catch (error) {
+        console.error('Error deleting user:', error);
+        res.status(500).json({ error: 'Failed to delete user' });
+    }
+});
+
+router.post('/users/bulk-delete', async (req: AuthRequest, res: Response) => {
+    if (!req.userId) {
+        return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const ids = parseBulkIds(req.body?.ids);
+    if (!ids) {
+        return res.status(400).json({
+            error: 'Provide between 1 and 250 user IDs in ids[]',
+        });
+    }
+
+    const client = await pool.connect();
+
+    try {
+        const deletedUsers: Array<{ id: string; email: string; role: string }> = [];
+        const skipped: Array<{ id: string; error: string }> = [];
+        const failed: Array<{ id: string; error: string }> = [];
+
+        for (const id of ids) {
+            try {
+                const result = await deleteUserForAdmin(client, req.userId, id);
+                if (result.success) {
+                    deletedUsers.push(result.item);
+                } else if (result.status >= 500) {
+                    failed.push({ id, error: result.error });
+                } else {
+                    skipped.push({ id, error: result.error });
+                }
+            } catch (error) {
+                console.error(`Error bulk deleting user ${id}:`, error);
+                failed.push({ id, error: 'Failed to delete user' });
+            }
+        }
+
+        res.json({
+            success: failed.length === 0,
+            message: `Deleted ${deletedUsers.length} of ${ids.length} selected users`,
+            deletedUsers,
+            skipped,
+            failed,
+            summary: {
+                requested: ids.length,
+                deleted: deletedUsers.length,
+                skipped: skipped.length,
+                failed: failed.length,
+            },
+        });
+    } catch (error) {
+        console.error('Error bulk deleting users:', error);
+        res.status(500).json({ error: 'Failed to bulk delete users' });
+    } finally {
+        client.release();
+    }
+});
+
+// ==================== CONTENT MANAGEMENT ====================
+
+router.get('/content/notebooks', async (req: AuthRequest, res: Response) => {
+    try {
+        const limit = Math.min(parseInt(req.query.limit as string) || 100, 250);
+        const offset = parseInt(req.query.offset as string) || 0;
+        const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
+
+        const values: any[] = [];
+        const filters: string[] = [];
+
+        if (search.length > 0) {
+            values.push(`%${search}%`);
+            filters.push(`(
+                n.title ILIKE $${values.length}
+                OR COALESCE(n.description, '') ILIKE $${values.length}
+                OR COALESCE(n.category, '') ILIKE $${values.length}
+                OR u.email ILIKE $${values.length}
+                OR COALESCE(u.display_name, '') ILIKE $${values.length}
+            )`);
+        }
+
+        values.push(limit, offset);
+        const whereClause = filters.length > 0 ? `WHERE ${filters.join(' AND ')}` : '';
+        const limitIndex = values.length - 1;
+        const offsetIndex = values.length;
+
+        const rowsResult = await pool.query(`
+            SELECT
+                n.id,
+                n.user_id,
+                n.title,
+                n.description,
+                n.category,
+                n.is_agent_notebook,
+                n.created_at,
+                n.updated_at,
+                u.email AS user_email,
+                u.display_name AS user_display_name,
+                (SELECT COUNT(*)::int FROM sources s WHERE s.notebook_id = n.id) AS source_count
+            FROM notebooks n
+            JOIN users u ON u.id = n.user_id
+            ${whereClause}
+            ORDER BY n.updated_at DESC
+            LIMIT $${limitIndex} OFFSET $${offsetIndex}
+        `, values);
+
+        const countResult = await pool.query(`
+            SELECT COUNT(*)::int AS count
+            FROM notebooks n
+            JOIN users u ON u.id = n.user_id
+            ${whereClause}
+        `, values.slice(0, values.length - 2));
+
+        res.json({
+            success: true,
+            notebooks: rowsResult.rows,
+            total: countResult.rows[0]?.count ?? 0,
+        });
+    } catch (error) {
+        console.error('Error listing admin notebooks:', error);
+        res.status(500).json({ error: 'Failed to list notebooks' });
+    }
+});
+
+router.delete('/content/notebooks/:id', async (req: AuthRequest, res: Response) => {
+    try {
+        const result = await deleteNotebookForAdmin(req.params.id);
+        if (!result.success) {
+            return res.status(result.status).json({ error: result.error });
+        }
+
+        res.json({
+            success: true,
+            message: 'Notebook deleted',
+            notebook: result.item,
+        });
+    } catch (error) {
+        console.error('Error deleting admin notebook:', error);
+        res.status(500).json({ error: 'Failed to delete notebook' });
+    }
+});
+
+router.post('/content/notebooks/bulk-delete', async (req: AuthRequest, res: Response) => {
+    const ids = parseBulkIds(req.body?.ids);
+    if (!ids) {
+        return res.status(400).json({
+            error: 'Provide between 1 and 250 notebook IDs in ids[]',
+        });
+    }
+
+    try {
+        const deletedNotebooks: Array<{ id: string; user_id: string; title: string }> = [];
+        const skipped: Array<{ id: string; error: string }> = [];
+        const failed: Array<{ id: string; error: string }> = [];
+
+        for (const id of ids) {
+            try {
+                const result = await deleteNotebookForAdmin(id);
+                if (result.success) {
+                    deletedNotebooks.push(result.item);
+                } else if (result.status >= 500) {
+                    failed.push({ id, error: result.error });
+                } else {
+                    skipped.push({ id, error: result.error });
+                }
+            } catch (error) {
+                console.error(`Error bulk deleting notebook ${id}:`, error);
+                failed.push({ id, error: 'Failed to delete notebook' });
+            }
+        }
+
+        res.json({
+            success: failed.length === 0,
+            message: `Deleted ${deletedNotebooks.length} of ${ids.length} selected notebooks`,
+            deletedNotebooks,
+            skipped,
+            failed,
+            summary: {
+                requested: ids.length,
+                deleted: deletedNotebooks.length,
+                skipped: skipped.length,
+                failed: failed.length,
+            },
+        });
+    } catch (error) {
+        console.error('Error bulk deleting notebooks:', error);
+        res.status(500).json({ error: 'Failed to bulk delete notebooks' });
+    }
+});
+
+router.get('/content/plans', async (req: AuthRequest, res: Response) => {
+    try {
+        const limit = Math.min(parseInt(req.query.limit as string) || 100, 250);
+        const offset = parseInt(req.query.offset as string) || 0;
+        const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
+
+        const values: any[] = [];
+        const filters: string[] = [];
+
+        if (search.length > 0) {
+            values.push(`%${search}%`);
+            filters.push(`(
+                p.title ILIKE $${values.length}
+                OR COALESCE(p.description, '') ILIKE $${values.length}
+                OR u.email ILIKE $${values.length}
+                OR COALESCE(u.display_name, '') ILIKE $${values.length}
+            )`);
+        }
+
+        values.push(limit, offset);
+        const whereClause = filters.length > 0 ? `WHERE ${filters.join(' AND ')}` : '';
+        const limitIndex = values.length - 1;
+        const offsetIndex = values.length;
+
+        const rowsResult = await pool.query(`
+            SELECT
+                p.id,
+                p.user_id,
+                p.title,
+                p.description,
+                p.status,
+                p.is_private,
+                p.created_at,
+                p.updated_at,
+                p.completed_at,
+                u.email AS user_email,
+                u.display_name AS user_display_name,
+                (SELECT COUNT(*)::int FROM plan_tasks pt WHERE pt.plan_id = p.id) AS task_count
+            FROM plans p
+            JOIN users u ON u.id = p.user_id
+            ${whereClause}
+            ORDER BY p.updated_at DESC
+            LIMIT $${limitIndex} OFFSET $${offsetIndex}
+        `, values);
+
+        const countResult = await pool.query(`
+            SELECT COUNT(*)::int AS count
+            FROM plans p
+            JOIN users u ON u.id = p.user_id
+            ${whereClause}
+        `, values.slice(0, values.length - 2));
+
+        res.json({
+            success: true,
+            plans: rowsResult.rows,
+            total: countResult.rows[0]?.count ?? 0,
+        });
+    } catch (error) {
+        console.error('Error listing admin plans:', error);
+        res.status(500).json({ error: 'Failed to list plans' });
+    }
+});
+
+router.delete('/content/plans/:id', async (req: AuthRequest, res: Response) => {
+    try {
+        const result = await deletePlanForAdmin(req.params.id);
+        if (!result.success) {
+            return res.status(result.status).json({ error: result.error });
+        }
+
+        res.json({
+            success: true,
+            message: 'Plan deleted',
+            plan: result.item,
+        });
+    } catch (error) {
+        console.error('Error deleting admin plan:', error);
+        res.status(500).json({ error: 'Failed to delete plan' });
+    }
+});
+
+router.post('/content/plans/bulk-delete', async (req: AuthRequest, res: Response) => {
+    const ids = parseBulkIds(req.body?.ids);
+    if (!ids) {
+        return res.status(400).json({
+            error: 'Provide between 1 and 250 plan IDs in ids[]',
+        });
+    }
+
+    try {
+        const deletedPlans: Array<{ id: string; user_id: string; title: string }> = [];
+        const skipped: Array<{ id: string; error: string }> = [];
+        const failed: Array<{ id: string; error: string }> = [];
+
+        for (const id of ids) {
+            try {
+                const result = await deletePlanForAdmin(id);
+                if (result.success) {
+                    deletedPlans.push(result.item);
+                } else if (result.status >= 500) {
+                    failed.push({ id, error: result.error });
+                } else {
+                    skipped.push({ id, error: result.error });
+                }
+            } catch (error) {
+                console.error(`Error bulk deleting plan ${id}:`, error);
+                failed.push({ id, error: 'Failed to delete plan' });
+            }
+        }
+
+        res.json({
+            success: failed.length === 0,
+            message: `Deleted ${deletedPlans.length} of ${ids.length} selected plans`,
+            deletedPlans,
+            skipped,
+            failed,
+            summary: {
+                requested: ids.length,
+                deleted: deletedPlans.length,
+                skipped: skipped.length,
+                failed: failed.length,
+            },
+        });
+    } catch (error) {
+        console.error('Error bulk deleting plans:', error);
+        res.status(500).json({ error: 'Failed to bulk delete plans' });
+    }
+});
+
 // ==================== DASHBOARD STATS ====================
 
 router.get('/stats', async (req: AuthRequest, res: Response) => {
@@ -566,6 +1199,7 @@ router.get('/stats', async (req: AuthRequest, res: Response) => {
 
         // Get transactions count
         const transactionsResult = await pool.query('SELECT COUNT(*) FROM credit_transactions');
+        const revenueSummary = await getRevenueSummary();
 
         const stats = usersResult.rows[0];
 
@@ -578,6 +1212,9 @@ router.get('/stats', async (req: AuthRequest, res: Response) => {
                 totalModels: parseInt(modelsResult.rows[0]?.count) || 0,
                 totalPlans: parseInt(plansResult.rows[0]?.count) || 0,
                 totalTransactions: parseInt(transactionsResult.rows[0]?.count) || 0,
+                totalRevenue: revenueSummary.totalRevenue,
+                monthlyRevenue: revenueSummary.monthlyRevenue,
+                paidTransactions: revenueSummary.paidTransactions,
                 recentUsers: recentUsersResult.rows
             }
         });
@@ -685,14 +1322,48 @@ router.get('/transactions', async (req: AuthRequest, res: Response) => {
         const limit = parseInt(req.query.limit as string) || 100;
 
         const result = await pool.query(`
-            SELECT ct.*, u.email as user_email
+            SELECT
+                ct.*,
+                u.email as user_email,
+                CASE
+                    WHEN ct.transaction_type = 'purchase' THEN cp.price::numeric
+                    WHEN ct.transaction_type = 'plan_upgrade' THEN sp.price::numeric
+                    ELSE NULL
+                END AS revenue_amount,
+                COALESCE(
+                    ct.metadata->>'payment_method',
+                    CASE
+                        WHEN ct.metadata ? 'stripe_session_id' THEN 'stripe'
+                        ELSE NULL
+                    END
+                ) AS payment_method
             FROM credit_transactions ct
             LEFT JOIN users u ON ct.user_id = u.id
+            LEFT JOIN credit_packages cp
+                ON ct.transaction_type = 'purchase'
+                AND cp.id::text = ct.metadata->>'package_id'
+            LEFT JOIN subscription_plans sp
+                ON ct.transaction_type = 'plan_upgrade'
+                AND sp.id::text = COALESCE(
+                    ct.metadata->>'new_plan_id',
+                    ct.metadata->>'plan_id'
+                )
             ORDER BY ct.created_at DESC
             LIMIT $1
         `, [limit]);
 
-        res.json({ success: true, transactions: result.rows });
+        const revenueSummary = await getRevenueSummary();
+
+        res.json({
+            success: true,
+            transactions: result.rows.map((row) => ({
+                ...row,
+                revenue_amount: row.revenue_amount === null
+                    ? null
+                    : parseNumericAmount(row.revenue_amount),
+            })),
+            summary: revenueSummary,
+        });
     } catch (error) {
         console.error('Error listing transactions:', error);
         res.status(500).json({ error: 'Failed to list transactions' });

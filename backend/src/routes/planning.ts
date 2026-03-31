@@ -25,6 +25,7 @@ import planService, {
 import planTaskService, { type CreateTaskInput, type UpdateTaskInput, type TaskStatus } from '../services/planTaskService.js';
 import planAccessService, { type GrantAccessInput, type Permission } from '../services/planAccessService.js';
 import { planningWebSocketService } from '../services/planningWebSocketService.js';
+import mcpLimitsService from '../services/mcpLimitsService.js';
 
 const router = express.Router();
 
@@ -137,6 +138,18 @@ router.post('/', async (req: AuthRequest, res: Response) => {
             description: description?.trim(),
             isPrivate: isPrivate !== false,
         };
+
+        // Enforce subscription plan limit
+        const limitCheck = await mcpLimitsService.canCreatePlan(req.userId!);
+        if (!limitCheck.allowed) {
+            return res.status(403).json({
+                error: 'Plan limit reached',
+                message: limitCheck.reason,
+                upgrade_required: true,
+                limit: limitCheck.limit,
+                used: limitCheck.used,
+            });
+        }
 
         const plan = await planService.createPlan(req.userId!, input);
 

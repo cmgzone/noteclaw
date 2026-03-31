@@ -323,6 +323,79 @@ Answer the user's question to the best of your ability.
     return patterns.any(lower.contains);
   }
 
+  String _buildFriendlyChatErrorMessage(Object error) {
+    final raw = error.toString().trim();
+    final lower = raw.toLowerCase();
+    final statusMatch = RegExp(r'\b(401|402|403|404|408|409|429|500|502|503)\b')
+        .firstMatch(raw);
+    final statusCode =
+        statusMatch != null ? int.tryParse(statusMatch.group(1)!) : null;
+
+    if (error is InsufficientCreditsException ||
+        statusCode == 402 ||
+        lower.contains('insufficient credits') ||
+        lower.contains('payment_required')) {
+      return '**Insufficient credits**\n\n'
+          'You do not have enough credits to finish this request. Top up your credits or upgrade your plan and try again.';
+    }
+
+    if (statusCode == 403 &&
+        (lower.contains('premium') ||
+            lower.contains('paid subscriber') ||
+            lower.contains('upgrade_required') ||
+            lower.contains('current plan') ||
+            lower.contains('selected model'))) {
+      return '**Premium model required**\n\n'
+          'The selected model needs a paid plan. Switch to an available model in Settings or upgrade your subscription.';
+    }
+
+    if (statusCode == 403 ||
+        lower.contains('access denied') ||
+        lower.contains('not allowed') ||
+        lower.contains('forbidden')) {
+      return '**Request blocked**\n\n'
+          'This request was denied by the server. Check your selected model, API access, or account permissions and try again.';
+    }
+
+    if (lower.contains('quota') ||
+        lower.contains('rate') ||
+        lower.contains('resource exhausted') ||
+        statusCode == 429) {
+      return '**API limit reached**\n\n'
+          'The AI provider is rate-limited right now. Wait a moment and then try again.';
+    }
+
+    if (lower.contains('token') ||
+        lower.contains('context length') ||
+        lower.contains('too long') ||
+        lower.contains('maximum context') ||
+        lower.contains('exceed')) {
+      return '**Context limit exceeded**\n\n'
+          'This conversation or its attached sources are too large for the current model. Try a model with a larger context window, remove some sources, or start a new chat.';
+    }
+
+    if (lower.contains('not found') || lower.contains('invalid model')) {
+      return '**Model not available**\n\n'
+          'The selected model is unavailable. Open Settings and choose a different AI model.';
+    }
+
+    if (_isConnectivityIssue(error)) {
+      return '**Network error**\n\n'
+          'The app could not reach the AI service. Check your internet connection and try again.';
+    }
+
+    if (statusCode == 401 ||
+        lower.contains('unauthorized') ||
+        lower.contains('not authenticated') ||
+        lower.contains('access token required')) {
+      return '**Authentication error**\n\n'
+          'Your session may have expired. Sign in again and retry.';
+    }
+
+    return '**Unexpected error**\n\n'
+        'Something went wrong while generating a reply. Please try again. If this keeps happening, switch models or check your plan settings.';
+  }
+
   /// Ask a question and get a stream of tokens back
   Stream<List<StreamToken>> ask(String query,
       {List<Message> chatHistory = const [],
@@ -546,18 +619,13 @@ Answer the user's question to the best of your ability.
       debugPrint('Stack trace: $stackTrace');
 
       // Handle errors with better messages
-      String errorMessage = e.toString();
+      String errorMessage = _buildFriendlyChatErrorMessage(e);
 
       // Detect token limit errors and provide helpful guidance
       final lowerError = errorMessage.toLowerCase();
 
       // Check for API limits first (Quota/Rate)
-      if (lowerError.contains('quota') ||
-          lowerError.contains('rate') ||
-          lowerError.contains('resource exhausted')) {
-        errorMessage = '⚠️ **API Limit Reached**\n\n'
-            'You\'ve hit the API rate limit or quota. Please wait a moment and try again.';
-      } else if (lowerError.contains('token') ||
+      if (lowerError.contains('token') ||
           lowerError.contains('context length') ||
           lowerError.contains('too long') ||
           lowerError.contains('maximum context') ||

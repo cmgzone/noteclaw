@@ -177,6 +177,8 @@ class AuthState {
   final String? error;
   final bool requiresTwoFactor;
   final String? pendingUserId;
+  final String? pendingVerificationEmail;
+  final bool verificationEmailSent;
 
   const AuthState({
     this.status = AuthStatus.initial,
@@ -184,11 +186,15 @@ class AuthState {
     this.error,
     this.requiresTwoFactor = false,
     this.pendingUserId,
+    this.pendingVerificationEmail,
+    this.verificationEmailSent = false,
   });
 
   bool get isAuthenticated => status == AuthStatus.authenticated;
   bool get isLoading =>
       status == AuthStatus.loading || status == AuthStatus.initial;
+  bool get requiresEmailVerification =>
+      (pendingVerificationEmail?.isNotEmpty ?? false);
 
   AuthState copyWith({
     AuthStatus? status,
@@ -196,6 +202,8 @@ class AuthState {
     String? error,
     bool? requiresTwoFactor,
     String? pendingUserId,
+    String? pendingVerificationEmail,
+    bool? verificationEmailSent,
   }) {
     return AuthState(
       status: status ?? this.status,
@@ -203,6 +211,10 @@ class AuthState {
       error: error,
       requiresTwoFactor: requiresTwoFactor ?? this.requiresTwoFactor,
       pendingUserId: pendingUserId ?? this.pendingUserId,
+      pendingVerificationEmail:
+          pendingVerificationEmail ?? this.pendingVerificationEmail,
+      verificationEmailSent:
+          verificationEmailSent ?? this.verificationEmailSent,
     );
   }
 }
@@ -368,6 +380,18 @@ class CustomAuthService {
       final response = await _api.signup(
           email: email, password: password, displayName: displayName);
 
+      if (response['requiresEmailVerification'] == true &&
+          response['user'] != null) {
+        final pendingUser = AppUser.fromMap(response['user']);
+        await _api.clearTokens();
+        throw AuthEmailVerificationRequiredException(
+          pendingUser.email,
+          emailSent: response['verificationEmailSent'] == true,
+          message: response['message'] as String? ??
+              'Please verify your email before continuing.',
+        );
+      }
+
       if (response['success'] == true && response['user'] != null) {
         final user = AppUser.fromMap(response['user']);
         await _cacheUser(user);
@@ -375,6 +399,12 @@ class CustomAuthService {
       } else {
         throw AuthException(response['error'] ?? 'Sign up failed');
       }
+    } on EmailVerificationRequiredException catch (e) {
+      throw AuthEmailVerificationRequiredException(
+        e.email,
+        emailSent: e.emailSent,
+        message: e.message,
+      );
     } catch (e) {
       developer.log('Sign up error: $e', name: 'CustomAuthService');
       if (e is AuthException) rethrow;
@@ -407,6 +437,12 @@ class CustomAuthService {
       } else {
         throw AuthException(response['error'] ?? 'Sign in failed');
       }
+    } on EmailVerificationRequiredException catch (e) {
+      throw AuthEmailVerificationRequiredException(
+        e.email,
+        emailSent: e.emailSent,
+        message: e.message,
+      );
     } catch (e) {
       developer.log('Sign in error: $e', name: 'CustomAuthService');
       if (e is AuthException) rethrow;
@@ -472,9 +508,9 @@ class CustomAuthService {
   // EMAIL VERIFICATION
   // ============================================================================
 
-  Future<void> sendEmailVerification(String userId) async {
+  Future<void> sendEmailVerification(String userId, {String? email}) async {
     try {
-      await _api.resendVerification();
+      await _api.resendVerification(email: email);
     } catch (e) {
       if (e is AuthException) rethrow;
       throw AuthException(e.toString());
@@ -571,7 +607,7 @@ class CustomAuthService {
 
   Future<void> signOut() async {
     await _api.clearTokens();
-    await _secureStorage.delete(key: _userDataKey);
+    await _clearCachedUser();
     developer.log('User signed out, tokens cleared', name: 'CustomAuthService');
   }
 
@@ -614,6 +650,18 @@ class CustomAuthService {
 
       return null;
     } catch (e) {
+      if (e is EmailVerificationRequiredException) {
+        developer.log(
+            'getCurrentUser: email verification required for ${e.email}',
+            name: 'CustomAuthService');
+        await _api.clearTokens();
+        await _clearCachedUser();
+        throw AuthEmailVerificationRequiredException(
+          e.email,
+          emailSent: e.emailSent,
+          message: e.message,
+        );
+      }
       developer.log('getCurrentUser: API error: $e', name: 'CustomAuthService');
       // On API error, fall back to cached user
       if (userData != null) {
@@ -658,6 +706,17 @@ class CustomAuthService {
       developer.log('_cacheUser: SharedPreferences error: $e',
           name: 'CustomAuthService');
     }
+  }
+
+  Future<void> _clearCachedUser() async {
+    try {
+      await _secureStorage.delete(key: _userDataKey);
+    } catch (_) {}
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_userDataBackupKey);
+    } catch (_) {}
   }
 
   /// Get cached user without making API call - tries secure storage first, then SharedPreferences
@@ -812,6 +871,40 @@ class CustomAuthNotifier extends StateNotifier<AuthState> {
             name: 'CustomAuthNotifier');
 
         if (cachedUser != null) {
+          if (!cachedUser.emailVerified) {
+            developer.log(
+                'Auth init: cached user is unverified, confirming with API before authenticating',
+                name: 'CustomAuthNotifier');
+            try {
+              final verifiedUser =
+                  await _authService.getCurrentUser(clearTokenOn401: false);
+              if (verifiedUser != null) {
+                state = AuthState(
+                    status: AuthStatus.authenticated, user: verifiedUser);
+                developer.log(
+                    'Auth init: confirmed cached unverified user against API ${verifiedUser.email}',
+                    name: 'CustomAuthNotifier');
+                return;
+              }
+            } on AuthEmailVerificationRequiredException catch (e) {
+              await _authService.signOut();
+              state = AuthState(
+                status: AuthStatus.unauthenticated,
+                error: e.message,
+                pendingVerificationEmail: e.email,
+                verificationEmailSent: e.emailSent,
+              );
+              return;
+            } catch (e) {
+              developer.log(
+                  'Auth init: unable to verify cached unverified user, keeping session signed out: $e',
+                  name: 'CustomAuthNotifier');
+              await _authService.signOut();
+              state = const AuthState(status: AuthStatus.unauthenticated);
+              return;
+            }
+          }
+
           // Immediately authenticate with cached user
           state = AuthState(status: AuthStatus.authenticated, user: cachedUser);
           developer.log(
@@ -853,7 +946,7 @@ class CustomAuthNotifier extends StateNotifier<AuthState> {
       // On error, try to use cached user if available
       try {
         final cachedUser = await _authService.getCachedUser();
-        if (cachedUser != null) {
+        if (cachedUser != null && cachedUser.emailVerified) {
           developer.log(
               'Auth init: using cached user after error ${cachedUser.email}',
               name: 'CustomAuthNotifier');
@@ -874,6 +967,17 @@ class CustomAuthNotifier extends StateNotifier<AuthState> {
         developer.log('Auth: refreshed user in background ${user.email}',
             name: 'CustomAuthNotifier');
       }
+    } on AuthEmailVerificationRequiredException catch (e) {
+      developer.log(
+          'Auth: signing out unverified user after refresh requirement ${e.email}',
+          name: 'CustomAuthNotifier');
+      await _authService.signOut();
+      state = AuthState(
+        status: AuthStatus.unauthenticated,
+        error: e.message,
+        pendingVerificationEmail: e.email,
+        verificationEmailSent: e.emailSent,
+      );
     } catch (e) {
       // Silently ignore background refresh errors - user stays logged in with cached data
       developer.log('Auth: background refresh failed (ignored): $e',
@@ -895,6 +999,14 @@ class CustomAuthNotifier extends StateNotifier<AuthState> {
         displayName: displayName,
       );
       state = AuthState(status: AuthStatus.authenticated, user: user);
+    } on AuthEmailVerificationRequiredException catch (e) {
+      state = AuthState(
+        status: AuthStatus.unauthenticated,
+        error: e.message,
+        pendingVerificationEmail: e.email,
+        verificationEmailSent: e.emailSent,
+      );
+      rethrow;
     } on AuthException catch (e) {
       state = AuthState(status: AuthStatus.error, error: e.message);
       rethrow;
@@ -928,6 +1040,14 @@ class CustomAuthNotifier extends StateNotifier<AuthState> {
       } else if (result.success && result.user != null) {
         state = AuthState(status: AuthStatus.authenticated, user: result.user);
       }
+    } on AuthEmailVerificationRequiredException catch (e) {
+      state = AuthState(
+        status: AuthStatus.unauthenticated,
+        error: e.message,
+        pendingVerificationEmail: e.email,
+        verificationEmailSent: e.emailSent,
+      );
+      rethrow;
     } on AuthException catch (e) {
       state = AuthState(status: AuthStatus.error, error: e.message);
       rethrow;
@@ -961,6 +1081,10 @@ class CustomAuthNotifier extends StateNotifier<AuthState> {
     state = const AuthState(status: AuthStatus.unauthenticated);
   }
 
+  void clearPendingVerification() {
+    state = const AuthState(status: AuthStatus.unauthenticated);
+  }
+
   Future<void> refresh() async {
     await _init();
   }
@@ -982,4 +1106,15 @@ class AuthException implements Exception {
 
   @override
   String toString() => message;
+}
+
+class AuthEmailVerificationRequiredException extends AuthException {
+  final String email;
+  final bool emailSent;
+
+  AuthEmailVerificationRequiredException(
+    this.email, {
+    String message = 'Please verify your email before continuing.',
+    this.emailSent = false,
+  }) : super(message);
 }

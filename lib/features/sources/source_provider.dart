@@ -66,6 +66,10 @@ class SourceNotifier extends StateNotifier<List<Source>> {
         if (mimeType is String && mimeType.trim().isNotEmpty) {
           metadata['mimeType'] = mimeType.trim();
         }
+        final url = sourceData['url'];
+        if (url is String && url.trim().isNotEmpty) {
+          metadata['url'] = url.trim();
+        }
 
         return Source(
           id: sourceData['id'] as String,
@@ -254,6 +258,10 @@ class SourceNotifier extends StateNotifier<List<Source>> {
                         sourceData['mime_type'] ?? sourceData['mimeType'];
                     if (mimeType is String && mimeType.trim().isNotEmpty) {
                       metadata['mimeType'] = mimeType.trim();
+                    }
+                    final url = sourceData['url'];
+                    if (url is String && url.trim().isNotEmpty) {
+                      metadata['url'] = url.trim();
                     }
                     return metadata;
                   }()

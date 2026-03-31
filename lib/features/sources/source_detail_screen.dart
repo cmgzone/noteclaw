@@ -170,6 +170,8 @@ class SourceDetailScreen extends ConsumerWidget {
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
               child: _DetailBody(
+                  key: ValueKey(
+                      '${source.id}:${source.content.hashCode}:${source.metadata.hashCode}'),
                   source: source,
                   highlightChunkId: highlightChunkId,
                   highlightSnippet: highlightSnippet),
@@ -202,7 +204,10 @@ class _ChunkItem {
 
 class _DetailBody extends ConsumerStatefulWidget {
   const _DetailBody(
-      {required this.source, this.highlightChunkId, this.highlightSnippet});
+      {super.key,
+      required this.source,
+      this.highlightChunkId,
+      this.highlightSnippet});
   final Source source;
   final String? highlightChunkId;
   final String? highlightSnippet;
@@ -212,11 +217,17 @@ class _DetailBody extends ConsumerStatefulWidget {
 }
 
 class _DetailBodyState extends ConsumerState<_DetailBody> {
+  static const String _mobilePreviewUserAgent =
+      'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 '
+      '(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36';
+
   final ScrollController _scroll = ScrollController();
   List<_ChunkItem> _chunks = [];
   int _highlightIndex = -1;
   WebViewController? _htmlPreviewController;
   String? _htmlPreviewDocument;
+  Uri? _previewUrl;
+  int _htmlPreviewLoadToken = 0;
   _SourceViewMode _viewMode = _SourceViewMode.code;
   bool _isHtmlPreviewLoading = false;
   bool _htmlPreviewError = false;
@@ -228,9 +239,42 @@ class _DetailBodyState extends ConsumerState<_DetailBody> {
     _loadChunks();
   }
 
+  @override
+  void didUpdateWidget(covariant _DetailBody oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    final sourceChanged = oldWidget.source.id != widget.source.id ||
+        oldWidget.source.content != widget.source.content ||
+        oldWidget.source.type != widget.source.type ||
+        oldWidget.source.metadata.toString() != widget.source.metadata.toString();
+
+    final highlightChanged =
+        oldWidget.highlightChunkId != widget.highlightChunkId ||
+            oldWidget.highlightSnippet != widget.highlightSnippet;
+
+    if (sourceChanged) {
+      _initializeHtmlPreview();
+      _loadChunks();
+    } else if (highlightChanged) {
+      setState(() {
+        _highlightIndex = _findHighlightIndex();
+      });
+    }
+  }
+
   void _initializeHtmlPreview() {
+    final previewToken = ++_htmlPreviewLoadToken;
+    _previewUrl = null;
     _htmlPreviewDocument = widget.source.renderableHtmlDocument;
-    if (_htmlPreviewDocument == null || _htmlPreviewDocument!.isEmpty) {
+    final sourceUrl = widget.source.sourceUrl;
+    if ((sourceUrl != null && sourceUrl.isNotEmpty) && widget.source.type == 'url') {
+      _previewUrl = Uri.tryParse(sourceUrl);
+    }
+
+    final hasHtmlDocument =
+        _htmlPreviewDocument != null && _htmlPreviewDocument!.isNotEmpty;
+    final hasPreviewUrl = _previewUrl != null;
+    if (!hasHtmlDocument && !hasPreviewUrl) {
       _viewMode = _SourceViewMode.code;
       _htmlPreviewController = null;
       _isHtmlPreviewLoading = false;
@@ -251,22 +295,90 @@ class _DetailBodyState extends ConsumerState<_DetailBody> {
     _htmlPreviewError = false;
     _htmlPreviewController = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setBackgroundColor(Colors.white)
+      ..setUserAgent(_mobilePreviewUserAgent)
       ..setNavigationDelegate(
         NavigationDelegate(
-          onPageFinished: (_) {
+          onPageFinished: (_) async {
+            if (previewToken != _htmlPreviewLoadToken) return;
+            await _normalizePreviewLayout();
             if (!mounted) return;
+            if (previewToken != _htmlPreviewLoadToken) return;
             setState(() => _isHtmlPreviewLoading = false);
           },
           onWebResourceError: (_) {
             if (!mounted) return;
+            if (previewToken != _htmlPreviewLoadToken) return;
             setState(() {
               _htmlPreviewError = true;
               _isHtmlPreviewLoading = false;
             });
           },
         ),
-      )
-      ..loadHtmlString(_htmlPreviewDocument!);
+      );
+
+    if (hasPreviewUrl) {
+      _htmlPreviewController!.loadRequest(_previewUrl!);
+    } else {
+      _htmlPreviewController!.loadHtmlString(_htmlPreviewDocument!);
+    }
+  }
+
+  Future<void> _normalizePreviewLayout() async {
+    final controller = _htmlPreviewController;
+    if (controller == null) return;
+
+    try {
+      await controller.runJavaScript('''
+(() => {
+  const head = document.head || document.getElementsByTagName('head')[0];
+  if (head && !document.querySelector('meta[name="viewport"]')) {
+    const meta = document.createElement('meta');
+    meta.name = 'viewport';
+    meta.content = 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no';
+    head.appendChild(meta);
+  }
+
+  let style = document.getElementById('noteclaw-preview-runtime-style');
+  if (!style) {
+    style = document.createElement('style');
+    style.id = 'noteclaw-preview-runtime-style';
+    style.textContent = `
+      html, body, *, *::before, *::after {
+        width: 100% !important;
+        max-width: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        overflow-x: hidden !important;
+        writing-mode: horizontal-tb !important;
+        text-orientation: mixed !important;
+      }
+
+      body {
+        min-height: 100vh;
+        word-break: normal !important;
+        overflow-wrap: anywhere !important;
+      }
+
+      img, video, canvas, svg, iframe, table, pre, code {
+        max-width: 100% !important;
+      }
+
+      * {
+        max-inline-size: 100%;
+      }
+
+      body { touch-action: manipulation; }
+    `;
+    if (head) {
+      head.appendChild(style);
+    }
+  }
+})();
+''');
+    } catch (_) {
+      // Best-effort normalization only.
+    }
   }
 
   Future<void> _loadChunks() async {
@@ -329,7 +441,9 @@ class _DetailBodyState extends ConsumerState<_DetailBody> {
     final scheme = Theme.of(context).colorScheme;
     final isMediaSource =
         widget.source.type == 'image' || widget.source.type == 'video';
-    final supportsHtmlPreview = _htmlPreviewDocument != null;
+    final supportsHtmlPreview =
+        (_htmlPreviewDocument != null && _htmlPreviewDocument!.isNotEmpty) ||
+        _previewUrl != null;
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(12),
@@ -374,6 +488,11 @@ class _DetailBodyState extends ConsumerState<_DetailBody> {
   Widget _buildStandardSourceBody(BuildContext context) {
     return Column(
       children: [
+        if (widget.source.isHtmlSource)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+            child: _buildHtmlAsTextNotice(context),
+          ),
         if (widget.highlightSnippet != null && widget.highlightSnippet!.isNotEmpty)
           Padding(
             padding: const EdgeInsets.all(16),
@@ -423,67 +542,91 @@ class _DetailBodyState extends ConsumerState<_DetailBody> {
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: scheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: scheme.outline.withValues(alpha: 0.12),
         ),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: scheme.primary.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(
-              Icons.web_asset_outlined,
-              size: 18,
-              color: scheme.primary,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Website Source',
-                  style: textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
+          Row(
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: scheme.primary.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
                 ),
-                Text(
-                  previewAvailable
-                      ? 'Switch between a live preview and the saved code.'
-                      : 'Preview is not available on this platform, so code view is shown.',
-                  style: textTheme.bodySmall?.copyWith(
-                    color: scheme.onSurface.withValues(alpha: 0.65),
-                  ),
+                child: Icon(
+                  Icons.web_asset_outlined,
+                  size: 18,
+                  color: scheme.primary,
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Website Source',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      previewAvailable
+                          ? 'Preview and code'
+                          : 'Code view only on this platform',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurface.withValues(alpha: 0.65),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 12),
+          const SizedBox(height: 10),
           Wrap(
             spacing: 8,
+            runSpacing: 8,
             children: [
+              if (previewAvailable)
+                ChoiceChip(
+                  label: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.smartphone, size: 16),
+                      SizedBox(width: 6),
+                      Text('Preview'),
+                    ],
+                  ),
+                  selected: _viewMode == _SourceViewMode.preview,
+                  onSelected: (selected) {
+                    if (!selected) return;
+                    setState(() => _viewMode = _SourceViewMode.preview);
+                  },
+                ),
               ChoiceChip(
-                label: const Text('Preview'),
-                selected: _viewMode == _SourceViewMode.preview,
-                onSelected: previewAvailable
-                    ? (selected) {
-                        if (!selected) return;
-                        setState(() => _viewMode = _SourceViewMode.preview);
-                      }
-                    : null,
-              ),
-              ChoiceChip(
-                label: const Text('Code'),
+                label: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.code, size: 16),
+                    SizedBox(width: 6),
+                    Text('Code'),
+                  ],
+                ),
                 selected: _viewMode == _SourceViewMode.code,
                 onSelected: (selected) {
                   if (!selected) return;
@@ -501,6 +644,9 @@ class _DetailBodyState extends ConsumerState<_DetailBody> {
     final scheme = Theme.of(context).colorScheme;
 
     if (_htmlPreviewDocument == null || _htmlPreviewDocument!.isEmpty) {
+      if (_previewUrl != null) {
+        return _buildLiveWebsitePreview(context, scheme);
+      }
       return _buildHtmlPreviewUnavailableCard(
         context,
         message: 'This source does not contain a renderable HTML document yet.',
@@ -526,10 +672,91 @@ class _DetailBodyState extends ConsumerState<_DetailBody> {
             _htmlPreviewError = false;
             _isHtmlPreviewLoading = true;
           });
-          _htmlPreviewController!.loadHtmlString(_htmlPreviewDocument!);
+          if (_previewUrl != null) {
+            _htmlPreviewController!.loadRequest(_previewUrl!);
+          } else if (_htmlPreviewDocument != null) {
+            _htmlPreviewController!.loadHtmlString(_htmlPreviewDocument!);
+          }
         },
       );
     }
+
+    Widget content = Stack(
+      children: [
+        Positioned.fill(
+          child: WebViewWidget(controller: _htmlPreviewController!),
+        ),
+        if (_isHtmlPreviewLoading)
+          Positioned.fill(
+            child: ColoredBox(
+              color: scheme.surface.withValues(alpha: 0.86),
+              child: const Center(
+                child: CircularProgressIndicator(),
+              ),
+            ),
+        ),
+      ],
+    );
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final availableWidth =
+            constraints.maxWidth.isFinite ? constraints.maxWidth : 375.0;
+        final previewWidth = availableWidth.clamp(240.0, 430.0).toDouble();
+
+        return Center(
+          child: Container(
+            width: previewWidth,
+            margin: const EdgeInsets.symmetric(vertical: 8),
+            decoration: BoxDecoration(
+              color: scheme.surface,
+              borderRadius: BorderRadius.circular(previewWidth < 300 ? 24 : 28),
+              border: Border.all(
+                color: scheme.outline.withValues(alpha: 0.3),
+                width: previewWidth < 300 ? 5 : 8,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.1),
+                  blurRadius: 20,
+                  offset: const Offset(0, 10),
+                ),
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(previewWidth < 300 ? 18 : 24),
+              child: content,
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildLiveWebsitePreview(BuildContext context, ColorScheme scheme) {
+    if (_previewUrl == null) {
+      return _buildHtmlPreviewUnavailableCard(
+        context,
+        message: 'No website URL is available for preview.',
+      );
+    }
+
+    Widget content = Stack(
+      children: [
+        Positioned.fill(
+          child: WebViewWidget(controller: _htmlPreviewController!),
+        ),
+        if (_isHtmlPreviewLoading)
+          Positioned.fill(
+            child: ColoredBox(
+              color: scheme.surface.withValues(alpha: 0.86),
+              child: const Center(
+                child: CircularProgressIndicator(),
+              ),
+            ),
+        ),
+      ],
+    );
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(16),
@@ -540,22 +767,7 @@ class _DetailBodyState extends ConsumerState<_DetailBody> {
             color: scheme.outline.withValues(alpha: 0.12),
           ),
         ),
-        child: Stack(
-          children: [
-            Positioned.fill(
-              child: WebViewWidget(controller: _htmlPreviewController!),
-            ),
-            if (_isHtmlPreviewLoading)
-              Positioned.fill(
-                child: ColoredBox(
-                  color: scheme.surface.withValues(alpha: 0.86),
-                  child: const Center(
-                    child: CircularProgressIndicator(),
-                  ),
-                ),
-              ),
-          ],
-        ),
+        child: content,
       ),
     );
   }
@@ -610,6 +822,43 @@ class _DetailBodyState extends ConsumerState<_DetailBody> {
               child: Text(actionLabel),
             ),
           ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHtmlAsTextNotice(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: scheme.outline.withValues(alpha: 0.12),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.info_outline,
+            size: 18,
+            color: scheme.primary,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'This source is marked as HTML, but the saved content is extracted text rather than a full HTML document. Showing the source in a readable code/text view instead of the broken preview.',
+              style: textTheme.bodySmall?.copyWith(
+                color: scheme.onSurface.withValues(alpha: 0.72),
+                height: 1.45,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -940,13 +1189,23 @@ class _DetailBodyState extends ConsumerState<_DetailBody> {
           color: scheme.outline.withValues(alpha: 0.12),
         ),
       ),
-      child: SelectableText(
-        text,
-        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              fontFamily: 'monospace',
-              height: 1.55,
-              color: scheme.onSurface.withValues(alpha: 0.9),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          return SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minWidth: constraints.maxWidth),
+              child: SelectableText(
+                text,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontFamily: 'monospace',
+                      height: 1.55,
+                      color: scheme.onSurface.withValues(alpha: 0.9),
+                    ),
+              ),
             ),
+          );
+        },
       ),
     );
   }
@@ -970,13 +1229,23 @@ class _DetailBodyState extends ConsumerState<_DetailBody> {
                 color: scheme.outline.withValues(alpha: 0.12),
               ),
             ),
-      child: SelectableText.rich(
-        TextSpan(children: [contentSpan]),
-        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              fontFamily: 'monospace',
-              height: 1.55,
-              color: scheme.onSurface.withValues(alpha: 0.9),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          return SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minWidth: constraints.maxWidth),
+              child: SelectableText.rich(
+                TextSpan(children: [contentSpan]),
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontFamily: 'monospace',
+                      height: 1.55,
+                      color: scheme.onSurface.withValues(alpha: 0.9),
+                    ),
+              ),
             ),
+          );
+        },
       ),
     );
   }

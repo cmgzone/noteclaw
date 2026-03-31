@@ -1,14 +1,10 @@
 import pool from '../config/database.js';
-import crypto from 'crypto';
+import bcrypt from 'bcryptjs';
 
 // Configuration - Change these values
 const ADMIN_EMAIL = 'admin@example.com';
 const ADMIN_PASSWORD = 'admin123'; // Change this!
 const ADMIN_NAME = 'Admin User';
-
-function hashPassword(password: string, salt: string): string {
-    return crypto.pbkdf2Sync(password, salt, 10000, 64, 'sha512').toString('hex');
-}
 
 async function createAdmin() {
     const client = await pool.connect();
@@ -38,8 +34,8 @@ async function createAdmin() {
         }
 
         // Create new admin user
-        const salt = crypto.randomBytes(16).toString('hex');
-        const passwordHash = hashPassword(ADMIN_PASSWORD, salt);
+        const salt = await bcrypt.genSalt(10);
+        const passwordHash = await bcrypt.hash(ADMIN_PASSWORD, salt);
 
         await client.query(`
             INSERT INTO users (email, display_name, password_hash, password_salt, role, email_verified)

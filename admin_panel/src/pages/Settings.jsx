@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import api from '../lib/api';
-import { CreditCard, Shield, Save, Plus, Trash2, Key, Loader2, Upload, FileText, Zap } from 'lucide-react';
+import { CreditCard, Shield, Save, Plus, Trash2, Key, Loader2, Upload, FileText, Zap, Mail } from 'lucide-react';
 
 export default function Settings() {
     const [apiKeys, setApiKeys] = useState([]);
@@ -8,7 +8,6 @@ export default function Settings() {
     const [saving, setSaving] = useState(false);
     const [envContent, setEnvContent] = useState('');
     const [showEnvImport, setShowEnvImport] = useState(false);
-
     // New API Key Form
     const [newKeyService, setNewKeyService] = useState('');
     const [newKeyValue, setNewKeyValue] = useState('');
@@ -19,6 +18,14 @@ export default function Settings() {
     const [stripePublishableKey, setStripePublishableKey] = useState('');
     const [stripeSecretKey, setStripeSecretKey] = useState('');
 
+    // Resend Configuration
+    const [resendApiKey, setResendApiKey] = useState('');
+    const [resendFromEmail, setResendFromEmail] = useState('');
+    const [resendFromName, setResendFromName] = useState('');
+    const [resendReplyToEmail, setResendReplyToEmail] = useState('');
+    const [publicAppUrl, setPublicAppUrl] = useState('');
+    const [requireEmailVerification, setRequireEmailVerification] = useState(false);
+
     useEffect(() => {
         fetchData();
     }, []);
@@ -26,11 +33,28 @@ export default function Settings() {
     const fetchData = async () => {
         setLoading(true);
         try {
-            const response = await api.getApiKeys();
-            setApiKeys(response.apiKeys || []);
+            const [keysResponse, settingsResponse] = await Promise.all([
+                api.getApiKeys(),
+                api.getSettings([
+                    'resend_from_email',
+                    'resend_from_name',
+                    'resend_reply_to_email',
+                    'public_app_url',
+                    'require_email_verification',
+                ]),
+            ]);
+            const nextSettings = settingsResponse.settings || {};
+            setApiKeys(keysResponse.apiKeys || []);
+            setResendFromEmail(nextSettings.resend_from_email || '');
+            setResendFromName(nextSettings.resend_from_name || '');
+            setResendReplyToEmail(nextSettings.resend_reply_to_email || '');
+            setPublicAppUrl(nextSettings.public_app_url || '');
+            setRequireEmailVerification(
+                String(nextSettings.require_email_verification || '').toLowerCase() === 'true',
+            );
         } catch (error) {
             console.error(error);
-            alert('Failed to fetch API keys');
+            alert('Failed to fetch settings');
         } finally {
             setLoading(false);
         }
@@ -92,12 +116,22 @@ export default function Settings() {
                 'MURF_API_KEY': 'murf',
                 'GOOGLE_CLOUD_TTS_API_KEY': 'google_cloud_tts',
                 'OPENROUTER_API_KEY': 'openrouter',
+                'RESEND_API_KEY': 'resend',
                 'SERPER_API_KEY': 'serper',
                 'DEEPGRAM_API_KEY': 'deepgram',
                 'PAYPAL_CLIENT_ID': 'paypal_client_id',
                 'PAYPAL_SECRET': 'paypal_secret',
                 'STRIPE_PUBLISHABLE_KEY': 'stripe_publishable_key',
                 'STRIPE_SECRET_KEY': 'stripe_secret_key',
+            };
+
+            const settingMap = {
+                'RESEND_FROM_EMAIL': 'resend_from_email',
+                'RESEND_FROM_NAME': 'resend_from_name',
+                'RESEND_REPLY_TO_EMAIL': 'resend_reply_to_email',
+                'PUBLIC_APP_URL': 'public_app_url',
+                'WEB_APP_URL': 'public_app_url',
+                'REQUIRE_EMAIL_VERIFICATION': 'require_email_verification',
             };
 
             for (const line of lines) {
@@ -107,9 +141,14 @@ export default function Settings() {
                 const match = trimmed.match(/^([A-Z_]+)=(.+)$/);
                 if (match) {
                     const [, envKey, value] = match;
+                    const cleanedValue = value.replace(/^["']|["']$/g, '');
                     const serviceName = serviceMap[envKey];
-                    if (serviceName && value) {
-                        await api.setApiKey(serviceName, value.replace(/^["']|["']$/g, ''), `${serviceName} API Key`);
+                    const settingKey = settingMap[envKey];
+                    if (serviceName && cleanedValue) {
+                        await api.setApiKey(serviceName, cleanedValue, `${serviceName} API Key`);
+                        imported++;
+                    } else if (settingKey) {
+                        await api.updateSetting(settingKey, cleanedValue);
                         imported++;
                     }
                 }
@@ -126,6 +165,54 @@ export default function Settings() {
             setSaving(false);
         }
     };
+
+    const saveResendConfiguration = async (e) => {
+        e.preventDefault();
+
+        if (!resendFromEmail.trim()) {
+            alert('Resend from email is required');
+            return;
+        }
+
+        if (!publicAppUrl.trim()) {
+            alert('Public app URL is required');
+            return;
+        }
+
+        setSaving(true);
+        try {
+            const updates = [
+                api.updateSetting('resend_from_email', resendFromEmail.trim()),
+                api.updateSetting('resend_from_name', resendFromName.trim()),
+                api.updateSetting('resend_reply_to_email', resendReplyToEmail.trim()),
+                api.updateSetting('public_app_url', publicAppUrl.trim()),
+                api.updateSetting(
+                    'require_email_verification',
+                    requireEmailVerification ? 'true' : 'false',
+                ),
+            ];
+
+            if (resendApiKey.trim()) {
+                updates.push(
+                    api.setApiKey('resend', resendApiKey.trim(), 'Resend API Key'),
+                );
+            }
+
+            await Promise.all(updates);
+            setResendApiKey('');
+            await fetchData();
+            alert('Resend configuration saved!');
+        } catch (error) {
+            console.error(error);
+            alert('Failed to save Resend configuration: ' + error.message);
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const resendApiKeyConfigured = apiKeys.some((key) => key.service_name === 'resend');
+    const resendSenderConfigured = resendFromEmail.trim().length > 0;
+    const resendLinkingConfigured = publicAppUrl.trim().length > 0;
 
     if (loading) return (
         <div className="flex items-center justify-center h-64">
@@ -186,10 +273,122 @@ export default function Settings() {
                             </button>
                         </div>
                         <p className="mt-2 text-xs text-muted-foreground">
-                            Supported: GEMINI_API_KEY, PAYPAL_CLIENT_ID, PAYPAL_SECRET, STRIPE_*, ELEVENLABS_*, OPENROUTER_*, SERPER_*, DEEPGRAM_*
+                            Supported: GEMINI_API_KEY, RESEND_API_KEY, RESEND_FROM_*, WEB_APP_URL, PAYPAL_CLIENT_ID, PAYPAL_SECRET, STRIPE_*, ELEVENLABS_*, OPENROUTER_*, SERPER_*, DEEPGRAM_*
                         </p>
                     </div>
                 )}
+
+                {/* Resend Configuration */}
+                <form onSubmit={saveResendConfiguration} className="bg-muted/50 p-4 rounded-md border border-border mb-6">
+                    <div className="flex items-start justify-between gap-4 mb-4">
+                        <div>
+                            <h3 className="text-lg font-semibold flex items-center">
+                                <Mail className="mr-2 h-5 w-5" />
+                                Resend Email Configuration
+                            </h3>
+                            <p className="text-sm text-muted-foreground mt-1">
+                                Used for verification emails and password reset links.
+                            </p>
+                        </div>
+                        <div className="text-right text-xs space-y-1">
+                            <p className={resendApiKeyConfigured ? 'text-green-600' : 'text-amber-600'}>
+                                {resendApiKeyConfigured ? 'API key configured' : 'API key missing'}
+                            </p>
+                            <p className={resendSenderConfigured ? 'text-green-600' : 'text-amber-600'}>
+                                {resendSenderConfigured ? 'Sender email configured' : 'Sender email missing'}
+                            </p>
+                            <p className={resendLinkingConfigured ? 'text-green-600' : 'text-amber-600'}>
+                                {resendLinkingConfigured ? 'Public app URL configured' : 'Public app URL missing'}
+                            </p>
+                        </div>
+                    </div>
+
+                    <div className="grid gap-4 md:grid-cols-2">
+                        <div className="md:col-span-2">
+                            <label className="block text-sm font-medium mb-1">Resend API Key</label>
+                            <input
+                                type="password"
+                                className="w-full rounded-md border border-border bg-background p-2 font-mono text-sm"
+                                placeholder={resendApiKeyConfigured ? 'Configured. Paste a new key to replace it.' : 're_...'}
+                                value={resendApiKey}
+                                onChange={(e) => setResendApiKey(e.target.value)}
+                            />
+                            <p className="mt-1 text-xs text-muted-foreground">
+                                The key is stored encrypted in the backend.
+                            </p>
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium mb-1">From Email</label>
+                            <input
+                                type="email"
+                                className="w-full rounded-md border border-border bg-background p-2"
+                                placeholder="hello@yourdomain.com"
+                                value={resendFromEmail}
+                                onChange={(e) => setResendFromEmail(e.target.value)}
+                            />
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium mb-1">From Name</label>
+                            <input
+                                type="text"
+                                className="w-full rounded-md border border-border bg-background p-2"
+                                placeholder="NoteClaw"
+                                value={resendFromName}
+                                onChange={(e) => setResendFromName(e.target.value)}
+                            />
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium mb-1">Reply-To Email</label>
+                            <input
+                                type="email"
+                                className="w-full rounded-md border border-border bg-background p-2"
+                                placeholder="support@yourdomain.com"
+                                value={resendReplyToEmail}
+                                onChange={(e) => setResendReplyToEmail(e.target.value)}
+                            />
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium mb-1">Public App URL</label>
+                            <input
+                                type="url"
+                                className="w-full rounded-md border border-border bg-background p-2"
+                                placeholder="https://app.noteclaw.com"
+                                value={publicAppUrl}
+                                onChange={(e) => setPublicAppUrl(e.target.value)}
+                            />
+                        </div>
+                    </div>
+
+                    <div className="mt-4 flex items-center justify-between gap-4 flex-wrap">
+                        <label className="flex items-center gap-3 text-sm font-medium text-foreground">
+                            <input
+                                type="checkbox"
+                                className="h-4 w-4 rounded border-border"
+                                checked={requireEmailVerification}
+                                onChange={(e) => setRequireEmailVerification(e.target.checked)}
+                            />
+                            Require verified email before sign-in
+                        </label>
+                    </div>
+
+                    <div className="mt-4 flex items-center justify-between gap-4 flex-wrap">
+                        <p className="text-xs text-muted-foreground">
+                            Verification links will use <span className="font-mono">/verify-email/:token</span> and password resets will use <span className="font-mono">/password-reset/:token</span> on your public app URL.
+                        </p>
+                        <button
+                            type="submit"
+                            disabled={saving}
+                            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                        >
+                            {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                            Save Resend Config
+                        </button>
+                    </div>
+                </form>
 
                 {/* PayPal Configuration */}
                 <div className="bg-muted/50 p-4 rounded-md border border-border mb-6">

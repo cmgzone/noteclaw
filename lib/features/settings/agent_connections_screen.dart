@@ -818,12 +818,23 @@ class _AgentMemoryViewerDialogState extends State<_AgentMemoryViewerDialog>
   late final TabController _tabController;
   final TextEditingController _searchController = TextEditingController();
   String _query = '';
+  int _selectedNamespaceIndex = 0;
 
   @override
   void initState() {
     super.initState();
     _namespaces = widget.memoryByNamespace.keys.toList(growable: false);
     _tabController = TabController(length: _namespaces.length, vsync: this);
+    _tabController.addListener(() {
+      if (!mounted || _tabController.indexIsChanging) {
+        return;
+      }
+      if (_selectedNamespaceIndex != _tabController.index) {
+        setState(() {
+          _selectedNamespaceIndex = _tabController.index;
+        });
+      }
+    });
     _searchController.addListener(() {
       setState(() {
         _query = _searchController.text.trim().toLowerCase();
@@ -860,6 +871,14 @@ class _AgentMemoryViewerDialogState extends State<_AgentMemoryViewerDialog>
       .where((stats) => (stats['longTermStatus'] as String?) == 'durable')
       .length;
 
+  String get _selectedNamespace {
+    if (_namespaces.isEmpty) {
+      return 'default';
+    }
+    final safeIndex = _selectedNamespaceIndex.clamp(0, _namespaces.length - 1);
+    return _namespaces[safeIndex];
+  }
+
   String _namespaceLabel(String namespace) {
     final stats = _namespaceStats(namespace);
     final history = (stats['historyLength'] as int?) ?? 0;
@@ -886,7 +905,7 @@ class _AgentMemoryViewerDialogState extends State<_AgentMemoryViewerDialog>
 
   Future<void> _copyCurrentNamespace() async {
     if (_namespaces.isEmpty) return;
-    final namespace = _namespaces[_tabController.index];
+    final namespace = _selectedNamespace;
     final text = _namespaceText(namespace);
     await Clipboard.setData(ClipboardData(text: text));
     if (!mounted) return;
@@ -898,49 +917,288 @@ class _AgentMemoryViewerDialogState extends State<_AgentMemoryViewerDialog>
     );
   }
 
+  void _selectNamespace(String? namespace) {
+    if (namespace == null || _namespaces.isEmpty) {
+      return;
+    }
+    final index = _namespaces.indexOf(namespace);
+    if (index < 0) {
+      return;
+    }
+    setState(() {
+      _selectedNamespaceIndex = index;
+    });
+    if (_tabController.index != index) {
+      _tabController.animateTo(index);
+    }
+  }
+
+  Widget _buildMetricCards(
+    BuildContext context,
+    ColorScheme scheme,
+    String? updatedAt, {
+    required bool compact,
+  }) {
+    final cards = [
+      SizedBox(
+        width: compact ? 170 : 170,
+        child: _SummaryMetricCard(
+          icon: LucideIcons.layers,
+          label: 'Namespaces',
+          value: _namespaces.length.toString(),
+          subtitle: '$_durableNamespaces durable',
+          color: scheme.primary,
+        ),
+      ),
+      SizedBox(
+        width: compact ? 170 : 170,
+        child: _SummaryMetricCard(
+          icon: LucideIcons.history,
+          label: 'History',
+          value: _totalHistoryItems.toString(),
+          subtitle: 'Persistent timeline items',
+          color: const Color(0xFF6366F1),
+        ),
+      ),
+      SizedBox(
+        width: compact ? 170 : 170,
+        child: _SummaryMetricCard(
+          icon: LucideIcons.archive,
+          label: 'Checkpoints',
+          value: _totalCheckpoints.toString(),
+          subtitle: updatedAt != null && updatedAt.isNotEmpty
+              ? 'Updated ${updatedAt.length > 24 ? '${updatedAt.substring(0, 24)}...' : updatedAt}'
+              : 'Awaiting long-term summaries',
+          color: const Color(0xFF14B8A6),
+        ),
+      ),
+    ];
+
+    if (compact) {
+      return SizedBox(
+        height: 164,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          itemCount: cards.length,
+          separatorBuilder: (_, __) => const SizedBox(width: 12),
+          itemBuilder: (context, index) => cards[index],
+        ),
+      );
+    }
+
+    return Wrap(
+      spacing: 12,
+      runSpacing: 12,
+      children: cards,
+    );
+  }
+
+  Widget _buildNamespacePanel(
+    BuildContext context,
+    String namespace, {
+    required bool compact,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    final fullText = _namespaceText(namespace);
+    final display = _filteredText(fullText);
+    final stats = _namespaceStats(namespace);
+    final longTermStatus = stats['longTermStatus'] as String? ?? 'empty';
+
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.all(compact ? 10 : 12),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.3),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _MemoryInfoChip(
+                label: '${(stats['fieldCount'] as int?) ?? 0} fields',
+                color: scheme.primary,
+              ),
+              _MemoryInfoChip(
+                label: '${(stats['historyLength'] as int?) ?? 0} history',
+                color: const Color(0xFF6366F1),
+              ),
+              _MemoryInfoChip(
+                label: '${(stats['checkpointCount'] as int?) ?? 0} checkpoints',
+                color: const Color(0xFF14B8A6),
+              ),
+              _MemoryInfoChip(
+                label: longTermStatus.toUpperCase(),
+                color: longTermStatus == 'durable'
+                    ? const Color(0xFF22C55E)
+                    : longTermStatus == 'warming'
+                        ? const Color(0xFFF59E0B)
+                        : scheme.outline,
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Expanded(
+            child: Scrollbar(
+              thumbVisibility: !compact,
+              child: SingleChildScrollView(
+                padding: EdgeInsets.only(bottom: compact ? 24 : 0),
+                child: SelectableText(
+                  display,
+                  style: TextStyle(
+                    fontFamily: 'monospace',
+                    fontSize: compact ? 11.5 : 12,
+                    height: 1.4,
+                    color: scheme.onSurface,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final size = MediaQuery.sizeOf(context);
     final updatedAt = widget.memoryUpdatedAt;
+    final isCompact = size.width < 720 || size.height < 760;
+
+    if (isCompact) {
+      return Dialog(
+        insetPadding: EdgeInsets.zero,
+        backgroundColor: scheme.surface,
+        child: SizedBox(
+          width: size.width,
+          height: size.height,
+          child: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 42,
+                        height: 42,
+                        decoration: BoxDecoration(
+                          color: scheme.primary.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Icon(
+                          LucideIcons.brain,
+                          size: 20,
+                          color: scheme.primary,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '${widget.session.agentName} Memory',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleLarge
+                                  ?.copyWith(fontWeight: FontWeight.w700),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Browse namespaces, search stored JSON, and copy the active memory block.',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.copyWith(color: scheme.secondaryText),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Copy namespace',
+                        onPressed: _copyCurrentNamespace,
+                        icon: const Icon(LucideIcons.copy),
+                      ),
+                      IconButton(
+                        tooltip: 'Close',
+                        onPressed: () => Navigator.pop(context),
+                        icon: const Icon(Icons.close),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  _buildMetricCards(context, scheme, updatedAt, compact: true),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _searchController,
+                    decoration: InputDecoration(
+                      isDense: true,
+                      hintText: 'Search memory JSON',
+                      prefixIcon: const Icon(LucideIcons.search, size: 16),
+                      suffixIcon: _query.isEmpty
+                          ? null
+                          : IconButton(
+                              onPressed: () => _searchController.clear(),
+                              icon: const Icon(Icons.close, size: 16),
+                            ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    value: _selectedNamespace,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Namespace',
+                      prefixIcon: Icon(LucideIcons.layers, size: 16),
+                    ),
+                    items: _namespaces
+                        .map(
+                          (namespace) => DropdownMenuItem<String>(
+                            value: namespace,
+                            child: Text(
+                              _namespaceLabel(namespace),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: _selectNamespace,
+                  ),
+                  const SizedBox(height: 12),
+                  Expanded(
+                    child: _buildNamespacePanel(
+                      context,
+                      _selectedNamespace,
+                      compact: true,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
 
     return AlertDialog(
       icon: Icon(LucideIcons.brain, size: 36, color: scheme.primary),
       title: Text('${widget.session.agentName} Memory'),
+      contentPadding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
       content: SizedBox(
-        width: 820,
+        width: size.width * 0.9 > 820 ? 820 : size.width * 0.9,
+        height: size.height * 0.8 > 680 ? 680 : size.height * 0.8,
         child: Column(
-          mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: [
-                _SummaryMetricCard(
-                  icon: LucideIcons.layers,
-                  label: 'Namespaces',
-                  value: _namespaces.length.toString(),
-                  subtitle: '$_durableNamespaces durable',
-                  color: scheme.primary,
-                ),
-                _SummaryMetricCard(
-                  icon: LucideIcons.history,
-                  label: 'History',
-                  value: _totalHistoryItems.toString(),
-                  subtitle: 'Persistent timeline items',
-                  color: const Color(0xFF6366F1),
-                ),
-                _SummaryMetricCard(
-                  icon: LucideIcons.archive,
-                  label: 'Checkpoints',
-                  value: _totalCheckpoints.toString(),
-                  subtitle: updatedAt != null && updatedAt.isNotEmpty
-                      ? 'Updated $updatedAt'
-                      : 'Awaiting long-term summaries',
-                  color: const Color(0xFF14B8A6),
-                ),
-              ],
-            ),
+            _buildMetricCards(context, scheme, updatedAt, compact: false),
             const SizedBox(height: 10),
             TextField(
               controller: _searchController,
@@ -966,77 +1224,29 @@ class _AgentMemoryViewerDialogState extends State<_AgentMemoryViewerDialog>
                 controller: _tabController,
                 isScrollable: true,
                 tabAlignment: TabAlignment.start,
+                onTap: (index) {
+                  setState(() {
+                    _selectedNamespaceIndex = index;
+                  });
+                },
                 tabs: _namespaces
                     .map((namespace) => Tab(text: _namespaceLabel(namespace)))
                     .toList(),
               ),
             ),
             const SizedBox(height: 10),
-            SizedBox(
-              height: 420,
+            Expanded(
               child: TabBarView(
                 controller: _tabController,
-                children: _namespaces.map((namespace) {
-                  final fullText = _namespaceText(namespace);
-                  final display = _filteredText(fullText);
-                  final stats = _namespaceStats(namespace);
-                  final longTermStatus =
-                      stats['longTermStatus'] as String? ?? 'empty';
-                  return Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: scheme.surfaceContainerHighest.withValues(alpha: 0.3),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: [
-                            _MemoryInfoChip(
-                              label:
-                                  '${(stats['fieldCount'] as int?) ?? 0} fields',
-                              color: scheme.primary,
-                            ),
-                            _MemoryInfoChip(
-                              label:
-                                  '${(stats['historyLength'] as int?) ?? 0} history',
-                              color: const Color(0xFF6366F1),
-                            ),
-                            _MemoryInfoChip(
-                              label:
-                                  '${(stats['checkpointCount'] as int?) ?? 0} checkpoints',
-                              color: const Color(0xFF14B8A6),
-                            ),
-                            _MemoryInfoChip(
-                              label: longTermStatus.toUpperCase(),
-                              color: longTermStatus == 'durable'
-                                  ? const Color(0xFF22C55E)
-                                  : longTermStatus == 'warming'
-                                      ? const Color(0xFFF59E0B)
-                                      : scheme.outline,
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        Expanded(
-                          child: SingleChildScrollView(
-                            child: SelectableText(
-                              display,
-                              style: TextStyle(
-                                fontFamily: 'monospace',
-                                fontSize: 12,
-                                color: scheme.onSurface,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                }).toList(),
+                children: _namespaces
+                    .map(
+                      (namespace) => _buildNamespacePanel(
+                        context,
+                        namespace,
+                        compact: false,
+                      ),
+                    )
+                    .toList(),
               ),
             ),
           ],

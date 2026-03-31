@@ -10,6 +10,7 @@ const publicRoutes = {
   '/onboarding-completion',
   '/login',
   '/password-reset',
+  '/verify-email-required',
   '/verify-email',
   '/privacy-policy',
   '/terms-of-service',
@@ -87,6 +88,19 @@ String? Function(BuildContext?, GoRouterState) createCustomAuthRedirect(
     final isLoading = authState.isLoading;
     final status = authState.status;
     final path = state.uri.path;
+    final pendingVerificationEmail = authState.pendingVerificationEmail;
+    final hasPendingVerification =
+        pendingVerificationEmail != null && pendingVerificationEmail.isNotEmpty;
+
+    if (hasPendingVerification &&
+        path != '/verify-email-required' &&
+        !path.startsWith('/verify-email/')) {
+      final encodedEmail = Uri.encodeComponent(pendingVerificationEmail!);
+      final sent = authState.verificationEmailSent ? 'true' : 'false';
+      if (path == '/login' || isProtectedRoute(path)) {
+        return '/verify-email-required?email=$encodedEmail&sent=$sent';
+      }
+    }
 
     // Don't redirect while loading or in initial state - wait for auth to complete
     if (isLoading || status == AuthStatus.initial) {

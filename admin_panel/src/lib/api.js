@@ -176,6 +176,14 @@ class ApiService {
         return this.put(`/admin/users/${userId}/status`, { isActive });
     }
 
+    async deleteUser(userId) {
+        return this.delete(`/admin/users/${userId}`);
+    }
+
+    async bulkDeleteUsers(ids) {
+        return this.post('/admin/users/bulk-delete', { ids });
+    }
+
     // ============ ADMIN - AI MODELS ============
     async getAIModels() {
         return this.get('/admin/models');
@@ -231,6 +239,45 @@ class ApiService {
         return this.delete(`/admin/plans/${id}`);
     }
 
+    // ============ ADMIN - USER CONTENT ============
+    async getAdminNotebooks(limit = 100, offset = 0, search = '') {
+        const params = new URLSearchParams({
+            limit: String(limit),
+            offset: String(offset),
+        });
+        if (search.trim()) {
+            params.set('search', search.trim());
+        }
+        return this.get(`/admin/content/notebooks?${params.toString()}`);
+    }
+
+    async deleteAdminNotebook(id) {
+        return this.delete(`/admin/content/notebooks/${id}`);
+    }
+
+    async bulkDeleteAdminNotebooks(ids) {
+        return this.post('/admin/content/notebooks/bulk-delete', { ids });
+    }
+
+    async getAdminPlans(limit = 100, offset = 0, search = '') {
+        const params = new URLSearchParams({
+            limit: String(limit),
+            offset: String(offset),
+        });
+        if (search.trim()) {
+            params.set('search', search.trim());
+        }
+        return this.get(`/admin/content/plans?${params.toString()}`);
+    }
+
+    async deleteAdminPlan(id) {
+        return this.delete(`/admin/content/plans/${id}`);
+    }
+
+    async bulkDeleteAdminPlans(ids) {
+        return this.post('/admin/content/plans/bulk-delete', { ids });
+    }
+
     // ============ ADMIN - CREDIT PACKAGES ============
     async getCreditPackages() {
         return this.get('/admin/packages');
@@ -254,7 +301,11 @@ class ApiService {
     }
 
     // ============ ADMIN - SETTINGS ============
-    async getSettings() {
+    async getSettings(keys = []) {
+        if (Array.isArray(keys) && keys.length > 0) {
+            const encodedKeys = encodeURIComponent(keys.join(','));
+            return this.get(`/admin/settings?keys=${encodedKeys}`);
+        }
         return this.get('/admin/settings');
     }
 

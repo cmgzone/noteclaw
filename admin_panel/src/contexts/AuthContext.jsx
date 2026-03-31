@@ -27,11 +27,11 @@ export function AuthProvider({ children }) {
                 }
                 setUser(response.user);
             } else {
-                api.clearToken();
+                api.clearTokens();
             }
         } catch (error) {
             console.error('Auth check failed:', error);
-            api.clearToken();
+            api.clearTokens();
         } finally {
             setLoading(false);
         }
@@ -44,7 +44,7 @@ export function AuthProvider({ children }) {
             if (response.success && response.user) {
                 // Verify user is admin
                 if (response.user.role !== 'admin') {
-                    api.clearToken();
+                    api.clearTokens();
                     throw new Error('Access denied. Admin privileges required.');
                 }
                 
@@ -60,7 +60,7 @@ export function AuthProvider({ children }) {
     };
 
     const logout = () => {
-        api.clearToken();
+        api.clearTokens();
         setUser(null);
     };
 
