@@ -2,6 +2,7 @@ import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
 import pool from '../config/database.js';
 import { generateWithGemini, generateWithOpenRouter, type ChatMessage } from './aiService.js';
+import { decryptSecretAllowLegacy } from './secretEncryptionService.js';
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -17,6 +18,16 @@ export interface ResearchConfig {
     useContextEngineering?: boolean;
     provider?: 'gemini' | 'openrouter';
     model?: string;
+}
+
+interface ResearchRuntimeOptions {
+    apiKey?: string;
+}
+
+interface ResolvedResearchAiConfig {
+    provider: 'gemini' | 'openrouter';
+    model?: string;
+    apiKey?: string;
 }
 
 export interface ResearchSource {
@@ -43,6 +54,8 @@ const ACADEMIC_DOMAINS = ['.edu', '.ac.uk', '.ac.', 'scholar.google', 'researchg
 const GOVERNMENT_DOMAINS = ['.gov', '.gov.uk', '.gov.au', '.mil'];
 const NEWS_DOMAINS = ['reuters.com', 'apnews.com', 'bbc.com', 'nytimes.com', 'wsj.com', 'theguardian.com', 'washingtonpost.com', 'bloomberg.com', 'forbes.com', 'techcrunch.com', 'wired.com'];
 const PROFESSIONAL_DOMAINS = ['microsoft.com', 'google.com', 'aws.amazon.com', 'developer.', 'docs.', 'stackoverflow.com', 'github.com', 'medium.com'];
+const DEFAULT_GEMINI_MODEL = 'gemini-2.0-flash';
+const DEFAULT_OPENROUTER_MODEL = 'meta-llama/llama-3.3-70b-instruct';
 
 function getSourceCredibility(url: string): { credibility: string; score: number } {
     const lowerUrl = url.toLowerCase();
@@ -71,6 +84,168 @@ function getDepthConfig(depth: ResearchDepth) {
         case 'standard': return { maxSources: 7, subQueryCount: 5, sourcesPerQuery: 3 };
         case 'deep': return { maxSources: 15, subQueryCount: 8, sourcesPerQuery: 5 };
     }
+}
+
+export function normalizeResearchProvider(
+    provider?: 'gemini' | 'openrouter',
+    model?: string
+): 'gemini' | 'openrouter' {
+    const normalizedModel = (model ?? '').trim().toLowerCase();
+
+    if (normalizedModel.startsWith('gemini')) {
+        return 'gemini';
+    }
+
+    if (
+        normalizedModel.includes('/')
+        || normalizedModel.startsWith('gpt-')
+        || normalizedModel.startsWith('claude-')
+        || normalizedModel.startsWith('meta-')
+        || normalizedModel.startsWith('deepseek-')
+        || normalizedModel.startsWith('mistral-')
+        || normalizedModel.startsWith('qwen-')
+    ) {
+        return 'openrouter';
+    }
+
+    return provider === 'openrouter' ? 'openrouter' : 'gemini';
+}
+
+export function resolveResearchModelForProvider(
+    provider: 'gemini' | 'openrouter',
+    model?: string
+): string | undefined {
+    const trimmed = (model ?? '').trim();
+    if (!trimmed) {
+        return undefined;
+    }
+
+    if (provider === 'gemini') {
+        const withoutVendorPrefix = trimmed.replace(/^google\//i, '');
+        const withoutTierSuffix = withoutVendorPrefix.split(':')[0];
+        return withoutTierSuffix.toLowerCase().startsWith('gemini')
+            ? withoutTierSuffix
+            : undefined;
+    }
+
+    if (trimmed.includes('/')) {
+        return trimmed;
+    }
+
+    if (trimmed.toLowerCase().startsWith('gemini')) {
+        return `google/${trimmed}`;
+    }
+
+    return trimmed;
+}
+
+async function ensureUserAiModelsTable(): Promise<void> {
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS user_ai_models (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            name TEXT NOT NULL,
+            model_id TEXT NOT NULL,
+            provider TEXT NOT NULL,
+            encrypted_api_key TEXT NOT NULL,
+            description TEXT,
+            context_window INTEGER DEFAULT 0,
+            is_active BOOLEAN DEFAULT TRUE,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW(),
+            UNIQUE(user_id, model_id)
+        )
+    `);
+    await pool.query(
+        'CREATE INDEX IF NOT EXISTS idx_user_ai_models_user_id ON user_ai_models(user_id)'
+    );
+}
+
+async function resolveResearchAiConfig(
+    userId: string,
+    config: ResearchConfig,
+    runtime?: ResearchRuntimeOptions
+): Promise<ResolvedResearchAiConfig> {
+    await ensureUserAiModelsTable();
+
+    let provider = normalizeResearchProvider(config.provider, config.model);
+    let model = config.model?.trim() || undefined;
+    let apiKey = runtime?.apiKey?.trim() || undefined;
+
+    if (model) {
+        const personalModelResult = await pool.query(
+            `SELECT provider, encrypted_api_key
+             FROM user_ai_models
+             WHERE user_id = $1 AND model_id = $2 AND is_active = TRUE
+             LIMIT 1`,
+            [userId, model]
+        );
+
+        if (personalModelResult.rows.length > 0) {
+            const personalModel = personalModelResult.rows[0];
+            provider = normalizeResearchProvider(
+                personalModel.provider === 'openrouter' ? 'openrouter' : 'gemini',
+                model
+            );
+
+            if (!apiKey && personalModel.encrypted_api_key) {
+                apiKey = decryptSecretAllowLegacy(personalModel.encrypted_api_key);
+            }
+        } else {
+            const modelResult = await pool.query(
+                `SELECT provider
+                 FROM ai_models
+                 WHERE model_id = $1 AND is_active = TRUE
+                 LIMIT 1`,
+                [model]
+            );
+
+            if (modelResult.rows.length > 0) {
+                provider = normalizeResearchProvider(
+                    modelResult.rows[0].provider === 'openrouter' ? 'openrouter' : 'gemini',
+                    model
+                );
+            }
+        }
+    }
+
+    if (!model) {
+        const defaultModelResult = await pool.query(
+            `SELECT model_id, provider
+             FROM ai_models
+             WHERE is_default = TRUE AND is_active = TRUE
+             LIMIT 1`
+        );
+
+        if (defaultModelResult.rows.length > 0) {
+            model = defaultModelResult.rows[0].model_id;
+            provider = normalizeResearchProvider(
+                defaultModelResult.rows[0].provider === 'openrouter' ? 'openrouter' : 'gemini',
+                model
+            );
+        } else {
+            model = provider === 'openrouter'
+                ? DEFAULT_OPENROUTER_MODEL
+                : DEFAULT_GEMINI_MODEL;
+        }
+    }
+
+    return { provider, model, apiKey };
+}
+
+async function generateResearchText(
+    messages: ChatMessage[],
+    provider: 'gemini' | 'openrouter',
+    model?: string,
+    apiKey?: string
+): Promise<string> {
+    if (provider === 'openrouter') {
+        const resolvedModel = resolveResearchModelForProvider('openrouter', model);
+        return generateWithOpenRouter(messages, resolvedModel, 4096, apiKey);
+    }
+
+    const resolvedModel = resolveResearchModelForProvider('gemini', model);
+    return generateWithGemini(messages, resolvedModel, apiKey);
 }
 
 function getTemplatePrompt(template: ResearchTemplate): string {
@@ -223,7 +398,8 @@ async function generateSubQueries(
     count: number,
     notebookContext?: string,
     provider?: 'gemini' | 'openrouter',
-    model?: string
+    model?: string,
+    apiKey?: string
 ): Promise<string[]> {
     const notebookContextPrompt = notebookContext && notebookContext.trim().length > 0
         ? `Use this notebook context to make the queries more aligned with the user's notes:\n${notebookContext}\n`
@@ -238,21 +414,24 @@ Return only queries, one per line, no bullets or numbers.`
     }];
 
     try {
-        if (provider === 'openrouter') {
-            const response = model
-                ? await generateWithOpenRouter(messages, model)
-                : await generateWithOpenRouter(messages);
-            return response.split('\n').map(l => l.trim()).filter(l => l.length > 0).slice(0, count);
-        }
-        const response = model
-            ? await generateWithGemini(messages, model)
-            : await generateWithGemini(messages);
+        const normalizedProvider = normalizeResearchProvider(provider, model);
+        const response = await generateResearchText(
+            messages,
+            normalizedProvider,
+            model,
+            apiKey
+        );
         return response.split('\n').map(l => l.trim()).filter(l => l.length > 0).slice(0, count);
     } catch (error: any) {
         try {
-            const response = model
-                ? await generateWithOpenRouter(messages, model)
-                : await generateWithOpenRouter(messages);
+            const fallbackProvider = normalizeResearchProvider(provider, model) === 'openrouter'
+                ? 'gemini'
+                : 'openrouter';
+            const response = await generateResearchText(
+                messages,
+                fallbackProvider,
+                model
+            );
             return response.split('\n').map(l => l.trim()).filter(l => l.length > 0).slice(0, count);
         } catch (_) {
             return [query, `${query} explained`, `${query} examples`, `${query} benefits`, `${query} challenges`].slice(0, count);
@@ -268,7 +447,8 @@ async function synthesizeReport(
     template: ResearchTemplate,
     notebookContext?: string,
     provider?: 'gemini' | 'openrouter',
-    model?: string
+    model?: string,
+    apiKey?: string
 ): Promise<string> {
     if (sources.length === 0) {
         return `No sources were retrieved for "${query}".\n\n` +
@@ -310,38 +490,30 @@ Write the complete report:`
     }];
 
     try {
-        if (provider === 'openrouter') {
-            console.log('[Research] Attempting to generate report with OpenRouter...');
-            const result = model
-                ? await generateWithOpenRouter(messages, model)
-                : await generateWithOpenRouter(messages);
-            console.log('[Research] Report generated successfully with OpenRouter');
-            return result;
-        }
-
-        console.log('[Research] Attempting to generate report with Gemini...');
-        const result = model
-            ? await generateWithGemini(messages, model)
-            : await generateWithGemini(messages);
-        console.log('[Research] Report generated successfully with Gemini');
+        const normalizedProvider = normalizeResearchProvider(provider, model);
+        console.log(`[Research] Attempting to generate report with ${normalizedProvider}...`);
+        const result = await generateResearchText(
+            messages,
+            normalizedProvider,
+            model,
+            apiKey
+        );
+        console.log(`[Research] Report generated successfully with ${normalizedProvider}`);
         return result;
     } catch (primaryError: any) {
         console.error('[Research] Primary provider failed:', primaryError.message);
         try {
-            if (provider === 'openrouter') {
-                console.log('[Research] Falling back to Gemini...');
-                const result = model
-                    ? await generateWithGemini(messages, model)
-                    : await generateWithGemini(messages);
-                console.log('[Research] Report generated successfully with Gemini');
-                return result;
-            }
-
-            console.log('[Research] Falling back to OpenRouter...');
-            const result = model
-                ? await generateWithOpenRouter(messages, model)
-                : await generateWithOpenRouter(messages);
-            console.log('[Research] Report generated successfully with OpenRouter');
+            const primaryProvider = normalizeResearchProvider(provider, model);
+            const fallbackProvider = primaryProvider === 'openrouter'
+                ? 'gemini'
+                : 'openrouter';
+            console.log(`[Research] Falling back to ${fallbackProvider}...`);
+            const result = await generateResearchText(
+                messages,
+                fallbackProvider,
+                model
+            );
+            console.log(`[Research] Report generated successfully with ${fallbackProvider}`);
             return result;
         } catch (secondaryError: any) {
             console.error('[Research] Secondary provider also failed:', secondaryError.message);
@@ -407,7 +579,8 @@ export async function performCloudResearch(
     userId: string,
     query: string,
     config: ResearchConfig,
-    onProgress?: (progress: ResearchProgress) => void
+    onProgress?: (progress: ResearchProgress) => void,
+    runtime?: ResearchRuntimeOptions
 ): Promise<{ sessionId: string; report: string; sources: ResearchSource[] }> {
     if (typeof query !== 'string' || query.trim().length === 0) {
         throw new Error('Query is required');
@@ -421,6 +594,8 @@ export async function performCloudResearch(
     let notebookContext = '';
 
     try {
+        const aiConfig = await resolveResearchAiConfig(userId, config, runtime);
+
         // Update progress
         onProgress?.({ status: `[${config.depth.toUpperCase()}] Starting research...`, progress: 0.1, isComplete: false });
 
@@ -435,8 +610,9 @@ export async function performCloudResearch(
             config.template,
             depthConfig.subQueryCount,
             notebookContext,
-            config.provider,
-            config.model
+            aiConfig.provider,
+            aiConfig.model,
+            aiConfig.apiKey
         );
 
         // Initial media search
@@ -505,7 +681,12 @@ export async function performCloudResearch(
             }];
 
             try {
-                const followUpResponse = await generateWithGemini(followUpMessages);
+                const followUpResponse = await generateResearchText(
+                    followUpMessages,
+                    aiConfig.provider,
+                    aiConfig.model,
+                    aiConfig.apiKey
+                );
                 const followUpQueries = followUpResponse.split('\n').filter(q => q.trim()).slice(0, 3);
 
                 for (const fq of followUpQueries) {
@@ -548,8 +729,9 @@ export async function performCloudResearch(
             uniqueVideos,
             config.template,
             notebookContext,
-            config.provider,
-            config.model
+            aiConfig.provider,
+            aiConfig.model,
+            aiConfig.apiKey
         );
 
         // Save to database

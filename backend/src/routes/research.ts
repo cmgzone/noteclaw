@@ -18,6 +18,7 @@ router.use(authenticateToken);
 router.post('/cloud', async (req: AuthRequest, res: Response) => {
     try {
         const { query, depth = 'standard', template = 'general', notebookId, provider, model, useNotebookContext = false } = req.body;
+        const userApiKey = (req.get('x-user-api-key') || '').trim() || undefined;
 
         if (!query) {
             return res.status(400).json({ error: 'Query is required' });
@@ -35,7 +36,9 @@ router.post('/cloud', async (req: AuthRequest, res: Response) => {
         // Set longer timeout for research
         req.setTimeout(300000); // 5 minutes
 
-        const result = await performCloudResearch(req.userId!, query, config);
+        const result = await performCloudResearch(req.userId!, query, config, undefined, {
+            apiKey: userApiKey
+        });
 
         res.json({
             success: true,
@@ -53,6 +56,7 @@ router.post('/cloud', async (req: AuthRequest, res: Response) => {
 router.post('/stream', async (req: AuthRequest, res: Response) => {
     try {
         const { query, depth = 'standard', template = 'general', notebookId, provider, model, useNotebookContext = false } = req.body;
+        const userApiKey = (req.get('x-user-api-key') || '').trim() || undefined;
 
         if (!query) {
             return res.status(400).json({ error: 'Query is required' });
@@ -74,6 +78,8 @@ router.post('/stream', async (req: AuthRequest, res: Response) => {
 
         const result = await performCloudResearch(req.userId!, query, config, (progress) => {
             res.write(`data: ${JSON.stringify(progress)}\n\n`);
+        }, {
+            apiKey: userApiKey
         });
 
         // Send final result

@@ -1207,6 +1207,10 @@ class ApiService {
     final token = await getToken();
     if (token == null) throw Exception('Not authenticated');
     try {
+      final byokKey = await _getByokKeyForProvider(
+        provider: provider ?? 'gemini',
+        model: model,
+      );
       final response = await _dio.post(
         _normalizeEndpoint('/research/stream'),
         data: {
@@ -1222,7 +1226,10 @@ class ApiService {
         },
         options: Options(
           responseType: ResponseType.stream,
-          headers: {'Accept': 'text/event-stream'},
+          headers: {
+            'Accept': 'text/event-stream',
+            if (byokKey != null) 'X-User-Api-Key': byokKey,
+          },
         ),
       );
 

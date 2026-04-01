@@ -28,6 +28,7 @@ export const performDeepResearch = async (req: AuthRequest, res: Response) => {
         model 
     } = req.body as DeepResearchRequest;
     const userId = req.userId;
+    const userApiKey = (req.get('x-user-api-key') || '').trim() || undefined;
 
     if (!userId) {
         return res.status(401).json({ success: false, error: 'Unauthorized' });
@@ -55,6 +56,8 @@ export const performDeepResearch = async (req: AuthRequest, res: Response) => {
         const result = await performCloudResearch(userId, query, config, (progress: ResearchProgress) => {
             // Write SSE data in format expected by the frontend Stream
             res.write(`data: ${JSON.stringify(progress)}\n\n`);
+        }, {
+            apiKey: userApiKey
         });
 
         res.end();
