@@ -30,6 +30,11 @@ interface ResolvedResearchAiConfig {
     apiKey?: string;
 }
 
+interface PlatformResearchModel {
+    provider: 'gemini' | 'openrouter';
+    model: string;
+}
+
 export interface ResearchSource {
     title: string;
     url: string;
@@ -54,8 +59,6 @@ const ACADEMIC_DOMAINS = ['.edu', '.ac.uk', '.ac.', 'scholar.google', 'researchg
 const GOVERNMENT_DOMAINS = ['.gov', '.gov.uk', '.gov.au', '.mil'];
 const NEWS_DOMAINS = ['reuters.com', 'apnews.com', 'bbc.com', 'nytimes.com', 'wsj.com', 'theguardian.com', 'washingtonpost.com', 'bloomberg.com', 'forbes.com', 'techcrunch.com', 'wired.com'];
 const PROFESSIONAL_DOMAINS = ['microsoft.com', 'google.com', 'aws.amazon.com', 'developer.', 'docs.', 'stackoverflow.com', 'github.com', 'medium.com'];
-const DEFAULT_GEMINI_MODEL = 'gemini-2.0-flash';
-const DEFAULT_OPENROUTER_MODEL = 'meta-llama/llama-3.3-70b-instruct';
 
 function getSourceCredibility(url: string): { credibility: string; score: number } {
     const lowerUrl = url.toLowerCase();
@@ -161,6 +164,41 @@ async function ensureUserAiModelsTable(): Promise<void> {
     );
 }
 
+async function getPlatformResearchModel(
+    preferredProvider: 'gemini' | 'openrouter'
+): Promise<PlatformResearchModel | null> {
+    const result = await pool.query(
+        `SELECT model_id, provider
+         FROM ai_models
+         WHERE is_active = TRUE
+         ORDER BY
+           CASE WHEN is_default = TRUE THEN 0 ELSE 1 END,
+           CASE
+             WHEN provider = $1 THEN 0
+             WHEN provider = 'gemini' THEN 1
+             ELSE 2
+           END,
+           created_at ASC
+         LIMIT 1`,
+        [preferredProvider]
+    );
+
+    if (result.rows.length === 0) {
+        return null;
+    }
+
+    const row = result.rows[0];
+    const provider = normalizeResearchProvider(
+        row.provider === 'openrouter' ? 'openrouter' : 'gemini',
+        row.model_id
+    );
+
+    return {
+        provider,
+        model: row.model_id,
+    };
+}
+
 async function resolveResearchAiConfig(
     userId: string,
     config: ResearchConfig,
@@ -210,24 +248,16 @@ async function resolveResearchAiConfig(
     }
 
     if (!model) {
-        const defaultModelResult = await pool.query(
-            `SELECT model_id, provider
-             FROM ai_models
-             WHERE is_default = TRUE AND is_active = TRUE
-             LIMIT 1`
-        );
+        const platformModel = await getPlatformResearchModel(provider);
 
-        if (defaultModelResult.rows.length > 0) {
-            model = defaultModelResult.rows[0].model_id;
-            provider = normalizeResearchProvider(
-                defaultModelResult.rows[0].provider === 'openrouter' ? 'openrouter' : 'gemini',
-                model
+        if (!platformModel) {
+            throw new Error(
+                'No active platform AI model is configured for deep research. Please configure an active model in AI settings.'
             );
-        } else {
-            model = provider === 'openrouter'
-                ? DEFAULT_OPENROUTER_MODEL
-                : DEFAULT_GEMINI_MODEL;
         }
+
+        model = platformModel.model;
+        provider = platformModel.provider;
     }
 
     return { provider, model, apiKey };
@@ -239,12 +269,27 @@ async function generateResearchText(
     model?: string,
     apiKey?: string
 ): Promise<string> {
-    if (provider === 'openrouter') {
-        const resolvedModel = resolveResearchModelForProvider('openrouter', model);
+    let effectiveProvider = provider;
+    let effectiveModel = model;
+
+    if (!effectiveModel) {
+        const platformModel = await getPlatformResearchModel(provider);
+        if (!platformModel) {
+            throw new Error(
+                `No active platform AI model is configured for ${provider} research generation.`
+            );
+        }
+
+        effectiveProvider = platformModel.provider;
+        effectiveModel = platformModel.model;
+    }
+
+    if (effectiveProvider === 'openrouter') {
+        const resolvedModel = resolveResearchModelForProvider('openrouter', effectiveModel);
         return generateWithOpenRouter(messages, resolvedModel, 4096, apiKey);
     }
 
-    const resolvedModel = resolveResearchModelForProvider('gemini', model);
+    const resolvedModel = resolveResearchModelForProvider('gemini', effectiveModel);
     return generateWithGemini(messages, resolvedModel, apiKey);
 }
 
@@ -430,7 +475,7 @@ Return only queries, one per line, no bullets or numbers.`
             const response = await generateResearchText(
                 messages,
                 fallbackProvider,
-                model
+                undefined
             );
             return response.split('\n').map(l => l.trim()).filter(l => l.length > 0).slice(0, count);
         } catch (_) {
@@ -511,7 +556,7 @@ Write the complete report:`
             const result = await generateResearchText(
                 messages,
                 fallbackProvider,
-                model
+                undefined
             );
             console.log(`[Research] Report generated successfully with ${fallbackProvider}`);
             return result;
