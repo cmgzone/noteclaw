@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../core/search/search_provider.dart';
 import '../../core/search/serper_service.dart';
 import '../../features/sources/source_provider.dart';
@@ -15,6 +16,7 @@ import 'youtube_player_dialog.dart';
 import '../subscription/services/credit_manager.dart';
 import '../../ui/widgets/app_network_image.dart';
 import '../home/create_notebook_dialog.dart';
+import '../notebook/notebook.dart';
 import '../notebook/notebook_provider.dart';
 
 class WebSearchScreen extends ConsumerStatefulWidget {
@@ -52,19 +54,33 @@ class _WebSearchScreenState extends ConsumerState<WebSearchScreen> {
   bool _filterHasImage = false;
   List<_WebSearchHistoryItem> _webSearchHistory = [];
   List<_DeepResearchHistoryItem> _deepResearchHistory = [];
+  static const List<String> _deepResearchPromptIdeas = [
+    'Compare the strongest AI coding assistants for small product teams',
+    'Create a market brief on AI note-taking tools for students',
+    'Summarize current research on spaced repetition and memory retention',
+    'Find credible sources on running local LLMs on consumer hardware',
+  ];
 
   @override
   void initState() {
     super.initState();
+    _searchController.addListener(_handleSearchChanged);
     _loadSearchHistory();
   }
 
   @override
   void dispose() {
+    _searchController.removeListener(_handleSearchChanged);
     _searchController.dispose();
     _searchFocus.dispose();
     _filterDomainController.dispose();
     super.dispose();
+  }
+
+  void _handleSearchChanged() {
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   void _clearFilters() {
@@ -163,6 +179,8 @@ class _WebSearchScreenState extends ConsumerState<WebSearchScreen> {
   }
 
   Future<void> _performDeepResearch(String query) async {
+    FocusScope.of(context).unfocus();
+
     // Check and consume credits for deep research (more for deep mode)
     final creditAmount = _selectedDepth == ResearchDepth.deep
         ? CreditCosts.deepResearch * 2
@@ -242,6 +260,12 @@ class _WebSearchScreenState extends ConsumerState<WebSearchScreen> {
         if (!mounted) return;
         setState(() {
           _isResearching = false;
+          _finalResult = ResearchUpdate(
+            status: 'Research failed',
+            progress: 1,
+            isComplete: true,
+            error: e.toString(),
+          );
         });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Research failed: $e')),
@@ -848,6 +872,1598 @@ $content''',
     );
   }
 
+  int get _estimatedDeepResearchCreditCost {
+    return _selectedDepth == ResearchDepth.deep
+        ? CreditCosts.deepResearch * 2
+        : CreditCosts.deepResearch;
+  }
+
+  List<ResearchUpdate> _visibleResearchUpdates() {
+    final visible = <ResearchUpdate>[];
+    final seen = <String>{};
+
+    for (final update in _researchUpdates.reversed) {
+      final key = '${update.status}|${update.progress.toStringAsFixed(2)}';
+      if (seen.add(key)) {
+        visible.add(update);
+      }
+      if (visible.length == 6) {
+        break;
+      }
+    }
+
+    return visible.reversed.toList();
+  }
+
+  String _depthLabel(ResearchDepth depth) {
+    switch (depth) {
+      case ResearchDepth.quick:
+        return 'Quick';
+      case ResearchDepth.standard:
+        return 'Standard';
+      case ResearchDepth.deep:
+        return 'Deep';
+    }
+  }
+
+  String _depthDescription(ResearchDepth depth) {
+    switch (depth) {
+      case ResearchDepth.quick:
+        return 'Fast scan for an initial read on the topic.';
+      case ResearchDepth.standard:
+        return 'Balanced breadth and synthesis for most questions.';
+      case ResearchDepth.deep:
+        return 'Wider source sweep with more exhaustive synthesis.';
+    }
+  }
+
+  String _templateLabel(ResearchTemplate template) {
+    switch (template) {
+      case ResearchTemplate.general:
+        return 'General';
+      case ResearchTemplate.academic:
+        return 'Academic';
+      case ResearchTemplate.productComparison:
+        return 'Compare';
+      case ResearchTemplate.marketAnalysis:
+        return 'Market';
+      case ResearchTemplate.howToGuide:
+        return 'How-To';
+      case ResearchTemplate.prosAndCons:
+        return 'Pros / Cons';
+      case ResearchTemplate.shopping:
+        return 'Shopping';
+    }
+  }
+
+  String _templateDescription(ResearchTemplate template) {
+    switch (template) {
+      case ResearchTemplate.general:
+        return 'Open-ended exploration with a broad report structure.';
+      case ResearchTemplate.academic:
+        return 'More formal framing for evidence and research-backed context.';
+      case ResearchTemplate.productComparison:
+        return 'Organized around tradeoffs, options, and selection criteria.';
+      case ResearchTemplate.marketAnalysis:
+        return 'Useful for trends, positioning, and competitive landscape work.';
+      case ResearchTemplate.howToGuide:
+        return 'Step-based reporting that turns research into action.';
+      case ResearchTemplate.prosAndCons:
+        return 'Best for evaluating a decision from both sides quickly.';
+      case ResearchTemplate.shopping:
+        return 'Focused on buying decisions, options, and recommendation logic.';
+    }
+  }
+
+  IconData _templateIcon(ResearchTemplate template) {
+    switch (template) {
+      case ResearchTemplate.general:
+        return Icons.explore_outlined;
+      case ResearchTemplate.academic:
+        return Icons.school_outlined;
+      case ResearchTemplate.productComparison:
+        return Icons.balance_outlined;
+      case ResearchTemplate.marketAnalysis:
+        return Icons.insights_outlined;
+      case ResearchTemplate.howToGuide:
+        return Icons.route_outlined;
+      case ResearchTemplate.prosAndCons:
+        return Icons.compare_arrows_outlined;
+      case ResearchTemplate.shopping:
+        return Icons.shopping_bag_outlined;
+    }
+  }
+
+  Color _credibilityColor(SourceCredibility credibility, ColorScheme scheme) {
+    switch (credibility) {
+      case SourceCredibility.academic:
+        return const Color(0xFF0F766E);
+      case SourceCredibility.government:
+        return const Color(0xFF1D4ED8);
+      case SourceCredibility.news:
+        return const Color(0xFFC2410C);
+      case SourceCredibility.professional:
+        return const Color(0xFF7C3AED);
+      case SourceCredibility.blog:
+        return const Color(0xFF475569);
+      case SourceCredibility.unknown:
+        return scheme.onSurfaceVariant;
+    }
+  }
+
+  String _credibilityLabel(SourceCredibility credibility) {
+    switch (credibility) {
+      case SourceCredibility.academic:
+        return 'Academic';
+      case SourceCredibility.government:
+        return 'Government';
+      case SourceCredibility.news:
+        return 'News';
+      case SourceCredibility.professional:
+        return 'Professional';
+      case SourceCredibility.blog:
+        return 'Blog';
+      case SourceCredibility.unknown:
+        return 'Unknown';
+    }
+  }
+
+  void _applyResearchPrompt(String prompt) {
+    _searchController.text = prompt;
+    _searchController.selection = TextSelection.fromPosition(
+      TextPosition(offset: prompt.length),
+    );
+    _searchFocus.requestFocus();
+  }
+
+  void _resetResearchSession() {
+    setState(() {
+      _isResearching = false;
+      _researchUpdates = [];
+      _finalResult = null;
+      _searchedSites.clear();
+      _currentSearchQuery = null;
+    });
+  }
+
+  Future<void> _openResearchSource(ResearchSource source) async {
+    final uri = Uri.tryParse(source.url);
+    if (uri == null) return;
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+
+  Future<void> _chooseResearchNotebook() async {
+    if (ref.read(notebookProvider).isEmpty) {
+      await _showCreateNotebookDialog();
+      return;
+    }
+
+    final notebookId = await _showNotebookPicker();
+    if (notebookId != null && mounted) {
+      setState(() {
+        _selectedResearchNotebookId = notebookId;
+      });
+    }
+  }
+
+  Widget _buildDeepResearchScaffold(
+    BuildContext context,
+    ColorScheme scheme,
+    TextTheme text,
+    List<Notebook> notebooks,
+  ) {
+    final hasSession =
+        _isResearching || _researchUpdates.isNotEmpty || _finalResult != null;
+    final destinationLabel = _selectedResearchNotebookId != null &&
+            _selectedResearchNotebookId!.isNotEmpty
+        ? _notebookTitleFor(_selectedResearchNotebookId!)
+        : 'Choose when saving';
+
+    return Scaffold(
+      appBar: AppBar(
+        titleSpacing: 16,
+        title: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Deep Research'),
+            Text(
+              destinationLabel,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: text.bodySmall?.copyWith(
+                color: scheme.onSurfaceVariant,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.language_rounded),
+            tooltip: 'Switch to web search',
+            onPressed: _isResearching
+                ? null
+                : () => setState(() => _isDeepResearch = false),
+          ),
+          if (hasSession)
+            IconButton(
+              icon: const Icon(Icons.restart_alt_rounded),
+              tooltip: 'Start a new research session',
+              onPressed: _isResearching ? null : _resetResearchSession,
+            ),
+          if (_finalResult?.result != null)
+            IconButton(
+              icon: const Icon(Icons.save_outlined),
+              tooltip: 'Save report to notebook',
+              onPressed: () => _addReportAsSource(_finalResult!),
+            ),
+        ],
+      ),
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              scheme.surface,
+              scheme.primaryContainer.withValues(alpha: 0.12),
+              scheme.secondaryContainer.withValues(alpha: 0.10),
+              scheme.surface,
+            ],
+            stops: const [0, 0.24, 0.60, 1],
+          ),
+        ),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final isWide = constraints.maxWidth >= 1080;
+
+            final rail = Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildDeepResearchHeroCard(
+                  scheme: scheme,
+                  text: text,
+                  destinationLabel: destinationLabel,
+                ).animate().fadeIn().slideY(begin: 0.05),
+                const SizedBox(height: 18),
+                _buildDeepResearchBriefCard(
+                  scheme: scheme,
+                  text: text,
+                  notebooks: notebooks,
+                  destinationLabel: destinationLabel,
+                ).animate().fadeIn(delay: 80.ms).slideY(begin: 0.05),
+                const SizedBox(height: 18),
+                _buildDeepResearchSettingsCard(
+                  scheme: scheme,
+                  text: text,
+                ).animate().fadeIn(delay: 140.ms).slideY(begin: 0.05),
+                if (hasSession) ...[
+                  const SizedBox(height: 18),
+                  _buildDeepResearchSnapshotCard(
+                    scheme: scheme,
+                    text: text,
+                  ).animate().fadeIn(delay: 200.ms).slideY(begin: 0.05),
+                ],
+              ],
+            );
+
+            final canvas = AnimatedSwitcher(
+              duration: const Duration(milliseconds: 250),
+              child: hasSession
+                  ? _buildDeepResearchCanvas(
+                      key: const ValueKey('deep-research-active-canvas'),
+                      scheme: scheme,
+                      text: text,
+                    )
+                  : _buildDeepResearchEmptyCanvas(
+                      key: const ValueKey('deep-research-empty-canvas'),
+                      scheme: scheme,
+                      text: text,
+                    ),
+            );
+
+            return SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 1360),
+                  child: isWide
+                      ? Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            SizedBox(width: 390, child: rail),
+                            const SizedBox(width: 20),
+                            Expanded(child: canvas),
+                          ],
+                        )
+                      : Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            rail,
+                            const SizedBox(height: 18),
+                            canvas,
+                          ],
+                        ),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDeepResearchHeroCard({
+    required ColorScheme scheme,
+    required TextTheme text,
+    required String destinationLabel,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(32),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            const Color(0xFF0F766E).withValues(alpha: 0.22),
+            const Color(0xFFF59E0B).withValues(alpha: 0.16),
+            scheme.surface.withValues(alpha: 0.96),
+          ],
+        ),
+        border: Border.all(
+          color: scheme.outline.withValues(alpha: 0.12),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: scheme.shadow.withValues(alpha: 0.08),
+            blurRadius: 24,
+            offset: const Offset(0, 12),
+          ),
+        ],
+      ),
+      child: Stack(
+        children: [
+          Positioned(
+            top: -32,
+            right: -24,
+            child: Container(
+              width: 120,
+              height: 120,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: const Color(0xFF0EA5E9).withValues(alpha: 0.12),
+              ),
+            ),
+          ),
+          Positioned(
+            bottom: -20,
+            left: -10,
+            child: Container(
+              width: 88,
+              height: 88,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: const Color(0xFFF97316).withValues(alpha: 0.10),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: scheme.surface.withValues(alpha: 0.82),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(
+                      color: scheme.outline.withValues(alpha: 0.10),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.radar_rounded,
+                        size: 16,
+                        color: scheme.primary,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Flexible research workspace',
+                        style: text.labelMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: scheme.onSurface,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Text(
+                  'Run broader web research from the same screen you use for search.',
+                  style: text.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    height: 1.1,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'Turn one prompt into a source-backed report, follow the live crawl, and save the finished research back into "$destinationLabel".',
+                  style: text.bodyMedium?.copyWith(
+                    height: 1.45,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    _ResearchMetricChip(
+                      icon: Icons.book_outlined,
+                      label: destinationLabel,
+                      color: const Color(0xFF0F766E),
+                    ),
+                    _ResearchMetricChip(
+                      icon: Icons.bolt_rounded,
+                      label: '$_estimatedDeepResearchCreditCost credits',
+                      color: const Color(0xFFF59E0B),
+                    ),
+                    _ResearchMetricChip(
+                      icon: _templateIcon(_selectedTemplate),
+                      label: _templateLabel(_selectedTemplate),
+                      color: const Color(0xFF0EA5E9),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDeepResearchBriefCard({
+    required ColorScheme scheme,
+    required TextTheme text,
+    required List<Notebook> notebooks,
+    required String destinationLabel,
+  }) {
+    final hasQuery = _searchController.text.trim().isNotEmpty;
+
+    return _ResearchSurface(
+      title: 'Research Brief',
+      subtitle:
+          'Describe what you need, then tune the depth and reporting style before you launch the run.',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            decoration: BoxDecoration(
+              color: scheme.surfaceContainerHighest.withValues(alpha: 0.42),
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(
+                color: scheme.outline.withValues(alpha: 0.12),
+              ),
+            ),
+            child: TextField(
+              controller: _searchController,
+              focusNode: _searchFocus,
+              minLines: 5,
+              maxLines: 8,
+              enabled: !_isResearching,
+              keyboardType: TextInputType.multiline,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: InputDecoration(
+                hintText:
+                    'What do you want to understand, compare, or validate?',
+                hintStyle: text.bodyMedium?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+                border: InputBorder.none,
+                contentPadding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
+              ),
+              style: text.bodyLarge?.copyWith(height: 1.45),
+            ),
+          ),
+          const SizedBox(height: 14),
+          Text(
+            'Starter prompts',
+            style: text.labelLarge?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: _deepResearchPromptIdeas.map((prompt) {
+              return ActionChip(
+                label: SizedBox(
+                  width: 220,
+                  child: Text(
+                    prompt,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                avatar: const Icon(Icons.add_circle_outline, size: 16),
+                onPressed:
+                    _isResearching ? null : () => _applyResearchPrompt(prompt),
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 16),
+          if (notebooks.isEmpty)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: _showCreateNotebookDialog,
+                icon: const Icon(Icons.add),
+                label: const Text('Create notebook to save research'),
+              ),
+            )
+          else
+            OutlinedButton.icon(
+              onPressed: _isResearching ? null : _chooseResearchNotebook,
+              icon: const Icon(Icons.book_outlined),
+              label: Text('Save destination: $destinationLabel'),
+            ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: !_isResearching && hasQuery ? _performSearch : null,
+                  icon: _isResearching
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Icon(
+                          _finalResult == null
+                              ? Icons.travel_explore_rounded
+                              : Icons.refresh_rounded,
+                        ),
+                  label: Text(
+                    _isResearching
+                        ? 'Researching...'
+                        : _finalResult == null
+                            ? 'Start research'
+                            : 'Run again',
+                  ),
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                  ),
+                ),
+              ),
+              if (hasQuery) ...[
+                const SizedBox(width: 10),
+                OutlinedButton.icon(
+                  onPressed: _isResearching
+                      ? null
+                      : () {
+                          _searchController.clear();
+                          _searchFocus.requestFocus();
+                        },
+                  icon: const Icon(Icons.clear_rounded),
+                  label: const Text('Clear'),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 16,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'This run will use $_estimatedDeepResearchCreditCost credits. When it finishes, you can save the report and gathered sources back into "$destinationLabel".',
+            style: text.bodySmall?.copyWith(
+              color: scheme.onSurfaceVariant,
+              height: 1.4,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDeepResearchSettingsCard({
+    required ColorScheme scheme,
+    required TextTheme text,
+  }) {
+    return _ResearchSurface(
+      title: 'Run Settings',
+      subtitle:
+          'Balance speed vs. depth, then shape the report around the kind of answer you need.',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Depth',
+            style: text.labelLarge?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 10),
+          ...ResearchDepth.values.map((depth) {
+            final selected = _selectedDepth == depth;
+            final credits = depth == ResearchDepth.deep
+                ? CreditCosts.deepResearch * 2
+                : CreditCosts.deepResearch;
+
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: _DepthOptionCard(
+                title: _depthLabel(depth),
+                subtitle: _depthDescription(depth),
+                credits: credits,
+                selected: selected,
+                accent: depth == ResearchDepth.quick
+                    ? const Color(0xFF0EA5E9)
+                    : depth == ResearchDepth.standard
+                        ? const Color(0xFF0F766E)
+                        : const Color(0xFFF97316),
+                onTap: _isResearching
+                    ? null
+                    : () => setState(() => _selectedDepth = depth),
+              ),
+            );
+          }),
+          const SizedBox(height: 6),
+          Text(
+            'Template',
+            style: text.labelLarge?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: ResearchTemplate.values.map((template) {
+              return _TemplateOptionChip(
+                label: _templateLabel(template),
+                icon: _templateIcon(template),
+                selected: _selectedTemplate == template,
+                onTap: _isResearching
+                    ? null
+                    : () => setState(() => _selectedTemplate = template),
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            _templateDescription(_selectedTemplate),
+            style: text.bodySmall?.copyWith(
+              color: scheme.onSurfaceVariant,
+              height: 1.45,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDeepResearchSnapshotCard({
+    required ColorScheme scheme,
+    required TextTheme text,
+  }) {
+    final latestUpdate =
+        _researchUpdates.isNotEmpty ? _researchUpdates.last : _finalResult;
+    final sources = _currentResearchSources();
+    final videos = _finalResult?.videos?.length ?? 0;
+    final progress =
+        latestUpdate?.progress ?? (_finalResult != null ? 1.0 : 0.0);
+
+    return _ResearchSurface(
+      title: 'Session Snapshot',
+      subtitle: latestUpdate?.status ?? 'Waiting for the next update.',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              _ResearchMetricChip(
+                icon: Icons.language_rounded,
+                label: '${_searchedSites.length} sites',
+                color: const Color(0xFF0EA5E9),
+              ),
+              _ResearchMetricChip(
+                icon: Icons.description_outlined,
+                label: '${sources.length} sources',
+                color: const Color(0xFF0F766E),
+              ),
+              _ResearchMetricChip(
+                icon: Icons.video_library_outlined,
+                label: '$videos videos',
+                color: const Color(0xFFF97316),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              value: progress.clamp(0.0, 1.0),
+              minHeight: 9,
+              backgroundColor: scheme.outline.withValues(alpha: 0.16),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            _isResearching
+                ? '${(progress * 100).toInt()}% complete'
+                : _finalResult?.error != null
+                    ? 'Run ended with an error'
+                    : 'Research complete',
+            style: text.bodySmall?.copyWith(
+              color: scheme.onSurfaceVariant,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDeepResearchEmptyCanvas({
+    Key? key,
+    required ColorScheme scheme,
+    required TextTheme text,
+  }) {
+    return KeyedSubtree(
+      key: key,
+      child: _ResearchSurface(
+        title: 'Research Canvas',
+        subtitle:
+            'Live source discovery, status updates, the synthesized report, and related media will appear here once you launch a run.',
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(26),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(28),
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    scheme.surfaceContainerHighest.withValues(alpha: 0.82),
+                    scheme.surface,
+                  ],
+                ),
+                border: Border.all(
+                  color: scheme.outline.withValues(alpha: 0.10),
+                ),
+              ),
+              child: Column(
+                children: [
+                  Container(
+                    width: 76,
+                    height: 76,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: const Color(0xFF0F766E).withValues(alpha: 0.12),
+                    ),
+                    child: const Icon(
+                      Icons.travel_explore_rounded,
+                      size: 34,
+                      color: Color(0xFF0F766E),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  Text(
+                    'Ready to run a broader research sweep',
+                    style: text.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    'Use the left rail to define the brief, then launch a research pass that crawls relevant sources, assembles a report, and keeps the process visible while it runs.',
+                    textAlign: TextAlign.center,
+                    style: text.bodyMedium?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                      height: 1.5,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 18),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final isCompact = constraints.maxWidth < 900;
+                final cardWidth = isCompact
+                    ? constraints.maxWidth
+                    : (constraints.maxWidth - 24) / 3;
+
+                final cards = [
+                  (
+                    icon: Icons.public_rounded,
+                    title: 'Source sweep',
+                    subtitle:
+                        'Track sites and domains as the run discovers useful material.',
+                    color: const Color(0xFF0EA5E9),
+                  ),
+                  (
+                    icon: Icons.timeline_rounded,
+                    title: 'Live progress',
+                    subtitle:
+                        'Follow status changes instead of waiting on a black box.',
+                    color: const Color(0xFF0F766E),
+                  ),
+                  (
+                    icon: Icons.article_outlined,
+                    title: 'Saveable output',
+                    subtitle:
+                        'Turn the final report into a notebook source when it is ready.',
+                    color: const Color(0xFFF97316),
+                  ),
+                ];
+
+                return Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  children: cards.map((card) {
+                    return SizedBox(
+                      width: cardWidth,
+                      child: _CanvasFeatureCard(
+                        icon: card.icon,
+                        title: card.title,
+                        subtitle: card.subtitle,
+                        color: card.color,
+                      ),
+                    );
+                  }).toList(),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDeepResearchCanvas({
+    Key? key,
+    required ColorScheme scheme,
+    required TextTheme text,
+  }) {
+    final currentSources = _currentResearchSources();
+    final recentUpdates = _visibleResearchUpdates();
+
+    return KeyedSubtree(
+      key: key,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildDeepResearchRunCard(
+            scheme: scheme,
+            text: text,
+            recentUpdates: recentUpdates,
+          ).animate().fadeIn().slideY(begin: 0.04),
+          if (_searchedSites.isNotEmpty) ...[
+            const SizedBox(height: 18),
+            _buildDeepResearchSitesCard(
+              scheme: scheme,
+              text: text,
+            ).animate().fadeIn(delay: 70.ms).slideY(begin: 0.04),
+          ],
+          if (currentSources.isNotEmpty) ...[
+            const SizedBox(height: 18),
+            _buildDeepResearchSourcesCard(
+              scheme: scheme,
+              text: text,
+              sources: currentSources,
+            ).animate().fadeIn(delay: 120.ms).slideY(begin: 0.04),
+          ],
+          if (_finalResult?.result != null) ...[
+            const SizedBox(height: 18),
+            _buildDeepResearchReportCard(
+              scheme: scheme,
+              text: text,
+            ).animate().fadeIn(delay: 170.ms).slideY(begin: 0.04),
+          ],
+          if (((_finalResult?.images ??
+                      (_researchUpdates.isNotEmpty
+                          ? _researchUpdates.last.images
+                          : null)) ??
+                  [])
+              .isNotEmpty) ...[
+            const SizedBox(height: 18),
+            _buildDeepResearchImagesCard(
+              scheme: scheme,
+              text: text,
+            ).animate().fadeIn(delay: 200.ms).slideY(begin: 0.04),
+          ],
+          if (_finalResult?.videos != null &&
+              _finalResult!.videos!.isNotEmpty) ...[
+            const SizedBox(height: 18),
+            _buildDeepResearchVideosCard(
+              scheme: scheme,
+              text: text,
+            ).animate().fadeIn(delay: 230.ms).slideY(begin: 0.04),
+          ],
+          if (_finalResult?.error != null && _finalResult?.result == null) ...[
+            const SizedBox(height: 18),
+            _buildDeepResearchErrorCard(
+              scheme: scheme,
+              text: text,
+              message: _finalResult!.error!,
+            ).animate().fadeIn(delay: 260.ms).slideY(begin: 0.04),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDeepResearchRunCard({
+    required ColorScheme scheme,
+    required TextTheme text,
+    required List<ResearchUpdate> recentUpdates,
+  }) {
+    final latestUpdate =
+        _researchUpdates.isNotEmpty ? _researchUpdates.last : _finalResult;
+    final progress =
+        latestUpdate?.progress ?? (_finalResult != null ? 1.0 : 0.0);
+
+    return _ResearchSurface(
+      title: _isResearching ? 'Live Research Run' : 'Latest Research Run',
+      subtitle: _searchController.text.trim().isEmpty
+          ? 'Current research session'
+          : _searchController.text.trim(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final compact = constraints.maxWidth < 760;
+
+              final meter = Container(
+                width: compact ? double.infinity : 150,
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  color: scheme.surfaceContainerHighest.withValues(alpha: 0.42),
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(
+                    color: scheme.outline.withValues(alpha: 0.10),
+                  ),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      width: 90,
+                      height: 90,
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          CircularProgressIndicator(
+                            value: progress.clamp(0.0, 1.0),
+                            strokeWidth: 8,
+                            backgroundColor:
+                                scheme.outline.withValues(alpha: 0.12),
+                          ),
+                          Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                '${(progress * 100).toInt()}%',
+                                style: text.titleLarge?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              Text(
+                                _isResearching ? 'live' : 'done',
+                                style: text.labelMedium?.copyWith(
+                                  color: scheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      _isResearching ? 'Researching the web' : 'Run completed',
+                      style: text.labelLarge?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+
+              final summaryBox = Container(
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  color: scheme.surface,
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(
+                    color: scheme.outline.withValues(alpha: 0.08),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      latestUpdate?.status ?? 'Preparing your research run...',
+                      style: text.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _isResearching
+                          ? 'The agent is searching, ranking, and synthesizing sources in real time.'
+                          : 'The last completed run is ready for review and can be saved into your notebook workspace.',
+                      style: text.bodyMedium?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                        height: 1.45,
+                      ),
+                    ),
+                    if (_currentSearchQuery != null &&
+                        _currentSearchQuery!.trim().isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      Text(
+                        'Currently searching: "$_currentSearchQuery"',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: text.bodySmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 14),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(999),
+                      child: LinearProgressIndicator(
+                        value: progress.clamp(0.0, 1.0),
+                        minHeight: 10,
+                        backgroundColor: scheme.outline.withValues(alpha: 0.14),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 10,
+                      children: [
+                        _ResearchMetricChip(
+                          icon: Icons.layers_outlined,
+                          label: _depthLabel(_selectedDepth),
+                          color: const Color(0xFF0F766E),
+                        ),
+                        _ResearchMetricChip(
+                          icon: _templateIcon(_selectedTemplate),
+                          label: _templateLabel(_selectedTemplate),
+                          color: const Color(0xFF0EA5E9),
+                        ),
+                        _ResearchMetricChip(
+                          icon: Icons.bolt_rounded,
+                          label: '$_estimatedDeepResearchCreditCost credits',
+                          color: const Color(0xFFF97316),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              );
+
+              if (compact) {
+                return Column(
+                  children: [
+                    meter,
+                    const SizedBox(height: 12),
+                    summaryBox,
+                  ],
+                );
+              }
+
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  meter,
+                  const SizedBox(width: 14),
+                  Expanded(child: summaryBox),
+                ],
+              );
+            },
+          ),
+          if (recentUpdates.isNotEmpty) ...[
+            const SizedBox(height: 18),
+            Text(
+              'Research log',
+              style: text.labelLarge?.copyWith(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 10),
+            Column(
+              children: recentUpdates.map((update) {
+                final isLatest = identical(update, recentUpdates.last);
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: isLatest
+                        ? scheme.primaryContainer.withValues(alpha: 0.34)
+                        : scheme.surface,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(
+                      color: isLatest
+                          ? scheme.primary.withValues(alpha: 0.18)
+                          : scheme.outline.withValues(alpha: 0.08),
+                    ),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 10,
+                        height: 10,
+                        margin: const EdgeInsets.only(top: 5),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: isLatest
+                              ? scheme.primary
+                              : scheme.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              update.status,
+                              style: text.bodyMedium?.copyWith(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '${(update.progress * 100).toInt()}% complete',
+                              style: text.bodySmall?.copyWith(
+                                color: scheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDeepResearchSitesCard({
+    required ColorScheme scheme,
+    required TextTheme text,
+  }) {
+    return _ResearchSurface(
+      title: 'Discovered Sites',
+      subtitle:
+          'These domains have appeared during the current run, which makes it easier to see the breadth of the research sweep.',
+      child: Wrap(
+        spacing: 10,
+        runSpacing: 10,
+        children: _searchedSites.map((domain) {
+          return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: scheme.surface,
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(
+                color: scheme.outline.withValues(alpha: 0.10),
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ClipOval(
+                  child: AppNetworkImage(
+                    imageUrl: _getFaviconUrl(domain),
+                    width: 18,
+                    height: 18,
+                    fit: BoxFit.cover,
+                    placeholder: (context) => Container(
+                      width: 18,
+                      height: 18,
+                      color: scheme.surfaceContainerHighest,
+                    ),
+                    errorWidget: (context) => Icon(
+                      Icons.public,
+                      size: 18,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  domain,
+                  style: text.bodySmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _buildDeepResearchSourcesCard({
+    required ColorScheme scheme,
+    required TextTheme text,
+    required List<ResearchSource> sources,
+  }) {
+    return _ResearchSurface(
+      title: 'Source Intelligence',
+      subtitle:
+          'The strongest sources gathered during the run, including credibility cues and quick paths back to the original pages.',
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 920;
+          final cardWidth =
+              compact ? constraints.maxWidth : (constraints.maxWidth - 12) / 2;
+
+          return Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: sources.take(6).map((source) {
+              final domain = _extractDomain(source.url) ?? source.url;
+              return SizedBox(
+                width: cardWidth,
+                child: _ResearchSourceCard(
+                  source: source,
+                  domain: domain,
+                  faviconUrl: _extractDomain(source.url) != null
+                      ? _getFaviconUrl(_extractDomain(source.url)!)
+                      : null,
+                  credibilityColor:
+                      _credibilityColor(source.credibility, scheme),
+                  credibilityLabel: _credibilityLabel(source.credibility),
+                  onOpen: () => _openResearchSource(source),
+                ),
+              );
+            }).toList(),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildDeepResearchReportCard({
+    required ColorScheme scheme,
+    required TextTheme text,
+  }) {
+    return _ResearchSurface(
+      title: 'Research Report',
+      subtitle:
+          'A synthesized write-up with structured headings, links, and media. Select text freely or save the report as a notebook source.',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              FilledButton.icon(
+                onPressed: () => _addReportAsSource(_finalResult!),
+                icon: const Icon(Icons.save_outlined),
+                label: const Text('Save report'),
+              ),
+              if (_currentResearchSources().isNotEmpty)
+                OutlinedButton.icon(
+                  onPressed: _addResearchSourcesAsSources,
+                  icon: const Icon(Icons.library_add_outlined),
+                  label:
+                      Text('Save ${_currentResearchSources().length} sources'),
+                ),
+              OutlinedButton.icon(
+                onPressed: _isResearching ? null : _performSearch,
+                icon: const Icon(Icons.refresh_rounded),
+                label: const Text('Rerun'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: scheme.surface,
+              borderRadius: BorderRadius.circular(26),
+              border: Border.all(
+                color: scheme.outline.withValues(alpha: 0.10),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: scheme.shadow.withValues(alpha: 0.04),
+                  blurRadius: 16,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Builder(
+              builder: (context) {
+                try {
+                  return MarkdownBody(
+                    data: _finalResult!.result!,
+                    selectable: true,
+                    styleSheet: MarkdownStyleSheet(
+                      h1: text.headlineSmall?.copyWith(
+                        color: scheme.primary,
+                        fontWeight: FontWeight.w800,
+                      ),
+                      h2: text.titleLarge?.copyWith(
+                        color: scheme.onSurface,
+                        fontWeight: FontWeight.w700,
+                      ),
+                      h3: text.titleMedium?.copyWith(
+                        color: scheme.onSurface,
+                        fontWeight: FontWeight.w700,
+                      ),
+                      p: text.bodyMedium?.copyWith(
+                        color: scheme.onSurface,
+                        height: 1.6,
+                      ),
+                      listBullet: text.bodyMedium?.copyWith(
+                        color: scheme.onSurface,
+                      ),
+                      strong: text.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        color: scheme.onSurface,
+                      ),
+                      em: text.bodyMedium?.copyWith(
+                        fontStyle: FontStyle.italic,
+                        color: scheme.onSurface,
+                      ),
+                      blockquote: text.bodyMedium?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                        fontStyle: FontStyle.italic,
+                      ),
+                      code: text.bodySmall?.copyWith(
+                        color: scheme.onSurface,
+                        backgroundColor: scheme.surfaceContainerHighest,
+                      ),
+                    ),
+                    onTapLink: (displayText, href, title) {
+                      if (href != null) {
+                        launchUrl(
+                          Uri.parse(href),
+                          mode: LaunchMode.externalApplication,
+                        );
+                      }
+                    },
+                    sizedImageBuilder: (config) {
+                      if (config.alt == 'VIDEO') {
+                        return _buildVideoCard(config.uri.toString());
+                      }
+
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(16),
+                          child: AppNetworkImage(
+                            imageUrl: config.uri.toString(),
+                            width: config.width,
+                            height: config.height,
+                            fit: BoxFit.cover,
+                            placeholder: (context) => Container(
+                              height: 220,
+                              color: scheme.surfaceContainerHighest,
+                              child: const Center(
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              ),
+                            ),
+                            errorWidget: (context) => Container(
+                              height: 120,
+                              color: scheme.surfaceContainerHighest,
+                              child: Center(
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.broken_image,
+                                        color: scheme.outline),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      config.alt ?? 'Image failed to load',
+                                      style: text.bodySmall?.copyWith(
+                                        color: scheme.onSurfaceVariant,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  );
+                } catch (e) {
+                  return Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: scheme.errorContainer,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.error_outline, color: scheme.error),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Error rendering report',
+                              style: text.titleMedium?.copyWith(
+                                color: scheme.onErrorContainer,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'The research completed but there was an error displaying the report. You can still view the raw content below.',
+                          style: text.bodyMedium?.copyWith(
+                            color: scheme.onErrorContainer,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: scheme.surface,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: SelectableText(
+                            _finalResult!.result ?? 'No content available',
+                            style: text.bodySmall?.copyWith(
+                              fontFamily: 'monospace',
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDeepResearchImagesCard({
+    required ColorScheme scheme,
+    required TextTheme text,
+  }) {
+    final images = ((_finalResult?.images ??
+                (_researchUpdates.isNotEmpty
+                    ? _researchUpdates.last.images
+                    : null)) ??
+            [])
+        .whereType<String>()
+        .toList();
+
+    return _ResearchSurface(
+      title: 'Research Imagery',
+      subtitle:
+          'Visual references collected during the run, kept alongside the report for quick context.',
+      child: Wrap(
+        spacing: 10,
+        runSpacing: 10,
+        children: images.map((url) {
+          return InkWell(
+            onTap: () => _showDeepResearchImagePreview(context, url),
+            borderRadius: BorderRadius.circular(18),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(18),
+              child: AppNetworkImage(
+                imageUrl: url,
+                width: 132,
+                height: 132,
+                fit: BoxFit.cover,
+                errorWidget: (context) => Container(
+                  width: 132,
+                  height: 132,
+                  color: scheme.surfaceContainerHighest,
+                  child: Icon(
+                    Icons.broken_image,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _buildDeepResearchVideosCard({
+    required ColorScheme scheme,
+    required TextTheme text,
+  }) {
+    return _ResearchSurface(
+      title: 'Related Videos',
+      subtitle:
+          'Helpful follow-up explainers and walkthroughs pulled into the same research session.',
+      child: Column(
+        children: _finalResult!.videos!
+            .map((url) => _buildVideoCard(url, isPreview: true))
+            .toList(),
+      ),
+    );
+  }
+
+  Widget _buildDeepResearchErrorCard({
+    required ColorScheme scheme,
+    required TextTheme text,
+    required String message,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: scheme.errorContainer,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: scheme.error.withValues(alpha: 0.22),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.error_outline, color: scheme.onErrorContainer),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Research run failed',
+                  style: text.titleMedium?.copyWith(
+                    color: scheme.onErrorContainer,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  message,
+                  style: text.bodyMedium?.copyWith(
+                    color: scheme.onErrorContainer,
+                    height: 1.45,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -855,6 +2471,10 @@ $content''',
     final searchState = ref.watch(searchProvider);
     final notebooks = ref.watch(notebookProvider);
     final filteredResults = _applyFilters(searchState.results);
+
+    if (_isDeepResearch) {
+      return _buildDeepResearchScaffold(context, scheme, text, notebooks);
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -2374,6 +3994,480 @@ $content''',
       return uri.pathSegments.isNotEmpty ? uri.pathSegments.first : null;
     }
     return null;
+  }
+}
+
+class _ResearchSurface extends StatelessWidget {
+  const _ResearchSurface({
+    required this.title,
+    required this.subtitle,
+    required this.child,
+  });
+
+  final String title;
+  final String subtitle;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+
+    return Container(
+      padding: const EdgeInsets.all(22),
+      decoration: BoxDecoration(
+        color: scheme.surface.withValues(alpha: 0.94),
+        borderRadius: BorderRadius.circular(30),
+        border: Border.all(
+          color: scheme.outline.withValues(alpha: 0.10),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: scheme.shadow.withValues(alpha: 0.06),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: text.titleLarge?.copyWith(
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            subtitle,
+            style: text.bodyMedium?.copyWith(
+              color: scheme.onSurfaceVariant,
+              height: 1.45,
+            ),
+          ),
+          const SizedBox(height: 18),
+          child,
+        ],
+      ),
+    );
+  }
+}
+
+class _ResearchMetricChip extends StatelessWidget {
+  const _ResearchMetricChip({
+    required this.icon,
+    required this.label,
+    required this.color,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: color),
+          const SizedBox(width: 8),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 220),
+            child: Text(
+              label,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: color,
+                    fontWeight: FontWeight.w700,
+                  ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DepthOptionCard extends StatelessWidget {
+  const _DepthOptionCard({
+    required this.title,
+    required this.subtitle,
+    required this.credits,
+    required this.selected,
+    required this.accent,
+    required this.onTap,
+  });
+
+  final String title;
+  final String subtitle;
+  final int credits;
+  final bool selected;
+  final Color accent;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(22),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: selected
+                ? accent.withValues(alpha: 0.14)
+                : scheme.surfaceContainerHighest.withValues(alpha: 0.34),
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(
+              color: selected
+                  ? accent.withValues(alpha: 0.60)
+                  : scheme.outline.withValues(alpha: 0.10),
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 14,
+                height: 14,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: selected ? accent : scheme.outlineVariant,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: text.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      style: text.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                        height: 1.4,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                decoration: BoxDecoration(
+                  color: scheme.surface,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  '$credits cr',
+                  style: text.labelMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: accent,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TemplateOptionChip extends StatelessWidget {
+  const _TemplateOptionChip({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(999),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: selected
+                ? scheme.primaryContainer.withValues(alpha: 0.8)
+                : scheme.surfaceContainerHighest.withValues(alpha: 0.36),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: selected
+                  ? scheme.primary.withValues(alpha: 0.32)
+                  : scheme.outline.withValues(alpha: 0.10),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                size: 16,
+                color: selected ? scheme.primary : scheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      color: selected ? scheme.primary : scheme.onSurface,
+                      fontWeight: FontWeight.w700,
+                    ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CanvasFeatureCard extends StatelessWidget {
+  const _CanvasFeatureCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.color,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: scheme.surface,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: scheme.outline.withValues(alpha: 0.10)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Icon(icon, color: color),
+          ),
+          const SizedBox(height: 14),
+          Text(
+            title,
+            style: text.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            subtitle,
+            style: text.bodyMedium?.copyWith(
+              color: scheme.onSurfaceVariant,
+              height: 1.45,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ResearchSourceCard extends StatelessWidget {
+  const _ResearchSourceCard({
+    required this.source,
+    required this.domain,
+    required this.faviconUrl,
+    required this.credibilityColor,
+    required this.credibilityLabel,
+    required this.onOpen,
+  });
+
+  final ResearchSource source;
+  final String domain;
+  final String? faviconUrl;
+  final Color credibilityColor;
+  final String credibilityLabel;
+  final VoidCallback onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+    final hasImage =
+        source.imageUrl != null && source.imageUrl!.trim().isNotEmpty;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: scheme.surface,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: scheme.outline.withValues(alpha: 0.10),
+        ),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (hasImage)
+              AppNetworkImage(
+                imageUrl: source.imageUrl!,
+                width: double.infinity,
+                height: 128,
+                fit: BoxFit.cover,
+                placeholder: (context) => Container(
+                  height: 128,
+                  color: scheme.surfaceContainerHighest,
+                  child: const Center(
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+                errorWidget: (context) => Container(
+                  height: 128,
+                  color: scheme.surfaceContainerHighest,
+                  child: Icon(
+                    Icons.language_rounded,
+                    size: 40,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      if (faviconUrl != null)
+                        ClipOval(
+                          child: AppNetworkImage(
+                            imageUrl: faviconUrl!,
+                            width: 20,
+                            height: 20,
+                            fit: BoxFit.cover,
+                            placeholder: (context) => Container(
+                              width: 20,
+                              height: 20,
+                              color: scheme.surfaceContainerHighest,
+                            ),
+                            errorWidget: (context) => Icon(
+                              Icons.public,
+                              size: 18,
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                        )
+                      else
+                        Icon(
+                          Icons.public,
+                          size: 18,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          domain,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: text.labelLarge?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: credibilityColor.withValues(alpha: 0.10),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          '$credibilityLabel ${source.credibilityScore}',
+                          style: text.labelSmall?.copyWith(
+                            color: credibilityColor,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    source.title.trim().isEmpty ? domain : source.title.trim(),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: text.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      height: 1.25,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    (source.snippet ?? source.content).trim().isEmpty
+                        ? 'No preview available for this source yet.'
+                        : (source.snippet ?? source.content).trim(),
+                    maxLines: 4,
+                    overflow: TextOverflow.ellipsis,
+                    style: text.bodyMedium?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                      height: 1.45,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: OutlinedButton.icon(
+                      onPressed: onOpen,
+                      icon: const Icon(Icons.open_in_new_rounded, size: 18),
+                      label: const Text('Open source'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

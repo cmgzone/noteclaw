@@ -95,7 +95,7 @@ String? Function(BuildContext?, GoRouterState) createCustomAuthRedirect(
     if (hasPendingVerification &&
         path != '/verify-email-required' &&
         !path.startsWith('/verify-email/')) {
-      final encodedEmail = Uri.encodeComponent(pendingVerificationEmail!);
+      final encodedEmail = Uri.encodeComponent(pendingVerificationEmail);
       final sent = authState.verificationEmailSent ? 'true' : 'false';
       if (path == '/login' || isProtectedRoute(path)) {
         return '/verify-email-required?email=$encodedEmail&sent=$sent';

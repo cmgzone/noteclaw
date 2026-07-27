@@ -665,46 +665,75 @@ Sources to analyze:''';
     return Scaffold(
       backgroundColor: scheme.surface,
       appBar: AppBar(
-        title: Text(selectedAgentName == null
-            ? 'AI Chat'
-            : 'AI Chat • $selectedAgentName'),
+        title: Text(
+          selectedAgentName == null
+              ? 'AI Chat'
+              : 'AI Chat · $selectedAgentName',
+          overflow: TextOverflow.ellipsis,
+        ),
         actions: [
           // Context usage indicator
           GestureDetector(
             onTap: () => showContextUsageDialog(context),
             child: const ContextUsageIndicator(compact: true),
           ).animate().fadeIn(duration: Motion.short),
-          const SizedBox(width: 8),
+          const SizedBox(width: 4),
           // AI Writing Assistant
           IconButton(
             onPressed: _showAIWritingDialog,
-            icon: const Icon(Icons.auto_awesome),
+            icon: const Icon(Icons.auto_awesome, size: 20),
             tooltip: 'AI Writing Assistant',
-          ).animate().scale(duration: Motion.short, delay: Motion.short),
-
-          // Export chat
-          IconButton(
-            onPressed: _showExportDialog,
-            icon: const Icon(Icons.download_outlined),
-            tooltip: 'Export chat',
-          ).animate().scale(duration: Motion.short, delay: Motion.medium),
-          IconButton(
-            onPressed: () => context.push('/custom-agents'),
-            icon: const Icon(Icons.smart_toy_outlined),
-            tooltip: 'Custom agents',
-          ).animate().scale(duration: Motion.short, delay: Motion.medium),
-          Consumer(builder: (context, ref, _) {
-            return IconButton(
-              onPressed: () async {
-                // Voice settings
-                // We can show a dialog or bottom sheet here to select voice/provider
-                // For now, just show a simple dialog
-                _showVoiceSettings();
-              },
-              icon: const Icon(Icons.volume_up),
-              tooltip: 'Voice settings',
-            ).animate().scale(duration: Motion.short, delay: Motion.long);
-          }),
+          ),
+          // Overflow menu for secondary actions
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert, size: 20),
+            tooltip: 'More options',
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            onSelected: (value) {
+              switch (value) {
+                case 'export':
+                  _showExportDialog();
+                  break;
+                case 'agents':
+                  context.push('/custom-agents');
+                  break;
+                case 'voice':
+                  _showVoiceSettings();
+                  break;
+              }
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'export',
+                child: ListTile(
+                  leading: Icon(Icons.download_outlined, size: 20),
+                  title: Text('Export Chat'),
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'agents',
+                child: ListTile(
+                  leading: Icon(Icons.smart_toy_outlined, size: 20),
+                  title: Text('Custom Agents'),
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'voice',
+                child: ListTile(
+                  leading: Icon(Icons.volume_up, size: 20),
+                  title: Text('Voice Settings'),
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+            ],
+          ),
         ],
       ),
       body: Container(
@@ -946,7 +975,9 @@ class _MessageBubble extends ConsumerWidget {
       child: Container(
         margin: const EdgeInsets.only(bottom: 16),
         constraints: BoxConstraints(
-          maxWidth: MediaQuery.of(context).size.width * 0.82,
+          maxWidth: MediaQuery.of(context).size.width * 0.82 < 520
+              ? MediaQuery.of(context).size.width * 0.82
+              : 520,
         ),
         child: Column(
           crossAxisAlignment:
@@ -1831,12 +1862,15 @@ class _ChatInputArea extends ConsumerWidget {
                     children: [
                       Icon(Icons.language, size: 16, color: Colors.orange),
                       SizedBox(width: 6),
-                      Text(
-                        '🌐 Web Browsing - AI will search & show screenshots',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.orange,
-                          fontWeight: FontWeight.w500,
+                      Flexible(
+                        child: Text(
+                          '🌐 Web Browsing active',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.orange,
+                            fontWeight: FontWeight.w500,
+                          ),
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     ],
@@ -1861,12 +1895,15 @@ class _ChatInputArea extends ConsumerWidget {
                     children: [
                       Icon(Icons.public, size: 16, color: scheme.primary),
                       const SizedBox(width: 6),
-                      Text(
-                        'Deep Search enabled - will search the web',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: scheme.primary,
-                          fontWeight: FontWeight.w500,
+                      Flexible(
+                        child: Text(
+                          'Deep Search enabled',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: scheme.primary,
+                            fontWeight: FontWeight.w500,
+                          ),
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     ],

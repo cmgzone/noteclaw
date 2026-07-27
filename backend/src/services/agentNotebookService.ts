@@ -64,6 +64,18 @@ class AgentNotebookService {
       return existingBySession;
     }
 
+    // Check for existing notebook by project / title for this user BEFORE creating a new one
+    const requestedTitle = options.title;
+    if (requestedTitle && requestedTitle.trim().length > 0) {
+      const existingByTitle = await this.findNotebookByTitle(userId, requestedTitle);
+      if (existingByTitle) {
+        if (!agentSession.notebookId) {
+          await agentSessionService.linkNotebook(agentSession.id, existingByTitle.id);
+        }
+        return existingByTitle;
+      }
+    }
+
     // Create new notebook with agent metadata (Requirements 1.1, 1.2)
     const notebookId = uuidv4();
     const title = options.title || `${agentSession.agentName} Notebook`;
@@ -225,6 +237,27 @@ class AgentNotebookService {
        WHERE id = $${paramIndex++} AND user_id = $${paramIndex}
        RETURNING *`,
       values
+    );
+
+    if (result.rows.length === 0) {
+      return null;
+    }
+
+    return this.mapRowToNotebook(result.rows[0]);
+  }
+
+  /**
+   * Search for an existing notebook by user ID and title/project keyword.
+   */
+  async findNotebookByTitle(userId: string, title: string): Promise<AgentNotebook | null> {
+    const cleanTitle = title.trim();
+    if (!cleanTitle) return null;
+
+    const result = await pool.query(
+      `SELECT * FROM notebooks
+       WHERE user_id = $1 AND (LOWER(title) = LOWER($2) OR LOWER(title) LIKE LOWER($3))
+       ORDER BY updated_at DESC LIMIT 1`,
+      [userId, cleanTitle, `%${cleanTitle}%`]
     );
 
     if (result.rows.length === 0) {

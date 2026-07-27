@@ -77,9 +77,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     });
   }
 
+  String _greeting() {
+    final hour = DateTime.now().hour;
+    if (hour < 12) return 'Good Morning';
+    if (hour < 17) return 'Good Afternoon';
+    return 'Good Evening';
+  }
+
   @override
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
+    final scheme = Theme.of(context).colorScheme;
     final authState = ref.watch(customAuthStateProvider);
     final isLoggedIn = authState.isAuthenticated;
     final notebooks = ref.watch(notebookProvider);
@@ -96,68 +104,43 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       drawer: _AppDrawer(isLoggedIn: isLoggedIn),
       body: CustomScrollView(
         slivers: [
+          // ── Slim App Bar ───────────────────────────────────────────────
           SliverAppBar(
             floating: true,
             pinned: true,
-            expandedHeight: 180,
+            expandedHeight: 130,
             flexibleSpace: FlexibleSpaceBar(
               background: Container(
                 decoration: const BoxDecoration(
                   gradient: AppTheme.premiumGradient,
                 ),
-                child: Stack(
-                  children: [
-                    // Decorative bubbles
-                    Positioned(
-                      top: -40,
-                      right: -40,
-                      child: Container(
-                        width: 200,
-                        height: 200,
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.1),
-                          shape: BoxShape.circle,
-                        ),
-                      ),
+                child: SafeArea(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(60, 12, 16, 16),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _greeting(),
+                          style: text.bodyMedium?.copyWith(
+                            color: Colors.white.withValues(alpha: 0.8),
+                            fontWeight: FontWeight.w400,
+                            letterSpacing: 0.2,
+                          ),
+                        ).animate().fadeIn(duration: 300.ms),
+                        const SizedBox(height: 2),
+                        Text(
+                          'NoteClaw',
+                          style: text.headlineSmall?.copyWith(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: -0.5,
+                          ),
+                        ).animate().fadeIn(delay: 150.ms, duration: 300.ms),
+                      ],
                     ),
-                    Positioned(
-                      bottom: -20,
-                      left: -20,
-                      child: Container(
-                        width: 140,
-                        height: 140,
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.1),
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                    ),
-                    SafeArea(
-                      child: Padding(
-                        padding: const EdgeInsets.all(24.0),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Welcome Back',
-                              style: text.bodyLarge?.copyWith(
-                                color: Colors.white.withValues(alpha: 0.8),
-                              ),
-                            ).animate().fadeIn().slideX(),
-                            const SizedBox(height: 4),
-                            Text(
-                              'Dashboard',
-                              style: text.displaySmall?.copyWith(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ).animate().fadeIn(delay: 200.ms).slideX(),
-                          ],
-                        ),
-                      ),
-                    )
-                  ],
+                  ),
                 ),
               ),
             ),
@@ -169,7 +152,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ),
             ),
             actions: [
-              // Credit Balance Display
+              // Credit Balance
               Consumer(builder: (context, ref, _) {
                 final credits = ref.watch(creditBalanceProvider);
                 return GestureDetector(
@@ -186,35 +169,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         const Icon(LucideIcons.coins,
-                            size: 16, color: Colors.white),
+                            size: 14, color: Colors.white),
                         const SizedBox(width: 6),
-                        Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'AI Credits',
-                              style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.82),
-                                fontWeight: FontWeight.w600,
-                                fontSize: 10,
-                              ),
-                            ),
-                            Text(
-                              '$credits balance',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 13,
-                              ),
-                            ),
-                          ],
+                        Text(
+                          '$credits',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13,
+                          ),
                         ),
                       ],
                     ),
                   ),
                 );
               }),
+              // Theme toggle
               Consumer(builder: (context, ref, _) {
                 final mode = ref.watch(themeModeProvider);
                 return IconButton(
@@ -223,71 +193,116 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   icon: Icon(
                     mode == ThemeMode.dark ? Icons.dark_mode : Icons.light_mode,
                     color: Colors.white,
+                    size: 20,
                   ),
                   tooltip: mode == ThemeMode.dark ? 'Light mode' : 'Dark mode',
                 );
               }),
-              // Notification Bell
+              // Notifications
               Consumer(builder: (context, ref, _) {
                 final unreadCount = ref.watch(unreadNotificationCountProvider);
-                return Container(
-                  margin: const EdgeInsets.only(right: 4),
-                  child: IconButton(
-                    onPressed: () => context.push('/notifications'),
-                    icon: Badge(
-                      isLabelVisible: unreadCount > 0,
-                      label: Text(
-                        unreadCount > 99 ? '99+' : unreadCount.toString(),
-                        style: const TextStyle(fontSize: 10),
-                      ),
-                      child: const Icon(Icons.notifications_outlined,
-                          color: Colors.white),
+                return IconButton(
+                  onPressed: () => context.push('/notifications'),
+                  icon: Badge(
+                    isLabelVisible: unreadCount > 0,
+                    label: Text(
+                      unreadCount > 99 ? '99+' : unreadCount.toString(),
+                      style: const TextStyle(fontSize: 10),
                     ),
-                    tooltip: unreadCount > 0
-                        ? '$unreadCount notifications'
-                        : 'Notifications',
+                    child: const Icon(Icons.notifications_outlined,
+                        color: Colors.white, size: 20),
                   ),
+                  tooltip: unreadCount > 0
+                      ? '$unreadCount notifications'
+                      : 'Notifications',
                 );
               }),
-              Container(
-                margin: const EdgeInsets.only(right: 8),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.2),
-                  shape: BoxShape.circle,
-                ),
-                child: IconButton(
-                  onPressed: () =>
-                      ref.read(notebookProvider.notifier).refresh(),
-                  icon: const Icon(Icons.refresh, color: Colors.white),
-                  tooltip: 'Refresh Notebooks',
-                ),
-              ),
-              Container(
-                margin: const EdgeInsets.only(right: 8),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.2),
-                  shape: BoxShape.circle,
-                ),
+              // New Notebook
+              Padding(
+                padding: const EdgeInsets.only(right: 6),
                 child: IconButton(
                   onPressed: () => showDialog(
                     context: context,
                     builder: (_) => const CreateNotebookDialog(),
                   ),
-                  icon: const Icon(Icons.add, color: Colors.white),
+                  icon: const Icon(Icons.add, color: Colors.white, size: 22),
                   tooltip: 'New Notebook',
                 ),
               ),
             ],
           ),
-          SliverToBoxAdapter(
-            child: RefreshIndicator(
-              onRefresh: () => ref.read(notebookProvider.notifier).refresh(),
-              child: const SizedBox.shrink(),
-            ),
-          ),
+
+          // ── Dashboard Cards ────────────────────────────────────────────
           const DashboardGrid(),
+
+          // ── Recent Notebooks (horizontal strip) ────────────────────────
+          if (notebooks.isNotEmpty) ...[
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 10),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Recent Notebooks',
+                      style: text.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () =>
+                          ref.read(notebookProvider.notifier).refresh(),
+                      child: Text(
+                        'Refresh',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: scheme.primary,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ).animate().fadeIn(duration: 350.ms),
+            ),
+            SliverToBoxAdapter(
+              child: SizedBox(
+                height: 200,
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  itemCount: notebooks.length > 10 ? 10 : notebooks.length,
+                  itemBuilder: (context, index) {
+                    final n = notebooks[index];
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 12),
+                      child: SizedBox(
+                        width: 160,
+                        child: NotebookCard(
+                          key: ValueKey(n.id),
+                          title: n.title,
+                          sourceCount: n.sourceCount,
+                          notebookId: n.id,
+                          coverImage: n.coverImage,
+                          isAgentNotebook: n.isAgentNotebook,
+                          agentName: n.agentName,
+                          agentStatus: n.agentStatus,
+                        ),
+                      ),
+                    ).animate().fadeIn(
+                        delay: Duration(milliseconds: index * 50),
+                        duration: 300.ms);
+                  },
+                ),
+              ),
+            ),
+          ],
+
+          // ── Empty state ────────────────────────────────────────────────
           if (notebooks.isEmpty)
             const SliverToBoxAdapter(child: _EmptyState()),
+
+          // ── Categories ─────────────────────────────────────────────────
           ..._buildCategories(context, ref),
           const SliverToBoxAdapter(
             child: SizedBox(height: 80), // Bottom padding
@@ -638,7 +653,7 @@ class _AppDrawer extends ConsumerWidget {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'AI-Powered Learning',
+                        'AI-Powered Second Brain',
                         style: text.bodySmall?.copyWith(
                           color: scheme.secondaryText,
                           letterSpacing: 0.5,

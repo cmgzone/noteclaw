@@ -11,244 +11,186 @@ class DashboardGrid extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Industrial Dashboard Layout
+    final scheme = Theme.of(context).colorScheme;
+
     return SliverToBoxAdapter(
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Research & AI Agents',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-            ).animate().fadeIn().slideX(),
-            const SizedBox(height: 12),
+            // ── Quick Actions strip ──────────────────────────────────────
+            _QuickActionsRow(ref: ref),
+            const SizedBox(height: 28),
 
-            // 1. Deep Research (Top Priority)
-            _BentoCard(
-              title: 'Deep Research Agent',
-              subtitle: 'Analyze huge documents and web sources',
+            // ── Research & AI Agents ─────────────────────────────────────
+            const _SectionLabel(label: 'Research & AI'),
+            const SizedBox(height: 10),
+            _ActionTile(
               icon: LucideIcons.search,
-              color: const Color(0xFF8B5CF6), // Violet
+              iconColor: const Color(0xFF7C3AED),
+              title: 'Deep Research Agent',
+              subtitle: 'Analyze documents, web sources, and synthesize insights',
               onTap: () => context.push('/search'),
-              height: 140,
-              isWide: true,
             ),
-            const SizedBox(height: 12),
-            _BentoCard(
-              title: 'Connect AI Agents',
-              subtitle: 'Link Codex, Claude Code, OpenClaw, and more',
+            _ActionTile(
               icon: LucideIcons.terminal,
-              color: const Color(0xFFF97316), // Orange 500
+              iconColor: const Color(0xFFEA580C),
+              title: 'Connect AI Agents',
+              subtitle: 'Link Codex, Claude, OpenClaw and external MCP agents',
+              badge: 'MCP',
+              badgeColor: const Color(0xFFEA580C),
               onTap: () => context.push('/agent-connections'),
-              height: 132,
-              isWide: true,
             ),
-            const SizedBox(height: 12),
-            _BentoCard(
-              title: 'Sources',
-              subtitle: 'Manage your imported content',
+            _ActionTile(
               icon: LucideIcons.fileText,
-              color: const Color(0xFF34D399), // Emerald 400
+              iconColor: const Color(0xFF059669),
+              title: 'Sources Library',
+              subtitle: 'Manage imported PDFs, websites, and documents',
               onTap: () => context.push('/sources'),
-              height: 120,
-              isWide: true,
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 28),
 
-            Text(
-              'Engineering & Development',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-            ).animate().fadeIn().slideX(delay: 100.ms),
-            const SizedBox(height: 12),
-
-            // 2. Coding Tools Section
+            // ── Engineering & Dev ────────────────────────────────────────
+            const _SectionLabel(label: 'Engineering & Dev'),
+            const SizedBox(height: 10),
             Row(
               children: [
                 Expanded(
-                  child: _BentoCard(
-                    title: 'Code Review',
-                    subtitle: 'AI-powered code analysis',
+                  child: _CompactTile(
                     icon: LucideIcons.code,
-                    color: const Color(0xFF22D3EE), // Cyan
+                    iconColor: const Color(0xFF0891B2),
+                    title: 'Code Review',
                     onTap: () => context.push('/code-review'),
-                    height: 140,
                   ),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 10),
                 Expanded(
-                  child: _BentoCard(
-                    title: 'Project Workspace',
-                    subtitle: 'Plan, organize, and ship projects',
+                  child: _CompactTile(
                     icon: LucideIcons.clipboardList,
-                    color: const Color(0xFFF472B6), // Pink 400
+                    iconColor: const Color(0xFFDB2777),
+                    title: 'Projects',
                     onTap: () => context.push('/planning'),
-                    height: 140,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _CompactTile(
+                    icon: LucideIcons.github,
+                    iconColor: scheme.onSurfaceVariant,
+                    title: 'GitHub',
+                    onTap: () => context.push('/github'),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 12),
-            _BentoCard(
-              title: 'GitHub',
-              subtitle: 'Connect repos and browse projects',
-              icon: LucideIcons.github,
-              color: const Color(0xFF94A3B8), // Slate 400
-              onTap: () => context.push('/github'),
-              height: 120,
-              isWide: true,
-            ),
-            const SizedBox(height: 12),
-            const SizedBox(height: 24),
+            const SizedBox(height: 28),
 
-            Text(
-              'Learning & Growth',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-            ).animate().fadeIn().slideX(delay: 200.ms),
-            const SizedBox(height: 12),
-
-            // 3. Learning Section
-            _BentoCard(
-              title: 'Ai Tutor',
-              subtitle: 'Master any subject',
+            // ── Learning & Growth ────────────────────────────────────────
+            const _SectionLabel(label: 'Learning & Growth'),
+            const SizedBox(height: 10),
+            _ActionTile(
               icon: LucideIcons.graduationCap,
-              color: const Color(0xFF6366F1), // Indigo
+              iconColor: const Color(0xFF4F46E5),
+              title: 'AI Tutor',
+              subtitle: 'Personalized lessons from your notebooks',
               onTap: () {
                 final notebooks = ref.read(notebookProvider);
                 if (notebooks.isNotEmpty) {
-                  final id = notebooks.first.id;
-                  context.push('/notebook/$id/tutor-sessions');
+                  context.push('/notebook/${notebooks.first.id}/tutor-sessions');
                 } else {
-                  showDialog(
-                    context: context,
-                    builder: (_) => const CreateNotebookDialog(),
-                  );
+                  showDialog(context: context, builder: (_) => const CreateNotebookDialog());
                 }
               },
-              height: 120,
-              compact: true,
             ),
-            const SizedBox(height: 12),
             Row(
               children: [
                 Expanded(
-                  child: _BentoCard(
-                    title: 'Flashcards',
-                    subtitle: 'Study with spaced repetition',
+                  child: _CompactTile(
                     icon: LucideIcons.layers,
-                    color: const Color(0xFF0EA5E9), // Sky 500
+                    iconColor: const Color(0xFF0284C7),
+                    title: 'Flashcards',
                     onTap: () {
                       final notebooks = ref.read(notebookProvider);
                       if (notebooks.isNotEmpty) {
-                        final id = notebooks.first.id;
-                        context.push('/notebook/$id/flashcards');
+                        context.push('/notebook/${notebooks.first.id}/flashcards');
                       } else {
-                        showDialog(
-                          context: context,
-                          builder: (_) => const CreateNotebookDialog(),
-                        );
+                        showDialog(context: context, builder: (_) => const CreateNotebookDialog());
                       }
                     },
-                    height: 120,
                   ),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 10),
                 Expanded(
-                  child: _BentoCard(
-                    title: 'Quizzes',
-                    subtitle: 'Test your knowledge quickly',
+                  child: _CompactTile(
                     icon: LucideIcons.checkCircle,
-                    color: const Color(0xFFFB7185), // Rose 400
+                    iconColor: const Color(0xFFE11D48),
+                    title: 'Quizzes',
                     onTap: () {
                       final notebooks = ref.read(notebookProvider);
                       if (notebooks.isNotEmpty) {
-                        final id = notebooks.first.id;
-                        context.push('/notebook/$id/quizzes');
+                        context.push('/notebook/${notebooks.first.id}/quizzes');
                       } else {
-                        showDialog(
-                          context: context,
-                          builder: (_) => const CreateNotebookDialog(),
-                        );
+                        showDialog(context: context, builder: (_) => const CreateNotebookDialog());
                       }
                     },
-                    height: 120,
                   ),
                 ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
+                const SizedBox(width: 10),
                 Expanded(
-                  child: _BentoCard(
-                    title: 'Language Learning',
-                    subtitle: 'Practice daily sessions',
+                  child: _CompactTile(
                     icon: LucideIcons.languages,
-                    color: const Color(0xFF22C55E), // Green 500
+                    iconColor: const Color(0xFF16A34A),
+                    title: 'Languages',
                     onTap: () => context.push('/language-learning'),
-                    height: 120,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _BentoCard(
-                    title: 'Ebook Creator',
-                    subtitle: 'Turn notes into ebooks',
-                    icon: LucideIcons.bookOpen,
-                    color: const Color(0xFFA855F7), // Purple 500
-                    onTap: () => context.push('/ebook-creator'),
-                    height: 120,
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 24),
-
-            Text(
-              'Community & Insights',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-            ).animate().fadeIn().slideX(delay: 300.ms),
             const SizedBox(height: 12),
+            _ActionTile(
+              icon: LucideIcons.bookOpen,
+              iconColor: const Color(0xFF9333EA),
+              title: 'Ebook Creator',
+              subtitle: 'Turn your notes and sources into a polished ebook',
+              onTap: () => context.push('/ebook-creator'),
+            ),
+            const SizedBox(height: 28),
 
-            // 4. Community Section
+            // ── Community ────────────────────────────────────────────────
+            const _SectionLabel(label: 'Community'),
+            const SizedBox(height: 10),
             Row(
               children: [
                 Expanded(
-                  child: _BentoCard(
-                    title: 'Social Hub',
+                  child: _CompactTile(
                     icon: LucideIcons.users,
-                    color: const Color(0xFF10B981), // Emerald
+                    iconColor: const Color(0xFF0D9488),
+                    title: 'Social Hub',
                     onTap: () => context.push('/social'),
-                    height: 100,
-                    compact: true,
                   ),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 10),
                 Expanded(
-                  child: _BentoCard(
-                    title: 'Progress Stats',
+                  child: _CompactTile(
                     icon: LucideIcons.trophy,
-                    color: const Color(0xFFFBBF24), // Amber
+                    iconColor: const Color(0xFFD97706),
+                    title: 'Progress',
                     onTap: () => context.push('/progress'),
-                    height: 100,
-                    compact: true,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _CompactTile(
+                    icon: LucideIcons.flame,
+                    iconColor: const Color(0xFFDC2626),
+                    title: 'Challenges',
+                    onTap: () => context.push('/daily-challenges'),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 32),
           ],
         ),
       ),
@@ -256,25 +198,251 @@ class DashboardGrid extends ConsumerWidget {
   }
 }
 
-class _BentoCard extends StatelessWidget {
-  final String title;
-  final String? subtitle;
-  final IconData icon;
-  final Color color;
-  final VoidCallback onTap;
-  final double height;
-  final bool compact;
-  final bool isWide;
+// ─────────────────────────────────────────────────────────────────────────────
+// Quick actions strip — 4 icon buttons at the top
+// ─────────────────────────────────────────────────────────────────────────────
+class _QuickActionsRow extends StatelessWidget {
+  final WidgetRef ref;
+  const _QuickActionsRow({required this.ref});
 
-  const _BentoCard({
-    required this.title,
-    this.subtitle,
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    final actions = [
+      const _QuickAction(icon: LucideIcons.messageSquare, label: 'Chat', route: '/chat'),
+      const _QuickAction(icon: LucideIcons.search, label: 'Research', route: '/search'),
+      const _QuickAction(icon: LucideIcons.clipboardList, label: 'Projects', route: '/planning'),
+      const _QuickAction(icon: LucideIcons.fileText, label: 'Sources', route: '/sources'),
+    ];
+
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 4),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainer.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: scheme.outline.withValues(alpha: 0.1)),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: actions
+            .map(
+              (a) => _QuickActionButton(
+                icon: a.icon,
+                label: a.label,
+                onTap: () => context.push(a.route),
+              ),
+            )
+            .toList(),
+      ),
+    ).animate().fadeIn(duration: 400.ms);
+  }
+}
+
+class _QuickAction {
+  final IconData icon;
+  final String label;
+  final String route;
+  const _QuickAction({required this.icon, required this.label, required this.route});
+}
+
+class _QuickActionButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  const _QuickActionButton({required this.icon, required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: scheme.primary.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Icon(icon, size: 22, color: scheme.primary),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w500,
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Section label
+// ─────────────────────────────────────────────────────────────────────────────
+class _SectionLabel extends StatelessWidget {
+  final String label;
+  const _SectionLabel({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      label,
+      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.8,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Full-width action tile with icon, title, subtitle, optional badge
+// ─────────────────────────────────────────────────────────────────────────────
+class _ActionTile extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+  final String? badge;
+  final Color? badgeColor;
+
+  const _ActionTile({
     required this.icon,
-    required this.color,
+    required this.iconColor,
+    required this.title,
+    required this.subtitle,
     required this.onTap,
-    this.height = 160,
-    this.compact = false,
-    this.isWide = false,
+    this.badge,
+    this.badgeColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(14),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+            decoration: BoxDecoration(
+              color: isDark
+                  ? scheme.surfaceContainer.withValues(alpha: 0.55)
+                  : scheme.surface,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: scheme.outline.withValues(alpha: 0.12),
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: iconColor.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(11),
+                  ),
+                  child: Icon(icon, size: 20, color: iconColor),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              title,
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodyMedium
+                                  ?.copyWith(fontWeight: FontWeight.w600),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if (badge != null) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: (badgeColor ?? iconColor)
+                                    .withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                badge!,
+                                style: TextStyle(
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w700,
+                                  color: badgeColor ?? iconColor,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                            ),
+                          ]
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                            ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Icon(
+                  LucideIcons.chevronRight,
+                  size: 16,
+                  color: scheme.onSurfaceVariant.withValues(alpha: 0.5),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ).animate().fadeIn(duration: 350.ms);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Compact 3-up tile (icon + label only, used in grids of 3)
+// ─────────────────────────────────────────────────────────────────────────────
+class _CompactTile extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final String title;
+  final VoidCallback onTap;
+
+  const _CompactTile({
+    required this.icon,
+    required this.iconColor,
+    required this.title,
+    required this.onTap,
   });
 
   @override
@@ -286,129 +454,43 @@ class _BentoCard extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(14),
         child: Container(
-          height: height,
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
           decoration: BoxDecoration(
             color: isDark
-                ? scheme.surfaceContainer.withValues(alpha: 0.6)
-                : Colors.white,
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(
-              color: scheme.outline.withValues(alpha: 0.1),
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: color.withValues(alpha: 0.15),
-                blurRadius: 20,
-                offset: const Offset(0, 8),
+                ? scheme.surfaceContainer.withValues(alpha: 0.55)
+                : scheme.surface,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: scheme.outline.withValues(alpha: 0.12)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: iconColor.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(icon, size: 18, color: iconColor),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                title,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: scheme.onSurface,
+                    ),
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
             ],
           ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(24),
-            child: Stack(
-              children: [
-                // Decorative Gradient Blob
-                Positioned(
-                  right: -20,
-                  top: -20,
-                  child: Container(
-                    width: compact ? 80 : 120,
-                    height: compact ? 80 : 120,
-                    decoration: BoxDecoration(
-                      gradient: RadialGradient(
-                        colors: [
-                          color.withValues(alpha: 0.3),
-                          color.withValues(alpha: 0.0),
-                        ],
-                      ),
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                ),
-
-                // Content: icon + title/subtitle
-                Positioned.fill(
-                  child: Padding(
-                    padding: EdgeInsets.all(compact ? 12 : 20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      mainAxisSize: MainAxisSize.max,
-                      children: [
-                        // Icon
-                        Container(
-                          padding: EdgeInsets.all(compact ? 8 : 12),
-                          decoration: BoxDecoration(
-                            color: color.withValues(alpha: 0.1),
-                            borderRadius:
-                                BorderRadius.circular(compact ? 12 : 16),
-                          ),
-                          child:
-                              Icon(icon, color: color, size: compact ? 20 : 24),
-                        ),
-
-                        // Text - pushed to bottom by spaceBetween
-                        Flexible(
-                          child: LayoutBuilder(
-                            builder: (context, constraints) {
-                              // These cards can get very short in some responsive breakpoints,
-                              // so only show the subtitle when there is enough vertical space.
-                              final canShowSubtitle = subtitle != null &&
-                                  !compact &&
-                                  constraints.maxHeight >= 44;
-                              final subtitleMaxLines =
-                                  constraints.maxHeight >= 58 ? 2 : 1;
-
-                              return Column(
-                                mainAxisSize: MainAxisSize.min,
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisAlignment: MainAxisAlignment.end,
-                                children: [
-                                  Text(
-                                    title,
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .titleMedium
-                                        ?.copyWith(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: compact ? 13 : 16,
-                                          height: 1.1,
-                                        ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  if (canShowSubtitle) ...[
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      subtitle!,
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .bodySmall
-                                          ?.copyWith(
-                                            color: scheme.onSurfaceVariant,
-                                            fontSize: 12,
-                                            height: 1.1,
-                                          ),
-                                      maxLines: subtitleMaxLines,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ],
-                                ],
-                              );
-                            },
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
         ),
       ),
-    ).animate().scale(duration: 400.ms, curve: Curves.easeOut);
+    ).animate().fadeIn(duration: 350.ms);
   }
 }

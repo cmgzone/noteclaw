@@ -235,12 +235,12 @@ Uses strict mode by default for thorough analysis.`,
   // ==================== AGENT COMMUNICATION TOOLS ====================
   {
     name: 'create_agent_notebook',
-    description: `Create a dedicated notebook for this coding agent. This is idempotent - calling multiple times with the same agent identifier returns the existing notebook.
-    
-Use this tool to:
-- Set up a workspace for storing verified code
-- Establish a session for bidirectional communication with the user
-- Configure webhook endpoints for receiving follow-up messages
+    description: `Create or retrieve a dedicated notebook for this coding agent or project.
+
+AUTOMATIC SEARCH & DUPLICATE PREVENTION:
+- First searches existing notebooks and project plans for a matching project or notebook title.
+- If a notebook for this project already exists, returns the existing notebook ID instead of creating a duplicate.
+- If no matching notebook exists, creates a new notebook for the agent/project.
 
 Returns:
 - notebook: The created/existing notebook with ID, title, description
@@ -258,7 +258,7 @@ Returns:
         },
         title: {
           type: 'string',
-          description: 'Optional custom title for the notebook (defaults to "{agentName} Code")',
+          description: 'Optional custom title or project name for the notebook',
         },
         description: {
           type: 'string',
