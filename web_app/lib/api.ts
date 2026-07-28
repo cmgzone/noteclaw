@@ -432,7 +432,7 @@ class ApiService {
     async getNotebooks(): Promise<Notebook[]> {
         try {
             const data = await this.fetch<{ notebooks: Notebook[] }>('/coding-agent/memory/notebooks');
-            if (data && Array.isArray(data.notebooks) && data.notebooks.length > 0) {
+            if (data && Array.isArray(data.notebooks)) {
                 return data.notebooks;
             }
         } catch (e) {
@@ -720,8 +720,22 @@ class ApiService {
     }
 
     async getAgentNotebooks(): Promise<AgentNotebook[]> {
-        const data = await this.fetch<{ notebooks: AgentNotebook[] }>('/coding-agent/notebooks');
-        return data.notebooks;
+        try {
+            const data = await this.fetch<{ notebooks: AgentNotebook[] }>('/coding-agent/notebooks');
+            if (data && Array.isArray(data.notebooks) && data.notebooks.length > 0) {
+                return data.notebooks;
+            }
+        } catch (e) {
+            console.warn('[API] Agent notebooks fetch failed, falling back to memory notebooks:', e);
+        }
+
+        try {
+            const data = await this.fetch<{ notebooks: AgentNotebook[] }>('/coding-agent/memory/notebooks');
+            return (data.notebooks || []).filter((nb: any) => nb.isAgentNotebook || nb.session);
+        } catch (e) {
+            console.error('[API] Fallback agent notebooks fetch failed:', e);
+            return [];
+        }
     }
 
     async getAgentTopicAccess(): Promise<TopicAccessMatrix> {

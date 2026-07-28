@@ -32,7 +32,9 @@ class Notebook with _$Notebook {
   factory Notebook.fromJson(Map<String, dynamic> json) {
     final Map<String, dynamic> normalized = Map<String, dynamic>.from(json);
 
+    normalized['id'] = (json['id'] ?? json['notebook_id'] ?? json['notebookId'])?.toString() ?? '';
     normalized['userId'] = json['userId'] ?? json['user_id'] ?? '';
+    normalized['title'] = (json['title'])?.toString() ?? 'Untitled Notebook';
     normalized['coverImage'] = json['coverImage'] ?? json['cover_image'];
     normalized['sourceCount'] = _asInt(json['sourceCount'] ?? json['source_count']);
     normalized['createdAt'] = (json['createdAt'] ?? json['created_at'])?.toString() ?? DateTime.now().toIso8601String();

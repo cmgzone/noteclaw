@@ -53,6 +53,11 @@ export function normalizePlanFeatureAccess(
       normalized[key] = candidate[key] as boolean;
     }
   }
+  // Core memory bank features are always enabled for all active plans
+  normalized.memory_bank = true;
+  normalized.notebook_chat = true;
+  normalized.websocket_collaboration = true;
+
   return normalized;
 }
 
@@ -80,14 +85,15 @@ export async function ensurePlanFeatureAccessReady(): Promise<void> {
         const hasKnownKey = PLAN_FEATURE_KEYS.some(
           (key) => typeof current[key] === 'boolean',
         );
-        if (hasKnownKey) continue;
+        if (hasKnownKey && current.memory_bank === true) continue;
 
+        const updatedAccess = defaultPlanFeatureAccess(plan.is_free_plan === true);
         await pool.query(
           `UPDATE subscription_plans
            SET feature_access = $1::jsonb, updated_at = NOW()
            WHERE id = $2`,
           [
-            JSON.stringify(defaultPlanFeatureAccess(plan.is_free_plan === true)),
+            JSON.stringify(updatedAccess),
             plan.id,
           ],
         );

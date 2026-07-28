@@ -113,35 +113,7 @@ class NotebookNotifier extends StateNotifier<List<Notebook>> {
 
       final loadedNotebooks = notebooks.map((notebook) {
         debugPrint('📖 Parsing: ${notebook['id']} - ${notebook['title']}');
-
-        // Handle source_count which can be String or num from PostgreSQL
-        int sourceCount = 0;
-        final rawSourceCount = notebook['source_count'];
-        if (rawSourceCount != null) {
-          if (rawSourceCount is num) {
-            sourceCount = rawSourceCount.toInt();
-          } else if (rawSourceCount is String) {
-            sourceCount = int.tryParse(rawSourceCount) ?? 0;
-          }
-        }
-
-        return Notebook(
-          id: notebook['id'] as String,
-          userId: notebook['user_id'] as String,
-          title: notebook['title'] as String,
-          description: notebook['description'] as String? ?? '',
-          coverImage: notebook['cover_image'] as String?,
-          sourceCount: sourceCount,
-          createdAt: DateTime.parse(notebook['created_at'] as String),
-          updatedAt: DateTime.parse(notebook['updated_at'] as String),
-          // Agent notebook fields (Requirements 1.4, 4.1)
-          isAgentNotebook: notebook['is_agent_notebook'] as bool? ?? false,
-          agentSessionId: notebook['agent_session_id'] as String?,
-          agentName: notebook['agent_name'] as String?,
-          agentIdentifier: notebook['agent_identifier'] as String?,
-          agentStatus: notebook['agent_status'] as String? ?? 'active',
-          category: notebook['category'] as String? ?? 'General',
-        );
+        return Notebook.fromJson(notebook);
       }).toList();
 
       if (mounted) {
@@ -186,17 +158,7 @@ class NotebookNotifier extends StateNotifier<List<Notebook>> {
 
       debugPrint('📝 API response: $notebookData');
 
-      final notebook = Notebook(
-        id: notebookData['id'] as String,
-        userId: notebookData['user_id'] as String,
-        title: notebookData['title'] as String,
-        description: notebookData['description'] as String? ?? '',
-        coverImage: notebookData['cover_image'] as String?,
-        sourceCount: 0,
-        createdAt: DateTime.parse(notebookData['created_at'] as String),
-        updatedAt: DateTime.parse(notebookData['updated_at'] as String),
-        category: notebookData['category'] as String? ?? 'General',
-      );
+      final notebook = Notebook.fromJson(notebookData);
 
       // Update state immediately with the new notebook
       if (mounted) {
