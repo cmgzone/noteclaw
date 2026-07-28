@@ -430,8 +430,22 @@ class ApiService {
 
     // Notebooks
     async getNotebooks(): Promise<Notebook[]> {
-        const data = await this.fetch<{ notebooks: Notebook[] }>('/coding-agent/memory/notebooks');
-        return data.notebooks || [];
+        try {
+            const data = await this.fetch<{ notebooks: Notebook[] }>('/coding-agent/memory/notebooks');
+            if (data && Array.isArray(data.notebooks) && data.notebooks.length > 0) {
+                return data.notebooks;
+            }
+        } catch (e) {
+            console.warn('[API] Memory notebooks fetch failed, falling back to standard notebooks:', e);
+        }
+
+        try {
+            const fallbackData = await this.fetch<{ notebooks: Notebook[] }>('/notebooks');
+            return fallbackData.notebooks || [];
+        } catch (fallbackError) {
+            console.error('[API] Standard notebooks fetch failed:', fallbackError);
+            return [];
+        }
     }
 
     async getNotebook(id: string): Promise<Notebook> {

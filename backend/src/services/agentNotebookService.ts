@@ -8,6 +8,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import pool from '../config/database.js';
 import { AgentSession, agentSessionService } from './agentSessionService.js';
+import { CacheKeys, deleteCache, clearNotebookCache } from './cacheService.js';
 
 // ==================== INTERFACES ====================
 
@@ -72,6 +73,7 @@ class AgentNotebookService {
           [existing.id, agentSession.id, userId],
         );
         await client.query('COMMIT');
+        await deleteCache(CacheKeys.userNotebooks(userId));
         return this.mapRowToNotebook(existing);
       }
 
@@ -112,6 +114,7 @@ class AgentNotebookService {
       );
 
       await client.query('COMMIT');
+      await deleteCache(CacheKeys.userNotebooks(userId));
       return this.mapRowToNotebook(result.rows[0]);
     } catch (error) {
       await client.query('ROLLBACK').catch(() => undefined);
@@ -190,6 +193,7 @@ class AgentNotebookService {
       [userId]
     );
 
+    await deleteCache(CacheKeys.userNotebooks(userId));
     return this.mapRowToNotebook(result.rows[0]);
   }
 
@@ -281,7 +285,13 @@ class AgentNotebookService {
       [notebookId, userId]
     );
 
-    return result.rows.length > 0;
+    if (result.rows.length > 0) {
+      await deleteCache(CacheKeys.userNotebooks(userId));
+      await clearNotebookCache(notebookId);
+      return true;
+    }
+
+    return false;
   }
 
   /**
@@ -332,6 +342,8 @@ class AgentNotebookService {
       return null;
     }
 
+    await deleteCache(CacheKeys.userNotebooks(userId));
+    await clearNotebookCache(notebookId);
     return this.mapRowToNotebook(result.rows[0]);
   }
 

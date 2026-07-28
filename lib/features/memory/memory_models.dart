@@ -30,10 +30,10 @@ class MemoryNotebook {
       createdAt: _asDate(json['createdAt'] ?? json['created_at']),
       updatedAt: _asDate(json['updatedAt'] ?? json['updated_at']),
       session: MemoryAgentSession.fromJson(_asMap(json['session'])),
-      isAgentNotebook:
-          json['isAgentNotebook'] as bool? ??
-          json['is_agent_notebook'] as bool? ??
-          false,
+      isAgentNotebook: _asBool(
+        json['isAgentNotebook'] ?? json['is_agent_notebook'],
+        defaultValue: false,
+      ),
     );
   }
 }
@@ -186,4 +186,15 @@ int _asInt(dynamic value) {
 DateTime? _asDate(dynamic value) {
   if (value == null) return null;
   return DateTime.tryParse(value.toString());
+}
+
+bool _asBool(dynamic value, {bool defaultValue = false}) {
+  if (value is bool) return value;
+  if (value is num) return value != 0;
+  if (value is String) {
+    final lower = value.trim().toLowerCase();
+    if (lower == 'true' || lower == '1') return true;
+    if (lower == 'false' || lower == '0') return false;
+  }
+  return defaultValue;
 }

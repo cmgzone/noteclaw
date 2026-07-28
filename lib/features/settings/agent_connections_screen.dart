@@ -52,23 +52,37 @@ class MemoryWorkspaceNotifier extends StateNotifier<MemoryWorkspaceState> {
 
     try {
       final api = ref.read(apiServiceProvider);
-      final results = await Future.wait<dynamic>([
-        api.getMemoryNotebooks(),
-        api.getAgentWebSocketInfo(),
-        api.getAgentTopicAccess(),
-      ]);
-      final rows = results[0] as List<Map<String, dynamic>>;
+      List<Map<String, dynamic>> rows = [];
+      Map<String, dynamic> wsInfo = {};
+      Map<String, dynamic> topicAccess = {};
+      String? firstError;
+
+      try {
+        rows = await api.getMemoryNotebooks();
+      } catch (e) {
+        firstError = _friendlyError(e);
+      }
+
+      try {
+        wsInfo = await api.getAgentWebSocketInfo();
+      } catch (e) {
+        // Ignored optional info failure
+      }
+
+      try {
+        topicAccess = await api.getAgentTopicAccess();
+      } catch (e) {
+        // Ignored optional topic access failure
+      }
+
       state = MemoryWorkspaceState(
         notebooks: rows
             .map(MemoryNotebook.fromJson)
             .where((notebook) => notebook.id.isNotEmpty)
             .toList(growable: false),
-        websocketInfo: Map<String, dynamic>.from(
-          results[1] as Map<String, dynamic>,
-        ),
-        topicAccess: Map<String, dynamic>.from(
-          results[2] as Map<String, dynamic>,
-        ),
+        websocketInfo: wsInfo,
+        topicAccess: topicAccess,
+        error: rows.isEmpty ? firstError : null,
       );
     } catch (error) {
       state = MemoryWorkspaceState(
