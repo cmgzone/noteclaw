@@ -592,6 +592,23 @@ export async function initializeDatabase() {
                 WHERE revoked_at IS NULL AND can_read = TRUE;
         `);
 
+        const initialAdminEmail = process.env.INITIAL_ADMIN_EMAIL?.trim().toLowerCase();
+        const initialAdminPasswordHash = process.env.INITIAL_ADMIN_PASSWORD_HASH?.trim();
+        if (initialAdminEmail && initialAdminPasswordHash) {
+            await client.query(
+                `INSERT INTO users (
+                    email, display_name, password_hash, email_verified, role, is_active
+                 ) VALUES ($1, 'NoteClaw Admin', $2, TRUE, 'admin', TRUE)
+                 ON CONFLICT (email) DO UPDATE
+                 SET role = 'admin',
+                     email_verified = TRUE,
+                     is_active = TRUE,
+                     updated_at = NOW()`,
+                [initialAdminEmail, initialAdminPasswordHash],
+            );
+            console.log('✅ Initial administrator account is ready');
+        }
+
         console.log('✅ Agent communication tables initialized');
         console.log('✅ Core tables initialized');
     } catch (error) {
