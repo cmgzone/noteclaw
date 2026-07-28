@@ -114,20 +114,59 @@ export async function getUserPlanFeatureContext(
 ): Promise<UserPlanFeatureContext> {
   await ensurePlanFeatureAccessReady();
 
-  const result = await pool.query(
-    `SELECT
-       sp.id AS plan_id,
-       sp.name AS plan_name,
-       sp.is_free_plan,
-       sp.feature_access,
-       COALESCE(us.status, 'active') AS subscription_status
-     FROM user_subscriptions us
-     JOIN subscription_plans sp ON sp.id = us.plan_id
-     WHERE us.user_id = $1
-     ORDER BY us.updated_at DESC
-     LIMIT 1`,
-    [userId],
-  );
+  const loadUserPlan = () =>
+    pool.query(
+      `SELECT
+         sp.id AS plan_id,
+         sp.name AS plan_name,
+         sp.is_free_plan,
+         sp.feature_access,
+         COALESCE(us.status, 'active') AS subscription_status
+       FROM user_subscriptions us
+       JOIN subscription_plans sp ON sp.id = us.plan_id
+       WHERE us.user_id = $1
+       ORDER BY us.updated_at DESC
+       LIMIT 1`,
+      [userId],
+    );
+
+  let result = await loadUserPlan();
+
+  // New accounts should be able to use the core memory bank immediately.
+  // Some clients call MCP directly before opening the subscription screen,
+  // so provisioning the Free plan only from that screen leaves those clients
+  // incorrectly blocked.
+  if (result.rows.length === 0) {
+    const freePlan = await pool.query(
+      `SELECT id, credits_per_month
+       FROM subscription_plans
+       WHERE is_free_plan = TRUE
+         AND is_active = TRUE
+       ORDER BY created_at ASC
+       LIMIT 1`,
+    );
+
+    if (freePlan.rows.length > 0) {
+      await pool.query(
+        `INSERT INTO user_subscriptions (
+           user_id,
+           plan_id,
+           current_credits,
+           last_renewal_date,
+           next_renewal_date,
+           status
+         )
+         VALUES ($1, $2, $3, NOW(), NOW() + INTERVAL '1 month', 'active')
+         ON CONFLICT (user_id) DO NOTHING`,
+        [
+          userId,
+          freePlan.rows[0].id,
+          freePlan.rows[0].credits_per_month,
+        ],
+      );
+      result = await loadUserPlan();
+    }
+  }
 
   if (result.rows.length === 0) {
     return {
