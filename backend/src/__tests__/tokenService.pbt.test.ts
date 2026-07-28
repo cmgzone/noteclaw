@@ -122,7 +122,7 @@ describe('Token Service - Property-Based Tests', () => {
               // Check prefix
               expect(token.startsWith(TOKEN_PREFIX)).toBe(true);
               
-              // Check total length (48 characters)
+              // Check total length (49 characters)
               expect(token.length).toBe(TOKEN_TOTAL_LENGTH);
               
               // Check that characters after prefix are URL-safe base64

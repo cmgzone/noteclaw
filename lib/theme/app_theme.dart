@@ -13,22 +13,20 @@ class AppTheme {
     'sans-serif',
   ];
 
-  // --- Premium Colors ---
-  static const Color _lightPrimary = Color(0xFF6366F1); // Indigo 500
-  static const Color _darkPrimary = Color(0xFF818CF8); // Indigo 400
+  // Restrained, high-contrast palette for the memory workspace.
+  static const Color _lightPrimary = Color(0xFF68408D);
+  static const Color _darkPrimary = Color(0xFFC9A9EA);
 
-  static const Color _lightBackground = Color(0xFFF8FAFC); // Slate 50
-  static const Color _darkBackground =
-      Color(0xFF020617); // Slate 950 (Deep Void)
+  static const Color _lightBackground = Color(0xFFF6F5F8);
+  static const Color _darkBackground = Color(0xFF061017);
 
   // --- Gradients ---
   static const LinearGradient premiumGradient = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
     colors: [
-      Color(0xFF6366F1), // Indigo
-      Color(0xFF8B5CF6), // Violet
-      Color(0xFFEC4899), // Pink
+      Color(0xFF72459A),
+      Color(0xFF318F96),
     ],
   );
 
@@ -36,8 +34,8 @@ class AppTheme {
     begin: Alignment.centerLeft,
     end: Alignment.centerRight,
     colors: [
-      Color(0xFF22D3EE), // Cyan
-      Color(0xFF818CF8), // Indigo
+      Color(0xFF7650A3),
+      Color(0xFF55BDC0),
     ],
   );
 
@@ -56,27 +54,25 @@ class AppTheme {
 
     // Surfaces (Cards, Bottom Sheets)
     // Dark mode uses deep slate with slight transparency for glass effects
-    final surface = isDark ? const Color(0xFF0F172A) : const Color(0xFFFFFFFF);
+    final surface = isDark ? const Color(0xFF0C1720) : const Color(0xFFFFFFFF);
     final surfaceContainer =
-        isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9);
+        isDark ? const Color(0xFF14232D) : const Color(0xFFF0EDF4);
     final menuSurface =
-        isDark ? const Color(0xFF111827) : const Color(0xFFFFFFFF);
+        isDark ? const Color(0xFF0C1720) : const Color(0xFFFFFFFF);
 
     final colorScheme = ColorScheme.fromSeed(
       brightness: brightness,
       seedColor: primary,
       primary: primary,
-      secondary: isDark
-          ? const Color(0xFF22D3EE)
-          : const Color(0xFF0EA5E9), // Cyan accent
-      tertiary: const Color(0xFFEC4899), // Pink
+      secondary: isDark ? const Color(0xFF72D0D1) : const Color(0xFF267D83),
+      tertiary: isDark ? const Color(0xFFE0B5F3) : const Color(0xFF8050A2),
       surface: surface,
     ).copyWith(
       // Custom overrides for premium feel
       surfaceContainer: surfaceContainer,
-      outline: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+      outline: isDark ? const Color(0xFF2B3C48) : const Color(0xFFDDD8E3),
       outlineVariant:
-          isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+          isDark ? const Color(0xFF1C2B35) : const Color(0xFFEAE6EF),
       shadow: isDark
           ? Colors.black.withValues(alpha: 0.5)
           : Colors.black.withValues(alpha: 0.1),
@@ -144,7 +140,7 @@ class AppTheme {
         backgroundColor: Colors.transparent, // Transparent for glass effect
         foregroundColor: colorScheme.onSurface,
         elevation: 0,
-        centerTitle: true,
+        centerTitle: false,
         scrolledUnderElevation: 0,
         titleTextStyle: textTheme.titleLarge?.copyWith(
           color: colorScheme.onSurface,
@@ -158,15 +154,11 @@ class AppTheme {
         elevation: 0,
         margin: EdgeInsets.zero,
         // Semi-transparent color
-        color: isDark
-            ? const Color(0xFF1E293B).withValues(alpha: 0.5)
-            : Colors.white,
+        color: surface,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(24), // Softer corners
+          borderRadius: BorderRadius.circular(16),
           side: BorderSide(
-            color: isDark
-                ? const Color(0xFF334155).withValues(alpha: 0.5)
-                : const Color(0xFFE2E8F0),
+            color: isDark ? const Color(0xFF2B3C48) : const Color(0xFFDDD8E3),
             width: 1,
           ),
         ),
@@ -175,24 +167,22 @@ class AppTheme {
       // --- Inputs ---
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: isDark
-            ? const Color(0xFF0F172A).withValues(alpha: 0.5)
-            : const Color(0xFFF1F5F9),
+        fillColor: isDark ? const Color(0xFF14232D) : const Color(0xFFF0EDF4),
         hintStyle: TextStyle(color: colorScheme.onSurfaceVariant),
         contentPadding:
-            const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide.none,
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide(
             color: colorScheme.outline.withValues(alpha: 0.3),
           ),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide(color: primary, width: 2),
         ),
       ),
@@ -200,20 +190,19 @@ class AppTheme {
       // --- Buttons ---
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
-          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
           shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          textStyle: textTheme.labelLarge?.copyWith(fontSize: 16),
-          elevation: isDark ? 0 : 2,
-          shadowColor: primary.withValues(alpha: 0.4),
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          textStyle: textTheme.labelLarge?.copyWith(fontSize: 14),
+          elevation: 0,
         ),
       ),
 
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
           shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           backgroundColor: colorScheme.surfaceContainer,
           foregroundColor: colorScheme.onSurface,
           elevation: 0,
@@ -274,8 +263,8 @@ class AppTheme {
         style: MenuStyle(
           backgroundColor: WidgetStatePropertyAll(menuSurface),
           surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
-          shadowColor:
-              WidgetStatePropertyAll(colorScheme.shadow.withValues(alpha: 0.25)),
+          shadowColor: WidgetStatePropertyAll(
+              colorScheme.shadow.withValues(alpha: 0.25)),
           elevation: const WidgetStatePropertyAll(12),
           shape: WidgetStatePropertyAll(menuShape),
           side: WidgetStatePropertyAll(BorderSide(color: menuBorderColor)),
@@ -289,8 +278,8 @@ class AppTheme {
         menuStyle: MenuStyle(
           backgroundColor: WidgetStatePropertyAll(menuSurface),
           surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
-          shadowColor:
-              WidgetStatePropertyAll(colorScheme.shadow.withValues(alpha: 0.25)),
+          shadowColor: WidgetStatePropertyAll(
+              colorScheme.shadow.withValues(alpha: 0.25)),
           elevation: const WidgetStatePropertyAll(12),
           shape: WidgetStatePropertyAll(menuShape),
           side: WidgetStatePropertyAll(BorderSide(color: menuBorderColor)),

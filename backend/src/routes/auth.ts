@@ -913,6 +913,7 @@ router.get('/tokens', authenticateToken, async (req: AuthRequest, res: Response)
             lastUsedAt: t.lastUsedAt,
             createdAt: t.createdAt,
             revokedAt: t.revokedAt,
+            metadata: t.metadata,
             isActive: !t.revokedAt && (!t.expiresAt || new Date(t.expiresAt) > new Date())
         }));
 

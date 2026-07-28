@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS subscription_plans (
     price DECIMAL(10, 2) NOT NULL,
     is_active BOOLEAN DEFAULT TRUE,
     is_free_plan BOOLEAN DEFAULT FALSE,
+    feature_access JSONB NOT NULL DEFAULT '{}',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -49,8 +50,12 @@ CREATE TABLE IF NOT EXISTS credit_transactions (
     description TEXT,
     balance_after INTEGER NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    metadata JSONB -- store additional info like feature used, package purchased, etc.
+    metadata JSONB, -- store additional info like feature used, package purchased, etc.
+    idempotency_key TEXT
 );
+CREATE UNIQUE INDEX IF NOT EXISTS idx_credit_transactions_idempotency_key
+    ON credit_transactions (idempotency_key)
+    WHERE idempotency_key IS NOT NULL;
 
 -- Create payment_transactions table
 CREATE TABLE IF NOT EXISTS payment_transactions (

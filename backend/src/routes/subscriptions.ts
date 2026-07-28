@@ -12,6 +12,11 @@ import {
     verifyGooglePlayProductPurchase,
     verifyGooglePlaySubscriptionPurchase,
 } from '../services/googlePlayBillingService.js';
+import {
+    defaultPlanFeatureAccess,
+    ensurePlanFeatureAccessReady,
+    normalizePlanFeatureAccess,
+} from '../services/planFeatureService.js';
 
 const router: Router = express.Router();
 
@@ -71,6 +76,238 @@ async function getCurrentBalance(userId: string): Promise<number> {
         throw new Error('No subscription found');
     }
     return Number(result.rows[0].current_credits || 0);
+}
+
+let creditLedgerSchemaPromise: Promise<void> | null = null;
+
+async function ensureCreditLedgerSchema(): Promise<void> {
+    if (!creditLedgerSchemaPromise) {
+        creditLedgerSchemaPromise = (async () => {
+            await pool.query(`
+                ALTER TABLE credit_transactions
+                ADD COLUMN IF NOT EXISTS idempotency_key TEXT
+            `);
+            await pool.query(`
+                CREATE UNIQUE INDEX IF NOT EXISTS
+                    idx_credit_transactions_idempotency_key
+                ON credit_transactions (idempotency_key)
+                WHERE idempotency_key IS NOT NULL
+            `);
+        })().catch((error) => {
+            creditLedgerSchemaPromise = null;
+            throw error;
+        });
+    }
+
+    await creditLedgerSchemaPromise;
+}
+
+async function grantSubscriptionCredits(params: {
+    userId: string;
+    planId: string;
+    credits: number;
+    idempotencyKey: string;
+    transactionType: 'plan_upgrade' | 'monthly_renewal';
+    description: string;
+    metadata: Record<string, unknown>;
+    nextRenewalDate?: Date | null;
+}): Promise<{ alreadyProcessed: boolean; newBalance: number }> {
+    await ensureCreditLedgerSchema();
+    const client = await pool.connect();
+
+    try {
+        await client.query('BEGIN');
+
+        const subscriptionResult = await client.query(
+            `SELECT current_credits
+             FROM user_subscriptions
+             WHERE user_id = $1
+             FOR UPDATE`,
+            [params.userId],
+        );
+        if (subscriptionResult.rows.length === 0) {
+            throw new Error('No subscription found');
+        }
+
+        const duplicate = await client.query(
+            `SELECT balance_after
+             FROM credit_transactions
+             WHERE idempotency_key = $1
+             LIMIT 1`,
+            [params.idempotencyKey],
+        );
+        if (duplicate.rows.length > 0) {
+            await client.query('ROLLBACK');
+            return {
+                alreadyProcessed: true,
+                newBalance: Number(
+                    duplicate.rows[0].balance_after
+                    ?? subscriptionResult.rows[0].current_credits
+                    ?? 0,
+                ),
+            };
+        }
+
+        const currentCredits = Number(
+            subscriptionResult.rows[0].current_credits || 0,
+        );
+        const newBalance = currentCredits + params.credits;
+
+        await client.query(
+            `UPDATE user_subscriptions
+             SET plan_id = $1,
+                 status = 'active',
+                 current_credits = $2,
+                 credits_consumed_this_month = 0,
+                 last_renewal_date = CURRENT_TIMESTAMP,
+                 next_renewal_date = COALESCE(
+                     $3,
+                     CURRENT_TIMESTAMP + INTERVAL '1 month'
+                 ),
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE user_id = $4`,
+            [
+                params.planId,
+                newBalance,
+                params.nextRenewalDate?.toISOString() ?? null,
+                params.userId,
+            ],
+        );
+
+        await client.query(
+            `INSERT INTO credit_transactions
+             (
+                 user_id,
+                 amount,
+                 transaction_type,
+                 description,
+                 balance_after,
+                 metadata,
+                 idempotency_key
+             )
+             VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+            [
+                params.userId,
+                params.credits,
+                params.transactionType,
+                params.description,
+                newBalance,
+                JSON.stringify(params.metadata),
+                params.idempotencyKey,
+            ],
+        );
+
+        await client.query('COMMIT');
+        return { alreadyProcessed: false, newBalance };
+    } catch (error: any) {
+        await client.query('ROLLBACK');
+        if (error?.code === '23505') {
+            return {
+                alreadyProcessed: true,
+                newBalance: await getCurrentBalance(params.userId),
+            };
+        }
+        throw error;
+    } finally {
+        client.release();
+    }
+}
+
+async function renewFreePlanCreditsIfDue(userId: string): Promise<void> {
+    await ensureCreditLedgerSchema();
+    const client = await pool.connect();
+
+    try {
+        await client.query('BEGIN');
+        const result = await client.query(
+            `SELECT
+                 us.current_credits,
+                 us.next_renewal_date,
+                 sp.id AS plan_id,
+                 sp.name AS plan_name,
+                 sp.credits_per_month
+             FROM user_subscriptions us
+             JOIN subscription_plans sp ON sp.id = us.plan_id
+             WHERE us.user_id = $1
+               AND COALESCE(us.status, 'active') = 'active'
+               AND sp.is_free_plan = TRUE
+             FOR UPDATE OF us`,
+            [userId],
+        );
+
+        if (result.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return;
+        }
+
+        const row = result.rows[0];
+        const dueAt = row.next_renewal_date
+            ? new Date(row.next_renewal_date)
+            : null;
+        if (dueAt && dueAt.getTime() > Date.now()) {
+            await client.query('ROLLBACK');
+            return;
+        }
+
+        const renewalPeriod = dueAt && !Number.isNaN(dueAt.getTime())
+            ? dueAt.toISOString()
+            : 'initial';
+        const idempotencyKey = `free-renewal:${userId}:${renewalPeriod}`;
+        const duplicate = await client.query(
+            `SELECT id
+             FROM credit_transactions
+             WHERE idempotency_key = $1
+             LIMIT 1`,
+            [idempotencyKey],
+        );
+        if (duplicate.rows.length > 0) {
+            await client.query('ROLLBACK');
+            return;
+        }
+
+        const credits = Number(row.credits_per_month || 0);
+        const newBalance = Number(row.current_credits || 0) + credits;
+
+        await client.query(
+            `UPDATE user_subscriptions
+             SET current_credits = $1,
+                 credits_consumed_this_month = 0,
+                 last_renewal_date = CURRENT_TIMESTAMP,
+                 next_renewal_date = CURRENT_TIMESTAMP + INTERVAL '1 month',
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE user_id = $2`,
+            [newBalance, userId],
+        );
+        await client.query(
+            `INSERT INTO credit_transactions
+             (
+                 user_id,
+                 amount,
+                 transaction_type,
+                 description,
+                 balance_after,
+                 metadata,
+                 idempotency_key
+             )
+             VALUES ($1, $2, 'monthly_renewal', $3, $4, $5, $6)`,
+            [
+                userId,
+                credits,
+                `Monthly ${row.plan_name} credit renewal`,
+                newBalance,
+                JSON.stringify({ planId: row.plan_id, renewalPeriod }),
+                idempotencyKey,
+            ],
+        );
+        await client.query('COMMIT');
+    } catch (error: any) {
+        await client.query('ROLLBACK');
+        if (error?.code !== '23505') {
+            throw error;
+        }
+    } finally {
+        client.release();
+    }
 }
 
 function parsePriceToCents(value: unknown): number {
@@ -350,6 +587,7 @@ router.get('/seed-defaults', async (req: Request, res: Response) => {
                 mcp_sources_limit INTEGER,
                 mcp_tokens_limit INTEGER,
                 mcp_api_calls_per_day INTEGER,
+                feature_access JSONB NOT NULL DEFAULT '{}'::jsonb,
                 is_free_plan BOOLEAN DEFAULT false,
                 is_active BOOLEAN DEFAULT true,
                 created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -364,6 +602,7 @@ router.get('/seed-defaults', async (req: Request, res: Response) => {
                 credits_consumed_this_month INTEGER DEFAULT 0,
                 last_renewal_date TIMESTAMPTZ,
                 next_renewal_date TIMESTAMPTZ,
+                status TEXT NOT NULL DEFAULT 'active',
                 created_at TIMESTAMPTZ DEFAULT NOW(),
                 updated_at TIMESTAMPTZ DEFAULT NOW(),
                 UNIQUE(user_id)
@@ -377,8 +616,13 @@ router.get('/seed-defaults', async (req: Request, res: Response) => {
                 description TEXT,
                 balance_after INTEGER,
                 metadata JSONB,
+                idempotency_key TEXT,
                 created_at TIMESTAMPTZ DEFAULT NOW()
             );
+
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_credit_transactions_idempotency_key
+                ON credit_transactions (idempotency_key)
+                WHERE idempotency_key IS NOT NULL;
 
             CREATE TABLE IF NOT EXISTS credit_packages (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -391,18 +635,24 @@ router.get('/seed-defaults', async (req: Request, res: Response) => {
             );
         `);
 
+        await ensurePlanFeatureAccessReady();
+
         // Seed plans
         const plans = await pool.query('SELECT COUNT(*) FROM subscription_plans');
         if (parseInt(plans.rows[0].count) === 0) {
             await pool.query(`
                 INSERT INTO subscription_plans (
                   name, credits_per_month, price, is_free_plan, description, google_play_product_id,
-                  notes_limit, mcp_sources_limit, mcp_tokens_limit, mcp_api_calls_per_day
+                  notes_limit, mcp_sources_limit, mcp_tokens_limit, mcp_api_calls_per_day,
+                  feature_access
                 ) VALUES
-                ('Free', 50, 0, true, 'Basic features, local API keys supported, limited notes + MCP quota', NULL, 100, 10, 3, 100),
-                ('Pro', 1000, 9.99, false, 'More notes + MCP quota', 'noteclaw_pro_monthly', 1000, 200, 10, 2000),
-                ('Ultra', 5000, 29.99, false, 'Highest notes + MCP quota', 'noteclaw_ultra_monthly', 10000, 1000, 25, 10000)
-            `);
+                ('Free', 50, 0, true, 'Basic features, local API keys supported, limited notes + MCP quota', NULL, 100, 10, 3, 100, $1::jsonb),
+                ('Pro', 1000, 9.99, false, 'More notes + MCP quota', 'noteclaw_pro_monthly', 1000, 200, 10, 2000, $2::jsonb),
+                ('Ultra', 5000, 29.99, false, 'Highest notes + MCP quota', 'noteclaw_ultra_monthly', 10000, 1000, 25, 10000, $2::jsonb)
+            `, [
+                JSON.stringify(defaultPlanFeatureAccess(true)),
+                JSON.stringify(defaultPlanFeatureAccess(false)),
+            ]);
         }
 
         // Seed packages
@@ -429,16 +679,23 @@ router.get('/seed-defaults', async (req: Request, res: Response) => {
 // Get all active subscription plans - PUBLIC
 router.get('/plans', async (req: Request, res: Response) => {
     try {
-        await ensureGooglePlayCatalogReady();
+        await Promise.all([
+            ensureGooglePlayCatalogReady(),
+            ensurePlanFeatureAccessReady(),
+        ]);
         const result = await pool.query(`
             SELECT * FROM subscription_plans 
             WHERE is_active = true 
             ORDER BY price ASC
         `);
         res.json({
-            plans: result.rows.map((plan) =>
-                attachGooglePlayProductMetadata(plan, 'subscription'),
-            ),
+            plans: result.rows.map((plan) => ({
+                ...attachGooglePlayProductMetadata(plan, 'subscription'),
+                feature_access: normalizePlanFeatureAccess(
+                    plan.feature_access,
+                    plan.is_free_plan === true,
+                ),
+            })),
         });
     } catch (error) {
         console.error('Error fetching plans:', error);
@@ -527,6 +784,12 @@ router.post('/create-checkout-session', authenticateToken, async (req: AuthReque
                 userId: userId,
                 planId: planId,
             },
+            subscription_data: {
+                metadata: {
+                    userId: userId,
+                    planId: planId,
+                },
+            },
             client_reference_id: userId,
         });
 
@@ -555,11 +818,15 @@ router.post('/webhook/stripe', express.raw({ type: 'application/json' }), async 
         const Stripe = (await import('stripe')).default;
         const stripe = new Stripe(stripeSecretKey);
 
-        let event;
+        let event: any;
 
         if (webhookSecret) {
             const sig = req.headers['stripe-signature'] as string;
-            event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
+            const rawBody = (req as Request & { rawBody?: Buffer }).rawBody;
+            if (!rawBody) {
+                throw new Error('Stripe raw request body is unavailable');
+            }
+            event = stripe.webhooks.constructEvent(rawBody, sig, webhookSecret);
         } else {
             // For testing without webhook secret
             event = req.body;
@@ -579,44 +846,138 @@ router.post('/webhook/stripe', express.raw({ type: 'application/json' }), async 
 
                 if (planResult.rows.length > 0) {
                     const plan = planResult.rows[0];
-
-                    // Update user subscription
-                    const subResult = await pool.query(
-                        'SELECT * FROM user_subscriptions WHERE user_id = $1',
-                        [userId]
-                    );
-
-                    const currentCredits = subResult.rows[0]?.current_credits || 0;
-                    const newBalance = currentCredits + plan.credits_per_month;
-
-                    await pool.query(`
-                        UPDATE user_subscriptions
-                        SET plan_id = $1,
-                            current_credits = $2,
-                            credits_consumed_this_month = 0,
-                            last_renewal_date = CURRENT_TIMESTAMP,
-                            next_renewal_date = CURRENT_TIMESTAMP + INTERVAL '1 month',
-                            updated_at = CURRENT_TIMESTAMP
-                        WHERE user_id = $3
-                    `, [planId, newBalance, userId]);
-
-                    // Record transaction
-                    await pool.query(`
-                        INSERT INTO credit_transactions 
-                        (user_id, amount, transaction_type, description, balance_after, metadata)
-                        VALUES ($1, $2, 'plan_upgrade', $3, $4, $5)
-                    `, [
+                    const grant = await grantSubscriptionCredits({
                         userId,
-                        plan.credits_per_month,
-                        `Upgraded to ${plan.name} via Stripe`,
-                        newBalance,
-                        JSON.stringify({
-                            stripe_session_id: session.id,
-                            plan_id: planId
-                        })
-                    ]);
+                        planId,
+                        credits: Number(plan.credits_per_month || 0),
+                        idempotencyKey: `stripe-checkout:${session.id}`,
+                        transactionType: 'plan_upgrade',
+                        description: `Upgraded to ${plan.name} via Stripe`,
+                        metadata: {
+                            stripeEventId: event.id,
+                            stripeSessionId: session.id,
+                            stripeSubscriptionId:
+                                typeof session.subscription === 'string'
+                                    ? session.subscription
+                                    : session.subscription?.id ?? null,
+                            planId,
+                        },
+                    });
 
-                    console.log(`[STRIPE WEBHOOK] Successfully upgraded user ${userId} to ${plan.name}`);
+                    console.log(
+                        `[STRIPE WEBHOOK] ${grant.alreadyProcessed ? 'Ignored duplicate' : 'Applied'} `
+                        + `checkout ${session.id} for user ${userId}`,
+                    );
+                }
+            }
+        }
+
+        if (
+            event.type === 'invoice.paid'
+            && event.data.object?.billing_reason === 'subscription_cycle'
+        ) {
+            const invoice = event.data.object;
+            const subscriptionReference =
+                invoice.subscription
+                ?? invoice.parent?.subscription_details?.subscription;
+            const subscriptionId =
+                typeof subscriptionReference === 'string'
+                    ? subscriptionReference
+                    : subscriptionReference?.id;
+
+            if (!subscriptionId) {
+                throw new Error('Stripe renewal invoice is missing a subscription ID');
+            }
+
+            const stripeSubscription: any =
+                await stripe.subscriptions.retrieve(subscriptionId);
+            const userId = stripeSubscription.metadata?.userId;
+            const planId = stripeSubscription.metadata?.planId;
+            if (!userId || !planId) {
+                throw new Error('Stripe subscription is missing NoteClaw metadata');
+            }
+
+            const planResult = await pool.query(
+                'SELECT * FROM subscription_plans WHERE id = $1 AND is_active = TRUE',
+                [planId],
+            );
+            if (planResult.rows.length === 0) {
+                throw new Error('Stripe renewal references an unavailable plan');
+            }
+
+            const plan = planResult.rows[0];
+            const periodEnd = Number(stripeSubscription.current_period_end || 0);
+            const grant = await grantSubscriptionCredits({
+                userId,
+                planId,
+                credits: Number(plan.credits_per_month || 0),
+                idempotencyKey: `stripe-invoice:${invoice.id}`,
+                transactionType: 'monthly_renewal',
+                description: `Monthly ${plan.name} credit renewal via Stripe`,
+                metadata: {
+                    stripeEventId: event.id,
+                    stripeInvoiceId: invoice.id,
+                    stripeSubscriptionId: subscriptionId,
+                    billingReason: invoice.billing_reason,
+                    planId,
+                },
+                nextRenewalDate:
+                    periodEnd > 0 ? new Date(periodEnd * 1000) : null,
+            });
+
+            console.log(
+                `[STRIPE WEBHOOK] ${grant.alreadyProcessed ? 'Ignored duplicate' : 'Applied'} `
+                + `renewal invoice ${invoice.id} for user ${userId}`,
+            );
+        }
+
+        if (
+            event.type === 'customer.subscription.updated'
+            || event.type === 'customer.subscription.deleted'
+        ) {
+            const stripeSubscription = event.data.object;
+            const userId = stripeSubscription.metadata?.userId;
+            const planId = stripeSubscription.metadata?.planId;
+            if (userId && planId) {
+                const stripeStatus =
+                    event.type === 'customer.subscription.deleted'
+                        ? 'canceled'
+                        : String(stripeSubscription.status || 'inactive');
+                const localStatus =
+                    stripeStatus === 'active' || stripeStatus === 'trialing'
+                        ? 'active'
+                        : stripeStatus;
+
+                await pool.query(
+                    `UPDATE user_subscriptions
+                     SET status = $1, updated_at = CURRENT_TIMESTAMP
+                     WHERE user_id = $2 AND plan_id = $3`,
+                    [localStatus, userId, planId],
+                );
+            }
+        }
+
+        if (event.type === 'invoice.payment_failed') {
+            const invoice = event.data.object;
+            const subscriptionReference =
+                invoice.subscription
+                ?? invoice.parent?.subscription_details?.subscription;
+            const subscriptionId =
+                typeof subscriptionReference === 'string'
+                    ? subscriptionReference
+                    : subscriptionReference?.id;
+            if (subscriptionId) {
+                const stripeSubscription: any =
+                    await stripe.subscriptions.retrieve(subscriptionId);
+                const userId = stripeSubscription.metadata?.userId;
+                const planId = stripeSubscription.metadata?.planId;
+                if (userId && planId) {
+                    await pool.query(
+                        `UPDATE user_subscriptions
+                         SET status = 'past_due', updated_at = CURRENT_TIMESTAMP
+                         WHERE user_id = $1 AND plan_id = $2`,
+                        [userId, planId],
+                    );
                 }
             }
         }
@@ -634,8 +995,10 @@ router.use(authenticateToken);
 // Get current user's subscription
 router.get('/me', async (req: AuthRequest, res: Response) => {
     try {
+        await ensurePlanFeatureAccessReady();
         const userId = req.userId!;
         console.log(`[SUB] Fetching subscription for user: ${userId}`);
+        await renewFreePlanCreditsIfDue(userId);
 
         const result = await pool.query(`
             SELECT 
@@ -643,7 +1006,8 @@ router.get('/me', async (req: AuthRequest, res: Response) => {
                 sp.name as plan_name,
                 sp.credits_per_month,
                 sp.price as plan_price,
-                sp.is_free_plan
+                sp.is_free_plan,
+                sp.feature_access
             FROM user_subscriptions us
             JOIN subscription_plans sp ON us.plan_id = sp.id
             WHERE us.user_id = $1
@@ -665,10 +1029,11 @@ router.get('/me', async (req: AuthRequest, res: Response) => {
                 console.log(`[SUB] No free plan found, creating one...`);
                 // Create free plan if it doesn't exist
                 freePlanResult = await pool.query(`
-                    INSERT INTO subscription_plans (name, credits_per_month, price, is_free_plan, is_active) 
-                    VALUES ('Free', 50, 0, true, true)
+                    INSERT INTO subscription_plans
+                      (name, credits_per_month, price, is_free_plan, is_active, feature_access)
+                    VALUES ('Free', 50, 0, true, true, $1::jsonb)
                     RETURNING id, credits_per_month
-                `);
+                `, [JSON.stringify(defaultPlanFeatureAccess(true))]);
                 console.log(`[SUB] Created free plan:`, freePlanResult.rows[0]);
             }
 
@@ -703,18 +1068,35 @@ router.get('/me', async (req: AuthRequest, res: Response) => {
                     sp.name as plan_name,
                     sp.credits_per_month,
                     sp.price as plan_price,
-                    sp.is_free_plan
+                    sp.is_free_plan,
+                    sp.feature_access
                 FROM user_subscriptions us
                 JOIN subscription_plans sp ON us.plan_id = sp.id
                 WHERE us.user_id = $1
             `, [userId]);
 
             console.log(`[SUB] Returning subscription:`, newResult.rows[0]);
-            return res.json({ subscription: newResult.rows[0] });
+            return res.json({
+                subscription: {
+                    ...newResult.rows[0],
+                    feature_access: normalizePlanFeatureAccess(
+                        newResult.rows[0]?.feature_access,
+                        newResult.rows[0]?.is_free_plan === true,
+                    ),
+                },
+            });
         }
 
         console.log(`[SUB] Found existing subscription for user ${userId}:`, result.rows[0]);
-        res.json({ subscription: result.rows[0] });
+        res.json({
+            subscription: {
+                ...result.rows[0],
+                feature_access: normalizePlanFeatureAccess(
+                    result.rows[0]?.feature_access,
+                    result.rows[0]?.is_free_plan === true,
+                ),
+            },
+        });
     } catch (error: any) {
         console.error('Error fetching subscription:', error.message, error.stack);
         res.status(500).json({ error: 'Failed to fetch subscription: ' + error.message });
@@ -725,6 +1107,7 @@ router.get('/me', async (req: AuthRequest, res: Response) => {
 // Get credit balance
 router.get('/credits', async (req: AuthRequest, res: Response) => {
     try {
+        await renewFreePlanCreditsIfDue(req.userId!);
         const result = await pool.query(`
             SELECT current_credits, credits_consumed_this_month 
             FROM user_subscriptions 

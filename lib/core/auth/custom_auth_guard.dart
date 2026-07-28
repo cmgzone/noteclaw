@@ -6,8 +6,6 @@ import 'custom_auth_service.dart';
 
 /// Routes that don't require authentication
 const publicRoutes = {
-  '/onboarding',
-  '/onboarding-completion',
   '/login',
   '/password-reset',
   '/verify-email-required',
@@ -19,21 +17,10 @@ const publicRoutes = {
 /// Protected route prefixes
 const protectedRoutePrefixes = [
   '/home',
-  '/sources',
-  '/chat',
-  '/search',
-  '/artifact',
-  '/research',
-  '/settings',
+  '/agent-connections',
+  '/memory-notebooks',
+  '/subscription',
   '/plan-selection',
-  '/security',
-  '/deploy-keys',
-  '/migrate-agent-id',
-  '/context-profile',
-  '/elevenlabs-agent',
-  '/voice-mode',
-  '/visual-studio',
-  '/notebook/',
 ];
 
 /// Auth change notifier for GoRouter refresh

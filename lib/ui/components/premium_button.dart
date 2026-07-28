@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../../theme/app_theme.dart';
 
 class PremiumButton extends StatelessWidget {
   final VoidCallback? onPressed;
@@ -60,24 +59,14 @@ class PremiumButton extends StatelessWidget {
       );
     }
 
-    // Primary Button (Gradient)
-    final borderRadius = BorderRadius.circular(16);
+    final borderRadius = BorderRadius.circular(12);
 
     return Container(
       width: width,
       decoration: BoxDecoration(
-        gradient: onPressed != null ? AppTheme.premiumGradient : null,
-        color: onPressed == null ? theme.disabledColor : null,
+        color:
+            onPressed != null ? theme.colorScheme.primary : theme.disabledColor,
         borderRadius: borderRadius,
-        boxShadow: onPressed != null
-            ? [
-                BoxShadow(
-                  color: theme.colorScheme.primary.withValues(alpha: 0.3),
-                  blurRadius: 12,
-                  offset: const Offset(0, 4),
-                )
-              ]
-            : null,
       ),
       child: Material(
         color: Colors.transparent,
@@ -88,12 +77,12 @@ class PremiumButton extends StatelessWidget {
             padding: padding,
             child: Center(
               child: isLoading
-                  ? const SizedBox(
+                  ? SizedBox(
                       height: 20,
                       width: 20,
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
-                        color: Colors.white,
+                        color: theme.colorScheme.onPrimary,
                       ),
                     )
                   : Row(
@@ -101,14 +90,18 @@ class PremiumButton extends StatelessWidget {
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         if (icon != null) ...[
-                          Icon(icon, color: Colors.white, size: 20),
+                          Icon(
+                            icon,
+                            color: theme.colorScheme.onPrimary,
+                            size: 20,
+                          ),
                           const SizedBox(width: 8),
                         ],
                         Text(
                           label,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
+                          style: TextStyle(
+                            color: theme.colorScheme.onPrimary,
+                            fontSize: 14,
                             fontWeight: FontWeight.bold,
                           ),
                         ),

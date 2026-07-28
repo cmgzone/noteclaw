@@ -55,6 +55,11 @@ class ApiService {
   }
 
   static String _resolveBaseUrl() {
+    if (kIsWeb &&
+        (Uri.base.host == 'localhost' || Uri.base.host == '127.0.0.1')) {
+      return 'http://localhost:3001/api/';
+    }
+
     final envUrl = dotenv.env['API_BASE_URL'];
     if (envUrl != null && envUrl.trim().isNotEmpty) {
       return _normalizeBaseUrl(envUrl);
@@ -665,6 +670,48 @@ class ApiService {
     return List<Map<String, dynamic>>.from(response['notebooks'] ?? []);
   }
 
+  Future<List<Map<String, dynamic>>> getMemoryNotebooks() async {
+    final response =
+        await get<Map<String, dynamic>>('/coding-agent/memory/notebooks');
+    return List<Map<String, dynamic>>.from(response['notebooks'] ?? []);
+  }
+
+  Future<Map<String, dynamic>> getAgentTopicAccess() async {
+    return await get<Map<String, dynamic>>(
+      '/coding-agent/memory/topic-access',
+    );
+  }
+
+  Future<void> updateAgentTopicAccess(
+    String agentSessionId,
+    List<String> notebookIds,
+  ) async {
+    await put<Map<String, dynamic>>(
+      '/coding-agent/memory/sessions/$agentSessionId/topics',
+      {'notebookIds': notebookIds},
+    );
+  }
+
+  Future<Map<String, dynamic>> getMemoryNotebook(String notebookId) async {
+    return await get<Map<String, dynamic>>(
+      '/coding-agent/memory/notebooks/$notebookId',
+    );
+  }
+
+  Future<Map<String, dynamic>> chatWithMemoryNotebook({
+    required String notebookId,
+    required String message,
+    List<Map<String, String>> history = const [],
+  }) async {
+    return await post<Map<String, dynamic>>(
+      '/coding-agent/memory/notebooks/$notebookId/chat',
+      {
+        'message': message,
+        'history': history,
+      },
+    );
+  }
+
   Future<void> disconnectAgent(String sessionId) async {
     await post('/coding-agent/sessions/$sessionId/disconnect', {});
   }
@@ -673,6 +720,14 @@ class ApiService {
     final response =
         await get<Map<String, dynamic>>('/coding-agent/memory/sessions');
     return List<Map<String, dynamic>>.from(response['agents'] ?? []);
+  }
+
+  Future<Map<String, dynamic>> getAgentWebSocketStatus() async {
+    return await get<Map<String, dynamic>>('/coding-agent/websocket/status');
+  }
+
+  Future<Map<String, dynamic>> getAgentWebSocketInfo() async {
+    return await get<Map<String, dynamic>>('/coding-agent/websocket/info');
   }
 
   Future<Map<String, dynamic>> getAgentMemory({

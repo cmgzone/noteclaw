@@ -48,6 +48,18 @@ export interface Subscription {
     credits_consumed_this_month: number;
     last_renewal_date: string;
     next_renewal_date: string;
+    status: string;
+    feature_access: PlanFeatureAccess;
+}
+
+export interface PlanFeatureAccess {
+    memory_bank: boolean;
+    notebook_chat: boolean;
+    websocket_collaboration: boolean;
+    code_review: boolean;
+    web_search: boolean;
+    deep_research: boolean;
+    research_save_to_notebook: boolean;
 }
 
 export interface CreditTransaction {
@@ -96,6 +108,36 @@ export interface ApiToken {
     createdAt: string;
     revokedAt: string | null;
     isActive: boolean;
+    metadata?: Record<string, unknown>;
+}
+
+export interface TopicAccessAgent {
+    id: string;
+    agentName: string;
+    agentIdentifier: string;
+    status: string;
+    defaultNotebookId: string | null;
+}
+
+export interface MemoryTopic {
+    id: string;
+    title: string;
+    description: string | null;
+    isAgentNotebook: boolean;
+    sourceCount: number;
+    ownerAgentSessionId: string | null;
+}
+
+export interface TopicAccessGrant {
+    agentSessionId: string;
+    notebookId: string;
+    canRead: boolean;
+}
+
+export interface TopicAccessMatrix {
+    agents: TopicAccessAgent[];
+    topics: MemoryTopic[];
+    grants: TopicAccessGrant[];
 }
 
 export interface TokenUsageLog {
@@ -197,12 +239,22 @@ export interface Notebook {
     updatedAt: string;
     sourceCount?: number;
     isShared?: boolean;
+    isAgentNotebook?: boolean;
+    session?: {
+        id: string;
+        agentName: string;
+        agentIdentifier: string;
+        status: string;
+        lastActivity?: string;
+        websocketConnected: boolean;
+        websocketConnectionCount: number;
+    };
 }
 
 export interface Source {
     id: string;
     notebookId: string;
-    type: 'pdf' | 'url' | 'youtube' | 'text' | 'image';
+    type: 'pdf' | 'url' | 'youtube' | 'text' | 'image' | 'memory';
     title: string;
     content?: string;
     url?: string;
@@ -210,6 +262,20 @@ export interface Source {
     createdAt: string;
     credibility?: string;
     credibilityScore?: number;
+    updatedAt?: string;
+    namespace?: string;
+    version?: number;
+    summary?: string;
+    memory?: Record<string, unknown>;
+    memoryStats?: {
+        fieldCount: number;
+        nonEmptyFieldCount: number;
+        historyLength: number;
+        checkpointCount: number;
+        longTermStatus: string;
+    };
+    isMemorySource?: boolean;
+    readOnly?: boolean;
 }
 
 class ApiService {
@@ -344,6 +410,13 @@ class ApiService {
         return data.user;
     }
 
+    async deleteAccount(password: string): Promise<{ success: boolean; message: string }> {
+        return this.fetch('/auth/delete-account', {
+            method: 'POST',
+            body: JSON.stringify({ password }),
+        });
+    }
+
     logout() {
         this.clearTokens();
     }
@@ -357,13 +430,19 @@ class ApiService {
 
     // Notebooks
     async getNotebooks(): Promise<Notebook[]> {
-        const data = await this.fetch<{ notebooks: Notebook[] }>('/notebooks');
+        const data = await this.fetch<{ notebooks: Notebook[] }>('/coding-agent/memory/notebooks');
         return data.notebooks || [];
     }
 
     async getNotebook(id: string): Promise<Notebook> {
-        const data = await this.fetch<{ notebook: Notebook }>(`/notebooks/${id}`);
+        const data = await this.fetch<{ notebook: Notebook }>(`/coding-agent/memory/notebooks/${id}`);
         return data.notebook;
+    }
+
+    async getMemoryNotebook(id: string): Promise<{ notebook: Notebook; sources: Source[] }> {
+        return this.fetch<{ notebook: Notebook; sources: Source[] }>(
+            `/coding-agent/memory/notebooks/${id}`,
+        );
     }
 
     async createNotebook(data: { title: string; description?: string; coverImage?: string; category?: string }): Promise<Notebook> {
@@ -390,7 +469,9 @@ class ApiService {
 
     // Sources
     async getSources(notebookId: string): Promise<Source[]> {
-        const data = await this.fetch<{ sources: Source[] }>(`/sources/notebook/${notebookId}`);
+        const data = await this.fetch<{ sources: Source[] }>(
+            `/coding-agent/memory/notebooks/${notebookId}`,
+        );
         return data.sources || [];
     }
 
@@ -627,6 +708,30 @@ class ApiService {
     async getAgentNotebooks(): Promise<AgentNotebook[]> {
         const data = await this.fetch<{ notebooks: AgentNotebook[] }>('/coding-agent/notebooks');
         return data.notebooks;
+    }
+
+    async getAgentTopicAccess(): Promise<TopicAccessMatrix> {
+        const data = await this.fetch<{ success: boolean } & TopicAccessMatrix>(
+            '/coding-agent/memory/topic-access',
+        );
+        return {
+            agents: data.agents,
+            topics: data.topics,
+            grants: data.grants,
+        };
+    }
+
+    async updateAgentTopicAccess(
+        agentSessionId: string,
+        notebookIds: string[],
+    ): Promise<void> {
+        await this.fetch(
+            `/coding-agent/memory/sessions/${encodeURIComponent(agentSessionId)}/topics`,
+            {
+                method: 'PUT',
+                body: JSON.stringify({ notebookIds }),
+            },
+        );
     }
 
     async getMcpQuota(): Promise<McpQuota> {

@@ -7,6 +7,7 @@ import pool from '../config/database.js';
 export const CreditCosts = {
     // Chat & Conversation
     chatMessage: 1,
+    notebookChat: 1,
     voiceMode: 2,
     meetingMode: 3,
 
@@ -20,6 +21,7 @@ export const CreditCosts = {
     // Research & Search
     webSearch: 1,
     deepResearch: 5,
+    codeReview: 2,
 
     // Audio & Media
     podcastGeneration: 10,
@@ -42,6 +44,34 @@ export const CreditCosts = {
     sourceIngestion: 1,
     youtubeTranscript: 2,
 };
+
+export type MeteredCreditFeature =
+    | 'chat_message'
+    | 'notebook_chat'
+    | 'web_search'
+    | 'deep_research'
+    | 'code_review';
+
+export function getFeatureCreditCost(
+    feature: MeteredCreditFeature,
+    options: { depth?: string } = {}
+): number {
+    switch (feature) {
+        case 'notebook_chat':
+            return CreditCosts.notebookChat;
+        case 'web_search':
+            return CreditCosts.webSearch;
+        case 'deep_research':
+            return options.depth === 'deep'
+                ? CreditCosts.deepResearch * 2
+                : CreditCosts.deepResearch;
+        case 'code_review':
+            return CreditCosts.codeReview;
+        case 'chat_message':
+        default:
+            return CreditCosts.chatMessage;
+    }
+}
 
 export interface CreditCheckResult {
     hasEnough: boolean;
@@ -99,6 +129,14 @@ export async function consumeCredits(
     feature: string,
     metadata?: Record<string, any>
 ): Promise<CreditConsumeResult> {
+    if (!Number.isInteger(amount) || amount <= 0) {
+        return {
+            success: false,
+            newBalance: await getCreditBalance(userId),
+            error: 'Credit amount must be a positive integer',
+        };
+    }
+
     const client = await pool.connect();
 
     try {
@@ -174,6 +212,83 @@ export async function consumeCredits(
     } catch (error) {
         await client.query('ROLLBACK');
         console.error('[CreditService] Error consuming credits:', error);
+        throw error;
+    } finally {
+        client.release();
+    }
+}
+
+/**
+ * Refund a previously charged feature operation.
+ * Refunds are recorded as positive ledger entries and never let the monthly
+ * consumed counter fall below zero.
+ */
+export async function refundCredits(
+    userId: string,
+    amount: number,
+    feature: string,
+    metadata?: Record<string, any>
+): Promise<CreditConsumeResult> {
+    if (!Number.isInteger(amount) || amount <= 0) {
+        return {
+            success: false,
+            newBalance: await getCreditBalance(userId),
+            error: 'Refund amount must be a positive integer',
+        };
+    }
+
+    const client = await pool.connect();
+
+    try {
+        await client.query('BEGIN');
+
+        const subResult = await client.query(
+            `SELECT current_credits FROM user_subscriptions
+             WHERE user_id = $1
+             FOR UPDATE`,
+            [userId]
+        );
+
+        if (subResult.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return {
+                success: false,
+                newBalance: 0,
+                error: 'No subscription found',
+            };
+        }
+
+        const currentBalance = Number(subResult.rows[0].current_credits || 0);
+        const newBalance = currentBalance + amount;
+
+        await client.query(
+            `UPDATE user_subscriptions
+             SET current_credits = $1,
+                 credits_consumed_this_month =
+                     GREATEST(0, credits_consumed_this_month - $2),
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE user_id = $3`,
+            [newBalance, amount, userId]
+        );
+
+        await client.query(
+            `INSERT INTO credit_transactions
+             (user_id, amount, transaction_type, description, balance_after, metadata)
+             VALUES ($1, $2, 'refund', $3, $4, $5)`,
+            [
+                userId,
+                amount,
+                `Refunded ${amount} credits for ${feature}`,
+                newBalance,
+                metadata ? JSON.stringify(metadata) : null,
+            ]
+        );
+
+        await client.query('COMMIT');
+        return { success: true, newBalance };
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('[CreditService] Error refunding credits:', error);
         throw error;
     } finally {
         client.release();

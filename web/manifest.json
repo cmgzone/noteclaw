@@ -1,12 +1,11 @@
 {
-    "name": "noteclaw",
-    "short_name": "noteclaw",
+    "name": "NoteClaw Memory",
+    "short_name": "NoteClaw",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
-    "orientation": "portrait-primary",
+    "background_color": "#F8FAFC",
+    "theme_color": "#6366F1",
+    "description": "Durable MCP memory for third-party AI agents with live WebSocket presence.",
     "prefer_related_applications": false,
     "icons": [
         {

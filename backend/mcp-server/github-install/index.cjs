@@ -43251,286 +43251,191 @@ var {
 // src/index.ts
 var import_dotenv = __toESM(require_main(), 1);
 import_dotenv.default.config();
-var BACKEND_URL = process.env.BACKEND_URL || "https://noteclaw.onrender.com";
-var API_KEY = process.env.CODING_AGENT_API_KEY || "";
+var BACKEND_URL = process.env.BACKEND_URL?.replace(/\/+$/, "") || "https://noteclaw.onrender.com";
+var API_TOKEN = process.env.NOTECLAW_API_TOKEN || process.env.CODING_AGENT_API_KEY || "";
 var api = axios_default.create({
   baseURL: `${BACKEND_URL}/api/coding-agent`,
   headers: {
     "Content-Type": "application/json",
-    ...API_KEY && { "Authorization": `Bearer ${API_KEY}` }
+    ...API_TOKEN && { Authorization: `Bearer ${API_TOKEN}` }
   },
   timeout: 3e4
 });
+var memoryTarget = {
+  agentSessionId: external_exports3.string().min(1).optional(),
+  agentIdentifier: external_exports3.string().min(1).optional()
+};
+var requireMemoryTarget = (shape) => external_exports3.object({ ...memoryTarget, ...shape }).refine(
+  (value) => Boolean(
+    value["agentSessionId"] || value["agentIdentifier"]
+  ),
+  {
+    message: "agentSessionId or agentIdentifier is required"
+  }
+);
+var MemorySessionOpenSchema = external_exports3.object({
+  agentName: external_exports3.string().min(1),
+  agentIdentifier: external_exports3.string().min(1),
+  metadata: external_exports3.record(external_exports3.string(), external_exports3.any()).optional().default({})
+});
+var MemoryGetSchema = requireMemoryTarget({
+  namespace: external_exports3.string().min(1).optional().default("default")
+});
+var MemoryTopicsListSchema = external_exports3.object({
+  agentSessionId: external_exports3.string().min(1).optional()
+});
+var MemoryTopicGetSchema = external_exports3.object({
+  notebookId: external_exports3.string().min(1),
+  agentSessionId: external_exports3.string().min(1).optional()
+});
+var MemoryPutSchema = requireMemoryTarget({
+  namespace: external_exports3.string().min(1).optional().default("default"),
+  mode: external_exports3.enum(["merge", "replace", "append"]).optional().default("merge"),
+  memory: external_exports3.record(external_exports3.string(), external_exports3.any()).optional().default({}),
+  historyField: external_exports3.string().min(1).optional().default("history"),
+  item: external_exports3.any().optional(),
+  items: external_exports3.array(external_exports3.any()).optional(),
+  maxHistoryItems: external_exports3.number().int().min(0).optional().default(0),
+  keepRecent: external_exports3.number().int().min(0).optional().default(60),
+  summaryMaxItems: external_exports3.number().int().min(1).optional().default(50),
+  compactToNamespace: external_exports3.string().min(1).optional(),
+  dedupeKey: external_exports3.string().min(1).optional(),
+  expectedVersion: external_exports3.number().int().min(0).optional(),
+  actorIdentifier: external_exports3.string().min(1).optional()
+});
+var MemoryCompactSchema = requireMemoryTarget({
+  namespace: external_exports3.string().min(1).optional().default("default"),
+  targetNamespace: external_exports3.string().min(1).optional(),
+  historyField: external_exports3.string().min(1).optional().default("history"),
+  keepRecent: external_exports3.number().int().min(0).optional().default(20),
+  summaryMaxItems: external_exports3.number().int().min(1).optional().default(50),
+  expectedVersion: external_exports3.number().int().min(0).optional(),
+  actorIdentifier: external_exports3.string().min(1).optional()
+});
+var WebSocketInfoSchema = external_exports3.object({
+  agentSessionId: external_exports3.string().min(1).optional(),
+  agentIdentifier: external_exports3.string().min(1).optional(),
+  clientIdentifier: external_exports3.string().min(1).optional()
+});
+var CodeReviewSchema = external_exports3.object({
+  code: external_exports3.string().min(1),
+  language: external_exports3.string().min(1),
+  context: external_exports3.string().optional(),
+  strictMode: external_exports3.boolean().optional().default(false),
+  saveReview: external_exports3.boolean().optional().default(true)
+});
+var WebSearchSchema = external_exports3.object({
+  query: external_exports3.string().min(1),
+  maxResults: external_exports3.number().int().min(1).max(10).optional().default(5),
+  allowedDomains: external_exports3.array(external_exports3.string().min(1)).max(10).optional().default([]),
+  blockedDomains: external_exports3.array(external_exports3.string().min(1)).max(20).optional().default([])
+});
+var researchDepths = ["quick", "standard", "deep"];
+var researchTemplates = [
+  "general",
+  "academic",
+  "productComparison",
+  "marketAnalysis",
+  "howToGuide",
+  "prosAndCons"
+];
+var DeepResearchStartSchema = external_exports3.object({
+  query: external_exports3.string().min(1),
+  depth: external_exports3.enum(researchDepths).optional().default("standard"),
+  template: external_exports3.enum(researchTemplates).optional().default("general"),
+  notebookId: external_exports3.string().min(1).optional(),
+  useNotebookContext: external_exports3.boolean().optional().default(false),
+  provider: external_exports3.enum(["gemini", "openrouter"]).optional().default("gemini"),
+  model: external_exports3.string().min(1).optional()
+});
+var DeepResearchStatusSchema = external_exports3.object({
+  jobId: external_exports3.string().min(1)
+});
+var DeepResearchResultSchema = external_exports3.object({
+  jobId: external_exports3.string().min(1).optional(),
+  sessionId: external_exports3.string().min(1).optional()
+}).refine((value) => Boolean(value.jobId || value.sessionId), {
+  message: "jobId or sessionId is required"
+});
+var ResearchSaveToNotebookSchema = external_exports3.object({
+  sessionId: external_exports3.string().min(1),
+  notebookId: external_exports3.string().min(1).optional(),
+  title: external_exports3.string().min(1).max(180).optional()
+});
 var tools = [
   {
-    name: "verify_code",
-    description: `Verify code for correctness, security vulnerabilities, and best practices.
-Returns a verification result with:
-- isValid: Whether the code passes critical checks
-- score: Quality score from 0-100
-- errors: Critical issues that must be fixed
-- warnings: Non-critical issues to consider
-- suggestions: Improvement recommendations`,
-    inputSchema: {
-      type: "object",
-      properties: {
-        code: {
-          type: "string",
-          description: "The code to verify"
-        },
-        language: {
-          type: "string",
-          description: "Programming language (javascript, typescript, python, dart, json, etc.)"
-        },
-        context: {
-          type: "string",
-          description: "Optional context about what the code should do"
-        },
-        strictMode: {
-          type: "boolean",
-          description: "Enable strict verification mode for more thorough analysis",
-          default: false
-        }
-      },
-      required: ["code", "language"]
-    }
-  },
-  {
-    name: "verify_and_save",
-    description: `Verify code and save it as a source in the app if it passes verification (score >= 60).
-The code will be stored and can be retrieved later for reference.`,
-    inputSchema: {
-      type: "object",
-      properties: {
-        code: {
-          type: "string",
-          description: "The code to verify and save"
-        },
-        language: {
-          type: "string",
-          description: "Programming language"
-        },
-        title: {
-          type: "string",
-          description: "Title for the code source"
-        },
-        description: {
-          type: "string",
-          description: "Description of what the code does"
-        },
-        notebookId: {
-          type: "string",
-          description: "Optional notebook ID to associate the source with"
-        },
-        context: {
-          type: "string",
-          description: "Optional context for verification"
-        },
-        strictMode: {
-          type: "boolean",
-          description: "Enable strict verification mode",
-          default: false
-        }
-      },
-      required: ["code", "language", "title"]
-    }
-  },
-  {
-    name: "batch_verify",
-    description: `Verify multiple code snippets at once. Returns individual results and a summary.`,
-    inputSchema: {
-      type: "object",
-      properties: {
-        snippets: {
-          type: "array",
-          description: "Array of code snippets to verify",
-          items: {
-            type: "object",
-            properties: {
-              id: { type: "string", description: "Unique identifier for the snippet" },
-              code: { type: "string", description: "The code to verify" },
-              language: { type: "string", description: "Programming language" },
-              context: { type: "string", description: "Optional context" },
-              strictMode: { type: "boolean", description: "Strict mode" }
-            },
-            required: ["id", "code", "language"]
-          }
-        }
-      },
-      required: ["snippets"]
-    }
-  },
-  {
-    name: "analyze_code",
-    description: `Perform deep analysis of code with comprehensive suggestions for improvement.
-Uses strict mode by default for thorough analysis.`,
-    inputSchema: {
-      type: "object",
-      properties: {
-        code: {
-          type: "string",
-          description: "The code to analyze"
-        },
-        language: {
-          type: "string",
-          description: "Programming language"
-        },
-        analysisType: {
-          type: "string",
-          description: "Type of analysis: performance, security, readability, or comprehensive",
-          enum: ["performance", "security", "readability", "comprehensive"],
-          default: "comprehensive"
-        }
-      },
-      required: ["code", "language"]
-    }
-  },
-  {
-    name: "get_verified_sources",
-    description: `Retrieve previously saved verified code sources.`,
-    inputSchema: {
-      type: "object",
-      properties: {
-        notebookId: {
-          type: "string",
-          description: "Filter by notebook ID"
-        },
-        language: {
-          type: "string",
-          description: "Filter by programming language"
-        }
-      }
-    }
-  },
-  // ==================== AGENT COMMUNICATION TOOLS ====================
-  {
-    name: "create_agent_notebook",
-    description: `Create a dedicated notebook for this coding agent. This is idempotent - calling multiple times with the same agent identifier returns the existing notebook.
-    
-Use this tool to:
-- Set up a workspace for storing verified code
-- Establish a session for bidirectional communication with the user
-- Configure webhook endpoints for receiving follow-up messages
-
-Returns:
-- notebook: The created/existing notebook with ID, title, description
-- session: The agent session with ID, status, and configuration`,
+    name: "memory_session_open",
+    description: "Create or resume a durable memory session for one agent or a shared project. Call this once before reading memory or connecting over WebSocket. The same account and agentIdentifier return the existing session and its user-facing memory notebook.",
     inputSchema: {
       type: "object",
       properties: {
         agentName: {
           type: "string",
-          description: 'Display name of the coding agent (e.g., "Claude", "Kiro", "OpenClaw")'
+          description: "Human-readable agent name, such as Codex or Claude."
         },
         agentIdentifier: {
           type: "string",
-          description: 'Unique identifier for this agent type (e.g., "claude-3-opus", "kiro-v1")'
-        },
-        title: {
-          type: "string",
-          description: 'Optional custom title for the notebook (defaults to "{agentName} Code")'
-        },
-        description: {
-          type: "string",
-          description: "Optional description for the notebook"
-        },
-        category: {
-          type: "string",
-          description: 'Optional category (e.g., "Coding", "Research"). Defaults to "General"'
-        },
-        webhookUrl: {
-          type: "string",
-          description: "Optional webhook URL for receiving follow-up messages"
-        },
-        webhookSecret: {
-          type: "string",
-          description: "Optional shared secret for webhook authentication"
+          description: "Stable identifier for this agent or shared project."
         },
         metadata: {
           type: "object",
-          description: "Optional additional metadata to store with the session"
+          description: "Optional agent metadata.",
+          additionalProperties: true
         }
       },
       required: ["agentName", "agentIdentifier"]
     }
   },
   {
-    name: "save_code_with_context",
-    description: `Save verified code to the agent's notebook with full conversation context.
-    
-This tool:
-- Associates the code with the agent's notebook
-- Stores the conversation context that led to this code
-- Links the source to the agent session for follow-up communication
-- Optionally verifies the code before saving
-
-Use this instead of verify_and_save when you want to:
-- Preserve the conversation history with the code
-- Enable the user to send follow-up messages about this code
-- Track which agent created the code`,
+    name: "memory_sessions_list",
+    description: "List the memory sessions owned by this account, including namespaces, durability statistics, and live WebSocket presence.",
+    inputSchema: {
+      type: "object",
+      properties: {}
+    }
+  },
+  {
+    name: "memory_topics_list",
+    description: "List the topic notebooks the account owner has allowed this agent to use. Only active grants for this token-bound agent session are returned.",
     inputSchema: {
       type: "object",
       properties: {
-        code: {
+        agentSessionId: {
           type: "string",
-          description: "The code to save"
-        },
-        language: {
-          type: "string",
-          description: "Programming language (javascript, typescript, python, dart, etc.)"
-        },
-        title: {
-          type: "string",
-          description: "Title for the code source"
-        },
-        description: {
-          type: "string",
-          description: "Description of what the code does"
-        },
+          description: "Optional bound session ID. The current token session is used by default."
+        }
+      }
+    }
+  },
+  {
+    name: "memory_topic_get",
+    description: "Read one granted topic as organized notebook sources plus durable agent-memory namespaces. Access is denied unless the account owner allowed this topic for the current agent.",
+    inputSchema: {
+      type: "object",
+      properties: {
         notebookId: {
           type: "string",
-          description: "The agent notebook ID to save to (from create_agent_notebook)"
+          description: "Topic notebook ID returned by memory_topics_list."
         },
         agentSessionId: {
           type: "string",
-          description: "The agent session ID (from create_agent_notebook)"
-        },
-        conversationContext: {
-          type: "string",
-          description: "The conversation/context that led to this code being created"
-        },
-        verification: {
-          type: "object",
-          description: "Optional pre-computed verification result"
-        },
-        strictMode: {
-          type: "boolean",
-          description: "Enable strict verification mode if verifying",
-          default: false
+          description: "Optional bound session ID. The current token session is used by default."
         }
       },
-      required: ["code", "language", "title", "notebookId"]
+      required: ["notebookId"]
     }
   },
   {
     name: "memory_get",
-    description: `Read the persisted memory bank for an agent session.
-
-Use this to restore identity, working memory, preferences, and checkpoints between runs.`,
+    description: "Read one namespace from an agent\u2019s durable memory bank. Use the stable agentIdentifier when a session ID is not available.",
     inputSchema: {
       type: "object",
       properties: {
-        agentSessionId: {
-          type: "string",
-          description: "The agent session ID to load memory from"
-        },
-        agentIdentifier: {
-          type: "string",
-          description: "Alternative: load session by agent identifier"
-        },
+        agentSessionId: { type: "string" },
+        agentIdentifier: { type: "string" },
         namespace: {
           type: "string",
-          description: "Logical namespace for memory segmentation",
+          description: "Named memory segment.",
           default: "default"
         }
       }
@@ -43538,1971 +43443,233 @@ Use this to restore identity, working memory, preferences, and checkpoints betwe
   },
   {
     name: "memory_put",
-    description: `Write to the persisted memory bank for an agent session.
-
-Use:
-- mode "merge" for partial updates
-- mode "replace" for full namespace overwrite
-- mode "append" to grow a history array and optionally auto-compact older items into long-term checkpoints.`,
+    description: "Write durable agent memory. Merge preserves existing fields, replace overwrites a namespace, and append adds history items with optional deduplication and automatic compaction. Use expectedVersion to reject stale concurrent writes.",
     inputSchema: {
       type: "object",
       properties: {
-        agentSessionId: {
-          type: "string",
-          description: "The agent session ID to update"
-        },
-        agentIdentifier: {
-          type: "string",
-          description: "Alternative: update session by agent identifier"
-        },
-        namespace: {
-          type: "string",
-          description: "Logical namespace for memory segmentation",
-          default: "default"
-        },
+        agentSessionId: { type: "string" },
+        agentIdentifier: { type: "string" },
+        namespace: { type: "string", default: "default" },
         mode: {
           type: "string",
-          description: "Update mode: merge, replace, or append",
           enum: ["merge", "replace", "append"],
           default: "merge"
         },
         memory: {
           type: "object",
-          description: "Memory payload object to persist or merge into the namespace"
+          additionalProperties: true,
+          default: {}
         },
-        historyField: {
+        historyField: { type: "string", default: "history" },
+        item: {},
+        items: { type: "array", items: {} },
+        maxHistoryItems: { type: "integer", minimum: 0, default: 0 },
+        keepRecent: { type: "integer", minimum: 0, default: 60 },
+        summaryMaxItems: { type: "integer", minimum: 1, default: 50 },
+        compactToNamespace: { type: "string" },
+        dedupeKey: { type: "string" },
+        expectedVersion: {
+          type: "integer",
+          minimum: 0,
+          description: "Version returned by memory_get. A stale version returns a conflict."
+        },
+        actorIdentifier: {
           type: "string",
-          description: "History field to append into when mode = append",
-          default: "history"
-        },
-        item: {
-          description: "Single history item to append when mode = append"
-        },
-        items: {
-          type: "array",
-          description: "Multiple history items to append when mode = append",
-          items: {}
-        },
-        maxHistoryItems: {
-          type: "number",
-          description: "If the history exceeds this size, older items can be auto-compacted"
-        },
-        keepRecent: {
-          type: "number",
-          description: "How many recent history items to keep after auto-compaction"
-        },
-        summaryMaxItems: {
-          type: "number",
-          description: "Maximum removed history items to sample into the checkpoint summary"
-        },
-        compactToNamespace: {
-          type: "string",
-          description: "Optional long-term namespace for automatic checkpoint storage"
-        },
-        dedupeKey: {
-          type: "string",
-          description: "Optional dotted path used to de-duplicate appended history items"
+          description: "Stable identity of the agent making this shared-memory write."
         }
       }
     }
   },
   {
     name: "memory_compact",
-    description: `Compact long memory history into checkpoint summaries.
-
-This trims old items from a history array while preserving compacted checkpoints in a target namespace.`,
+    description: "Move older history into durable checkpoint summaries while keeping the most recent working-memory items.",
     inputSchema: {
       type: "object",
       properties: {
-        agentSessionId: {
+        agentSessionId: { type: "string" },
+        agentIdentifier: { type: "string" },
+        namespace: { type: "string", default: "default" },
+        targetNamespace: { type: "string" },
+        historyField: { type: "string", default: "history" },
+        keepRecent: { type: "integer", minimum: 0, default: 20 },
+        summaryMaxItems: { type: "integer", minimum: 1, default: 50 },
+        expectedVersion: {
+          type: "integer",
+          minimum: 0,
+          description: "Current source namespace version. A stale version returns a conflict."
+        },
+        actorIdentifier: {
           type: "string",
-          description: "The agent session ID to compact"
-        },
-        agentIdentifier: {
-          type: "string",
-          description: "Alternative: compact session by agent identifier"
-        },
-        namespace: {
-          type: "string",
-          description: "Source namespace containing history",
-          default: "default"
-        },
-        targetNamespace: {
-          type: "string",
-          description: "Target namespace to store checkpoints"
-        },
-        historyField: {
-          type: "string",
-          description: "Field name of history array in source namespace",
-          default: "history"
-        },
-        keepRecent: {
-          type: "number",
-          description: "How many recent history items to keep",
-          default: 20
-        },
-        summaryMaxItems: {
-          type: "number",
-          description: "Maximum sampled removed items to include in checkpoint",
-          default: 50
+          description: "Stable identity of the agent requesting compaction."
         }
       }
-    }
-  },
-  {
-    name: "get_followup_messages",
-    description: `Poll for pending follow-up messages from the user.
-    
-Use this tool to:
-- Check if the user has sent any questions or requests about saved code
-- Retrieve messages that need responses
-- Get context about which code source the message relates to
-
-Returns messages with:
-- Message ID, content, and timestamp
-- Source information (title, code, language)
-- Conversation history
-- Optional imageAttachments (up to 4) at message.imageAttachments
-
-Each image attachment includes:
-- id, name, mimeType, base64Data, sizeBytes
-
-Compatibility note:
-- If imageAttachments is not present at top level, check message.metadata.imageAttachments`,
-    inputSchema: {
-      type: "object",
-      properties: {
-        agentSessionId: {
-          type: "string",
-          description: "The agent session ID to check for messages"
-        },
-        agentIdentifier: {
-          type: "string",
-          description: "Alternative: the agent identifier to look up the session"
-        }
-      }
-    }
-  },
-  {
-    name: "respond_to_followup",
-    description: `Send a response to a user's follow-up message.
-    
-Use this tool to:
-- Answer user questions about saved code
-- Provide code updates or modifications
-- Continue the conversation about a specific code source
-
-The response will be displayed to the user in the app's chat interface.`,
-    inputSchema: {
-      type: "object",
-      properties: {
-        messageId: {
-          type: "string",
-          description: "The ID of the message being responded to"
-        },
-        response: {
-          type: "string",
-          description: "The response text to send to the user"
-        },
-        agentSessionId: {
-          type: "string",
-          description: "The agent session ID"
-        },
-        codeUpdate: {
-          type: "object",
-          description: "Optional code update to apply to the source",
-          properties: {
-            code: {
-              type: "string",
-              description: "The updated code"
-            },
-            description: {
-              type: "string",
-              description: "Description of what changed"
-            }
-          }
-        }
-      },
-      required: ["messageId", "response"]
-    }
-  },
-  {
-    name: "register_webhook",
-    description: `Register a webhook endpoint to receive follow-up messages in real-time.
-    
-Instead of polling with get_followup_messages, you can register a webhook to receive messages as they arrive.
-
-The webhook will receive POST requests with:
-- type: 'followup_message'
-- sourceId, sourceTitle, sourceCode, sourceLanguage
-- message: The user's message
-- conversationHistory: Previous messages
-- imageAttachments: Optional image attachments (id, name, mimeType, base64Data, sizeBytes)
-- userId, timestamp
-
-Webhook requests are signed with HMAC-SHA256 using the provided secret.`,
-    inputSchema: {
-      type: "object",
-      properties: {
-        agentSessionId: {
-          type: "string",
-          description: "The agent session ID to configure"
-        },
-        agentIdentifier: {
-          type: "string",
-          description: "Alternative: the agent identifier to look up the session"
-        },
-        webhookUrl: {
-          type: "string",
-          description: "The HTTPS URL to receive webhook requests"
-        },
-        webhookSecret: {
-          type: "string",
-          description: "Shared secret for HMAC-SHA256 signature verification (min 16 characters)"
-        }
-      },
-      required: ["webhookUrl", "webhookSecret"]
     }
   },
   {
     name: "get_websocket_info",
-    description: `Get WebSocket connection information for real-time bidirectional communication.
-    
-WebSocket provides instant message delivery without polling. Connect to receive user messages in real-time and send responses immediately.
-
-Returns:
-- WebSocket URL to connect to
-- Authentication method (query parameters)
-- Message format for sending responses
-- Incoming followup_message payload includes optional imageAttachments (id, name, mimeType, base64Data, sizeBytes)
-
-Use this for the most responsive agent experience.`,
-    inputSchema: {
-      type: "object",
-      properties: {}
-    }
-  },
-  {
-    name: "get_quota",
-    description: `Get your current MCP usage quota and limits.
-    
-Returns quota information including:
-- sourcesLimit/sourcesUsed/sourcesRemaining: Code source storage limits
-- tokensLimit/tokensUsed/tokensRemaining: API token limits
-- apiCallsLimit/apiCallsUsed/apiCallsRemaining: Daily API call limits
-- isPremium: Whether user has premium plan
-- isMcpEnabled: Whether MCP is enabled by administrator
-
-Use this to check your remaining quota before saving sources or making API calls.`,
-    inputSchema: {
-      type: "object",
-      properties: {}
-    }
-  },
-  {
-    name: "list_notebooks",
-    description: `List all your notebooks with their source counts.
-    
-Returns a list of notebooks including:
-- id, title, description, icon
-- isAgentNotebook: Whether created by an agent
-- sourceCount: Number of code sources in the notebook
-- category: Notebook category
-- createdAt, updatedAt
-
-Use this to find notebooks to save code to or to browse your previous work.`,
-    inputSchema: {
-      type: "object",
-      properties: {}
-    }
-  },
-  {
-    name: "list_ebooks",
-    description: `List all ebook projects owned by the authenticated user.
-
-Returns ebook metadata including:
-- id, title, topic, targetAudience
-- status, notebookId, selectedModel
-- chapterCount, createdAt, updatedAt
-
-Use this to discover existing ebooks before reading or updating them.`,
-    inputSchema: {
-      type: "object",
-      properties: {}
-    }
-  },
-  {
-    name: "get_ebook",
-    description: `Get a specific ebook project by ID.
-
-Returns the ebook project and, by default, all chapters in reading order.
-
-Use this when an agent needs to read ebook content before making changes or creating related work.`,
+    description: "Get the secure WebSocket endpoint, authentication format, supported message types, and a connection template for this memory agent.",
     inputSchema: {
       type: "object",
       properties: {
-        ebookId: {
+        agentSessionId: { type: "string" },
+        agentIdentifier: { type: "string" },
+        clientIdentifier: {
           type: "string",
-          description: "The ID of the ebook to retrieve"
-        },
-        includeChapters: {
-          type: "boolean",
-          description: "Include full chapter content (default: true)",
-          default: true
-        }
-      },
-      required: ["ebookId"]
-    }
-  },
-  {
-    name: "create_ebook",
-    description: `Create a new ebook or update an existing ebook project.
-
-Supports:
-- title, topic, targetAudience
-- notebook linking
-- branding and cover image
-- optional chapter creation/update in the same call
-
-If ebookId is provided, the existing ebook is updated. If chapters are provided, they are batch-synced after the ebook project is saved.`,
-    inputSchema: {
-      type: "object",
-      properties: {
-        ebookId: {
-          type: "string",
-          description: "Optional existing ebook ID to update"
-        },
-        title: {
-          type: "string",
-          description: "Ebook title"
-        },
-        topic: {
-          type: "string",
-          description: "Primary topic or subject of the ebook"
-        },
-        targetAudience: {
-          type: "string",
-          description: "Target audience for the ebook"
-        },
-        notebookId: {
-          type: "string",
-          description: "Optional linked notebook ID"
-        },
-        selectedModel: {
-          type: "string",
-          description: "Optional model identifier used for generation metadata"
-        },
-        status: {
-          type: "string",
-          description: "Ebook status",
-          enum: ["draft", "generating", "completed", "error"],
-          default: "draft"
-        },
-        coverImage: {
-          type: "string",
-          description: "Optional cover image URL or data URI"
-        },
-        branding: {
-          type: "object",
-          description: "Optional branding object matching the ebook branding schema"
-        },
-        chapters: {
-          type: "array",
-          description: "Optional chapter list to batch sync after save",
-          items: {
-            type: "object",
-            properties: {
-              id: {
-                type: "string",
-                description: "Optional existing chapter ID"
-              },
-              title: {
-                type: "string",
-                description: "Chapter title"
-              },
-              content: {
-                type: "string",
-                description: "Markdown chapter content"
-              },
-              chapterOrder: {
-                type: "number",
-                description: "1-based chapter order"
-              },
-              images: {
-                type: "array",
-                description: "Optional chapter images to persist with the ebook",
-                items: {
-                  type: "object",
-                  properties: {
-                    id: { type: "string", description: "Optional image ID" },
-                    prompt: { type: "string", description: "Prompt or sourcing note for the image" },
-                    url: { type: "string", description: "Image URL or data URI" },
-                    caption: { type: "string", description: "Optional caption" },
-                    type: { type: "string", description: "Image type such as generated or web" }
-                  },
-                  required: ["url"]
-                }
-              },
-              status: {
-                type: "string",
-                description: "Chapter status",
-                enum: ["draft", "generating", "completed", "error"]
-              }
-            },
-            required: ["title"]
-          }
-        }
-      },
-      required: ["title"]
-    }
-  },
-  {
-    name: "generate_ebook",
-    description: `Start backend AI generation for a new or existing ebook.
-
-This creates or updates the ebook project, marks it as generating, and writes the outline and chapters in the background.
-
-The backend always tries to find a cover image. If generateChapterImages is true, it can also add one chapter image per chapter using web search, AI image generation, or AI-first with web fallback.
-
-Use get_ebook after calling this tool to poll until the ebook status becomes completed or error.`,
-    inputSchema: {
-      type: "object",
-      properties: {
-        ebookId: {
-          type: "string",
-          description: "Optional existing ebook ID to regenerate"
-        },
-        title: {
-          type: "string",
-          description: "Ebook title"
-        },
-        topic: {
-          type: "string",
-          description: "Primary topic or subject of the ebook"
-        },
-        targetAudience: {
-          type: "string",
-          description: "Target audience for the ebook"
-        },
-        notebookId: {
-          type: "string",
-          description: "Optional notebook ID to ground the ebook in notebook sources"
-        },
-        selectedModel: {
-          type: "string",
-          description: "Optional AI model ID to use for generation"
-        },
-        branding: {
-          type: "object",
-          description: "Optional branding object for the ebook cover/metadata"
-        },
-        chapterCount: {
-          type: "number",
-          description: "Desired number of chapters (3-12)"
-        },
-        chapterInstructions: {
-          type: "string",
-          description: "Optional extra authoring instructions for tone, scope, or structure"
-        },
-        generateChapterImages: {
-          type: "boolean",
-          description: "Whether to generate chapter illustrations while writing the ebook",
-          default: false
-        },
-        imageSource: {
-          type: "string",
-          description: "Image sourcing strategy for generated images",
-          enum: ["web", "ai", "auto"],
-          default: "web"
-        },
-        imageModel: {
-          type: "string",
-          description: "Optional image-capable model ID for AI image generation, typically an OpenRouter image model"
-        },
-        imageStyle: {
-          type: "string",
-          description: "Optional visual style guidance for cover and chapter illustrations"
-        },
-        createPlaceholderCover: {
-          type: "boolean",
-          description: "Whether to fall back to a placeholder cover image if generated/web image lookup finds nothing",
-          default: false
-        }
-      },
-      required: ["title"]
-    }
-  },
-  {
-    name: "get_source",
-    description: `Get a specific code source by ID.
-    
-Returns the full source including:
-- id, title, notebookId, notebookTitle
-- content: The full code
-- language, verification result
-- agentName: Which agent created it
-- originalContext: The conversation context when created
-- createdAt, updatedAt
-
-Use this to retrieve previously saved code for reference or modification.`,
-    inputSchema: {
-      type: "object",
-      properties: {
-        sourceId: {
-          type: "string",
-          description: "The ID of the source to retrieve"
-        }
-      },
-      required: ["sourceId"]
-    }
-  },
-  {
-    name: "search_sources",
-    description: `Search across all your code sources.
-    
-Search by:
-- query: Text to search in title and code content
-- language: Filter by programming language
-- notebookId: Filter by specific notebook
-
-Returns matching sources with:
-- id, title, notebookId, notebookTitle
-- language, isVerified, agentName
-- contentPreview: First 200 characters of code
-
-Use this to find relevant code from previous sessions.`,
-    inputSchema: {
-      type: "object",
-      properties: {
-        query: {
-          type: "string",
-          description: "Text to search for in title and code content"
-        },
-        language: {
-          type: "string",
-          description: "Filter by programming language (e.g., typescript, python)"
-        },
-        notebookId: {
-          type: "string",
-          description: "Filter by specific notebook ID"
-        },
-        limit: {
-          type: "number",
-          description: "Maximum results to return (default: 20)",
-          default: 20
+          description: "Stable identity for this live client, such as codex or claude."
         }
       }
     }
   },
   {
-    name: "update_source",
-    description: `Update an existing code source without using quota.
-    
-Update:
-- code: The new code content
-- title: New title
-- description: New description
-- language: Change language
-- revalidate: Re-run verification on updated code
-
-This does NOT count against your source quota - use it to iterate on existing code.
-
-Returns the updated source and optionally new verification results.`,
+    name: "review_code",
+    description: "Review a code snippet for correctness, security, maintainability, and actionable improvements. Authenticated reviews are saved to the account by default so the user can inspect the review later. Costs 2 NoteClaw credits; failed reviews are refunded.",
     inputSchema: {
       type: "object",
       properties: {
-        sourceId: {
-          type: "string",
-          description: "The ID of the source to update"
-        },
         code: {
           type: "string",
-          description: "The updated code content"
-        },
-        title: {
-          type: "string",
-          description: "New title for the source"
-        },
-        description: {
-          type: "string",
-          description: "New description"
+          description: "The complete code snippet or file content to review."
         },
         language: {
           type: "string",
-          description: "Change the programming language"
+          description: "Programming language, such as typescript or python."
         },
-        revalidate: {
+        context: {
+          type: "string",
+          description: "Optional goal, constraints, or surrounding project context."
+        },
+        strictMode: {
           type: "boolean",
-          description: "Re-run code verification after update",
-          default: false
-        }
-      },
-      required: ["sourceId"]
-    }
-  },
-  {
-    name: "delete_source",
-    description: `Delete a code source permanently.
-    
-This will:
-- Remove the source from your notebook
-- Free up one slot in your source quota
-- Delete any associated conversation history
-
-Returns confirmation of deletion.`,
-    inputSchema: {
-      type: "object",
-      properties: {
-        sourceId: {
-          type: "string",
-          description: "The ID of the source to delete"
-        }
-      },
-      required: ["sourceId"]
-    }
-  },
-  {
-    name: "export_sources",
-    description: `Export your code sources as JSON for backup or transfer.
-    
-Export options:
-- notebookId: Export only sources from a specific notebook
-- language: Export only sources in a specific language
-- includeVerification: Include verification results in export
-- includeConversations: Include conversation history
-
-Returns a JSON object with all matching sources and their metadata.`,
-    inputSchema: {
-      type: "object",
-      properties: {
-        notebookId: {
-          type: "string",
-          description: "Export only from this notebook"
+          default: false,
+          description: "Apply stricter correctness and quality checks."
         },
-        language: {
-          type: "string",
-          description: "Export only this language"
-        },
-        includeVerification: {
+        saveReview: {
           type: "boolean",
-          description: "Include verification results",
-          default: true
-        },
-        includeConversations: {
-          type: "boolean",
-          description: "Include conversation history",
-          default: false
-        }
-      }
-    }
-  },
-  {
-    name: "get_usage_stats",
-    description: `Get detailed usage statistics and analytics.
-    
-Returns:
-- Total sources by language
-- Verification score distribution
-- Sources created over time
-- Most active notebooks
-- Agent activity breakdown
-
-Use this to understand your coding patterns and MCP usage.`,
-    inputSchema: {
-      type: "object",
-      properties: {
-        period: {
-          type: "string",
-          description: 'Time period: "week", "month", "year", or "all"',
-          enum: ["week", "month", "year", "all"],
-          default: "month"
-        }
-      }
-    }
-  },
-  // ==================== GITHUB INTEGRATION TOOLS ====================
-  {
-    name: "github_status",
-    description: `Check if GitHub is connected for the current user.
-    
-Returns:
-- connected: Whether GitHub account is linked
-- username: GitHub username if connected
-- scopes: Permissions granted
-
-Use this before calling other GitHub tools to verify access.`,
-    inputSchema: {
-      type: "object",
-      properties: {}
-    }
-  },
-  {
-    name: "github_list_repos",
-    description: `List GitHub repositories accessible to the user.
-    
-Returns repositories with:
-- fullName: owner/repo format
-- name, owner, description
-- defaultBranch, language
-- isPrivate, isFork
-- starsCount, forksCount
-
-Use this to discover repositories to work with.`,
-    inputSchema: {
-      type: "object",
-      properties: {
-        type: {
-          type: "string",
-          description: "Filter by type: all, owner, member",
-          enum: ["all", "owner", "member"],
-          default: "all"
-        },
-        sort: {
-          type: "string",
-          description: "Sort by: created, updated, pushed, full_name",
-          enum: ["created", "updated", "pushed", "full_name"],
-          default: "updated"
-        },
-        perPage: {
-          type: "number",
-          description: "Results per page (max 100)",
-          default: 30
-        },
-        page: {
-          type: "number",
-          description: "Page number",
-          default: 1
-        }
-      }
-    }
-  },
-  {
-    name: "github_get_repo_tree",
-    description: `Get the file tree structure of a GitHub repository.
-    
-Returns all files and directories with:
-- path: Full path from repo root
-- type: 'blob' (file) or 'tree' (directory)
-- sha: Git SHA
-- size: File size in bytes (for files)
-
-Use this to explore repository structure before fetching specific files.`,
-    inputSchema: {
-      type: "object",
-      properties: {
-        owner: {
-          type: "string",
-          description: "Repository owner (username or org)"
-        },
-        repo: {
-          type: "string",
-          description: "Repository name"
-        },
-        branch: {
-          type: "string",
-          description: "Branch name (defaults to default branch)"
+          default: true,
+          description: "Save the review to this NoteClaw account."
         }
       },
-      required: ["owner", "repo"]
-    }
-  },
-  {
-    name: "github_get_file",
-    description: `Get the contents of a file from a GitHub repository.
-    
-Returns:
-- name, path, sha, size
-- content: The file contents (decoded)
-- encoding: Content encoding
-
-Use this to read specific files for analysis or reference.`,
-    inputSchema: {
-      type: "object",
-      properties: {
-        owner: {
-          type: "string",
-          description: "Repository owner"
-        },
-        repo: {
-          type: "string",
-          description: "Repository name"
-        },
-        path: {
-          type: "string",
-          description: 'File path from repo root (e.g., "src/index.ts")'
-        },
-        branch: {
-          type: "string",
-          description: "Branch name (optional)"
-        }
-      },
-      required: ["owner", "repo", "path"]
-    }
-  },
-  {
-    name: "github_search_code",
-    description: `Search for code across GitHub repositories.
-    
-Search parameters:
-- query: Search terms (required)
-- repo: Limit to specific repo (owner/repo format)
-- language: Filter by programming language
-- path: Filter by file path
-
-Returns matching files with:
-- name, path, sha
-- repository: Full repo name
-- htmlUrl: Link to file on GitHub
-- textMatches: Matching code snippets
-
-Use this to find relevant code across repositories.`,
-    inputSchema: {
-      type: "object",
-      properties: {
-        query: {
-          type: "string",
-          description: "Search query"
-        },
-        repo: {
-          type: "string",
-          description: "Limit to repo (owner/repo format)"
-        },
-        language: {
-          type: "string",
-          description: "Filter by language"
-        },
-        path: {
-          type: "string",
-          description: "Filter by path"
-        },
-        perPage: {
-          type: "number",
-          description: "Results per page",
-          default: 20
-        }
-      },
-      required: ["query"]
-    }
-  },
-  {
-    name: "github_get_readme",
-    description: `Get the README file from a GitHub repository.
-    
-Returns the README content as markdown text.
-
-Use this to understand what a repository is about.`,
-    inputSchema: {
-      type: "object",
-      properties: {
-        owner: {
-          type: "string",
-          description: "Repository owner"
-        },
-        repo: {
-          type: "string",
-          description: "Repository name"
-        }
-      },
-      required: ["owner", "repo"]
-    }
-  },
-  {
-    name: "github_create_issue",
-    description: `Create a new issue in a GitHub repository.
-    
-Parameters:
-- title: Issue title (required)
-- body: Issue description (markdown supported)
-- labels: Array of label names
-
-Returns:
-- number: Issue number
-- htmlUrl: Link to issue on GitHub
-
-Use this to report bugs, request features, or track tasks.`,
-    inputSchema: {
-      type: "object",
-      properties: {
-        owner: {
-          type: "string",
-          description: "Repository owner"
-        },
-        repo: {
-          type: "string",
-          description: "Repository name"
-        },
-        title: {
-          type: "string",
-          description: "Issue title"
-        },
-        body: {
-          type: "string",
-          description: "Issue body (markdown)"
-        },
-        labels: {
-          type: "array",
-          items: { type: "string" },
-          description: "Labels to apply"
-        }
-      },
-      required: ["owner", "repo", "title"]
-    }
-  },
-  {
-    name: "github_add_comment",
-    description: `Add a comment to an issue or pull request.
-    
-Parameters:
-- owner, repo: Repository
-- issueNumber: Issue or PR number
-- body: Comment text (markdown supported)
-
-Returns:
-- id: Comment ID
-- htmlUrl: Link to comment
-
-Use this to provide feedback or updates on issues/PRs.`,
-    inputSchema: {
-      type: "object",
-      properties: {
-        owner: {
-          type: "string",
-          description: "Repository owner"
-        },
-        repo: {
-          type: "string",
-          description: "Repository name"
-        },
-        issueNumber: {
-          type: "number",
-          description: "Issue or PR number"
-        },
-        body: {
-          type: "string",
-          description: "Comment body (markdown)"
-        }
-      },
-      required: ["owner", "repo", "issueNumber", "body"]
-    }
-  },
-  {
-    name: "github_add_as_source",
-    description: `Add a GitHub file as a source to a notebook.
-    
-This imports a file from GitHub into NoteClaw as a code source,
-allowing the app's AI to analyze and discuss it.
-
-Parameters:
-- notebookId: Target notebook
-- owner, repo, path: GitHub file location
-- branch: Optional branch name
-
-Returns the created source with ID.
-
-Use this to bring GitHub code into NoteClaw for AI analysis.`,
-    inputSchema: {
-      type: "object",
-      properties: {
-        notebookId: {
-          type: "string",
-          description: "Notebook ID to add source to"
-        },
-        owner: {
-          type: "string",
-          description: "Repository owner"
-        },
-        repo: {
-          type: "string",
-          description: "Repository name"
-        },
-        path: {
-          type: "string",
-          description: "File path in repo"
-        },
-        branch: {
-          type: "string",
-          description: "Branch name (optional)"
-        }
-      },
-      required: ["notebookId", "owner", "repo", "path"]
-    }
-  },
-  {
-    name: "github_analyze_repo",
-    description: `Request AI analysis of a GitHub repository.
-    
-This asks the NoteClaw app's AI to analyze a repository and provide insights.
-
-Analysis includes:
-- Repository structure overview
-- Key files and their purposes
-- Code patterns and architecture
-- Potential improvements
-- Technology stack
-
-Returns AI-generated analysis.
-
-Use this to get intelligent insights about a codebase.`,
-    inputSchema: {
-      type: "object",
-      properties: {
-        owner: {
-          type: "string",
-          description: "Repository owner"
-        },
-        repo: {
-          type: "string",
-          description: "Repository name"
-        },
-        focus: {
-          type: "string",
-          description: 'Optional focus area (e.g., "security", "performance", "architecture")'
-        },
-        includeFiles: {
-          type: "array",
-          items: { type: "string" },
-          description: "Specific files to include in analysis"
-        }
-      },
-      required: ["owner", "repo"]
-    }
-  },
-  {
-    name: "get_source_analysis",
-    description: `Get the AI-generated code analysis for a GitHub source.
-    
-When a GitHub file is added as a source, it is automatically analyzed to provide:
-- Overall quality rating (1-10)
-- Code explanation and purpose
-- Key components (functions, classes, etc.)
-- Quality metrics (readability, maintainability, testability, documentation, error handling)
-- Architecture patterns detected
-- Strengths and areas for improvement
-- Security notes
-
-This analysis improves fact-checking results by providing deep knowledge about the code.
-
-Returns null if analysis is not yet available (still processing) or if the source is not a code file.`,
-    inputSchema: {
-      type: "object",
-      properties: {
-        sourceId: {
-          type: "string",
-          description: "The ID of the source to get analysis for"
-        }
-      },
-      required: ["sourceId"]
-    }
-  },
-  {
-    name: "reanalyze_source",
-    description: `Re-analyze a GitHub source to get fresh code analysis.
-    
-Use this when:
-- The source code has been updated
-- You want a fresh analysis with potentially improved AI insights
-- The initial analysis failed or is incomplete
-
-Returns the new analysis result with updated ratings and insights.`,
-    inputSchema: {
-      type: "object",
-      properties: {
-        sourceId: {
-          type: "string",
-          description: "The ID of the source to re-analyze"
-        }
-      },
-      required: ["sourceId"]
-    }
-  },
-  // ==================== PLANNING MODE TOOLS ====================
-  {
-    name: "list_plans",
-    description: `List all plans accessible to the authenticated user.
-    
-Returns plans with:
-- id, title, description, status
-- isPrivate: Whether the plan is private
-- taskSummary: Count of tasks by status
-- createdAt, updatedAt
-
-Query options:
-- status: Filter by plan status (draft, active, completed, archived)
-- includeArchived: Include archived plans (default: false)
-- limit: Max results (default: 50)
-- offset: Pagination offset
-
-Use this to discover plans to work on.`,
-    inputSchema: {
-      type: "object",
-      properties: {
-        status: {
-          type: "string",
-          description: "Filter by status: draft, active, completed, archived",
-          enum: ["draft", "active", "completed", "archived"]
-        },
-        includeArchived: {
-          type: "boolean",
-          description: "Include archived plans",
-          default: false
-        },
-        limit: {
-          type: "number",
-          description: "Maximum results to return (default: 50)",
-          default: 50
-        },
-        offset: {
-          type: "number",
-          description: "Pagination offset (default: 0)",
-          default: 0
-        }
-      }
-    }
-  },
-  {
-    name: "get_plan",
-    description: `Get a specific plan with full details.
-    
-Returns the complete plan including:
-- id, title, description, status, isPrivate
-- requirements: Array of requirements with EARS patterns
-- designNotes: Array of design notes linked to requirements
-- tasks: Array of tasks with status and hierarchy
-- taskSummary: Count of tasks by status
-- completionPercentage: Overall progress
-- createdAt, updatedAt, completedAt
-
-Use this to get all details needed to work on a plan.`,
-    inputSchema: {
-      type: "object",
-      properties: {
-        planId: {
-          type: "string",
-          description: "The ID of the plan to retrieve"
-        },
-        includeRelations: {
-          type: "boolean",
-          description: "Include requirements, design notes, and tasks (default: true)",
-          default: true
-        }
-      },
-      required: ["planId"]
-    }
-  },
-  {
-    name: "create_plan",
-    description: `Create a new plan following the spec-driven format.
-    
-Creates a plan with:
-- title: Plan title (required)
-- description: Plan description
-- isPrivate: Whether the plan is private (default: true)
-
-The plan is created with 'draft' status and empty task list.
-
-Returns the created plan with ID.
-
-Use this to start a new project or feature plan.`,
-    inputSchema: {
-      type: "object",
-      properties: {
-        title: {
-          type: "string",
-          description: "Plan title (required)"
-        },
-        description: {
-          type: "string",
-          description: "Plan description"
-        },
-        isPrivate: {
-          type: "boolean",
-          description: "Whether the plan is private (default: true)",
-          default: true
-        }
-      },
-      required: ["title"]
-    }
-  },
-  {
-    name: "list_projects",
-    description: `List all project workspaces accessible to the authenticated user.
-
-This is a project-focused alias for list_plans so coding agents can match the app's current user-facing wording.
-
-Returns projects with:
-- id, title, description, status
-- isPrivate: Whether the project is private
-- taskSummary: Count of tasks by status
-- createdAt, updatedAt
-
-Use this to discover project workspaces to work on.`,
-    inputSchema: {
-      type: "object",
-      properties: {
-        status: {
-          type: "string",
-          description: "Filter by status: draft, active, completed, archived",
-          enum: ["draft", "active", "completed", "archived"]
-        },
-        includeArchived: {
-          type: "boolean",
-          description: "Include archived projects",
-          default: false
-        },
-        limit: {
-          type: "number",
-          description: "Maximum results to return (default: 50)",
-          default: 50
-        },
-        offset: {
-          type: "number",
-          description: "Pagination offset (default: 0)",
-          default: 0
-        }
-      }
-    }
-  },
-  {
-    name: "get_project",
-    description: `Get a specific project workspace with full details.
-
-This is a project-focused alias for get_plan so agents can use project terminology without losing compatibility with the planning backend.
-
-Returns the complete project including:
-- id, title, description, status, isPrivate
-- requirements: Array of requirements with EARS patterns
-- designNotes: Array of design notes linked to requirements
-- tasks: Array of tasks with status and hierarchy
-- taskSummary: Count of tasks by status
-- completionPercentage: Overall progress
-- createdAt, updatedAt, completedAt`,
-    inputSchema: {
-      type: "object",
-      properties: {
-        projectId: {
-          type: "string",
-          description: "The ID of the project workspace to retrieve"
-        },
-        includeRelations: {
-          type: "boolean",
-          description: "Include requirements, design notes, and tasks (default: true)",
-          default: true
-        }
-      },
-      required: ["projectId"]
-    }
-  },
-  {
-    name: "create_project",
-    description: `Create a new project workspace following the same structured format as create_plan.
-
-This is a project-focused alias for create_plan so agents can match the app's current project workspace terminology.
-
-Creates a project with:
-- title: Project title (required)
-- description: Project description
-- isPrivate: Whether the project is private (default: true)
-
-The project is created with 'draft' status and an empty task list.`,
-    inputSchema: {
-      type: "object",
-      properties: {
-        title: {
-          type: "string",
-          description: "Project title (required)"
-        },
-        description: {
-          type: "string",
-          description: "Project description"
-        },
-        isPrivate: {
-          type: "boolean",
-          description: "Whether the project is private (default: true)",
-          default: true
-        }
-      },
-      required: ["title"]
-    }
-  },
-  {
-    name: "create_task",
-    description: `Create a new task in a plan.
-    
-Creates a task with:
-- title: Task title (required)
-- description: Task description
-- parentTaskId: Parent task ID for sub-tasks
-- requirementIds: Array of requirement IDs this task implements
-- priority: low, medium, high, critical (default: medium)
-
-The task is created with 'not_started' status.
-
-Returns the created task with ID.
-
-Use this to add tasks to a plan for coding, research, writing, operations, or other structured work.`,
-    inputSchema: {
-      type: "object",
-      properties: {
-        planId: {
-          type: "string",
-          description: "The plan ID to add the task to (required)"
-        },
-        title: {
-          type: "string",
-          description: "Task title (required)"
-        },
-        description: {
-          type: "string",
-          description: "Task description"
-        },
-        parentTaskId: {
-          type: "string",
-          description: "Parent task ID for creating sub-tasks"
-        },
-        requirementIds: {
-          type: "array",
-          items: { type: "string" },
-          description: "Array of requirement IDs this task implements"
-        },
-        priority: {
-          type: "string",
-          description: "Task priority: low, medium, high, critical",
-          enum: ["low", "medium", "high", "critical"],
-          default: "medium"
-        }
-      },
-      required: ["planId", "title"]
-    }
-  },
-  {
-    name: "update_task_status",
-    description: `Update a task's status.
-    
-Valid statuses:
-- not_started: Task has not been started
-- in_progress: Task is being worked on
-- paused: Task is temporarily paused
-- blocked: Task is blocked (requires reason)
-- completed: Task is finished
-
-Each status change is recorded in the task's history with timestamp.
-
-Returns the updated task.
-
-Use this to track progress on tasks.`,
-    inputSchema: {
-      type: "object",
-      properties: {
-        planId: {
-          type: "string",
-          description: "The plan ID containing the task (required)"
-        },
-        taskId: {
-          type: "string",
-          description: "The task ID to update (required)"
-        },
-        status: {
-          type: "string",
-          description: "New status: not_started, in_progress, paused, blocked, completed",
-          enum: ["not_started", "in_progress", "paused", "blocked", "completed"]
-        },
-        reason: {
-          type: "string",
-          description: "Reason for status change (required for blocked status)"
-        }
-      },
-      required: ["planId", "taskId", "status"]
-    }
-  },
-  {
-    name: "add_task_output",
-    description: `Add an output to a task (comment, code, file, or completion note).
-    
-Output types:
-- comment: General comment or note
-- code: Code snippet or implementation
-- file: File path or content reference
-- completion: Completion summary
-
-Returns the created output with ID.
-
-Use this to record work done on a task.`,
-    inputSchema: {
-      type: "object",
-      properties: {
-        planId: {
-          type: "string",
-          description: "The plan ID containing the task (required)"
-        },
-        taskId: {
-          type: "string",
-          description: "The task ID to add output to (required)"
-        },
-        type: {
-          type: "string",
-          description: "Output type: comment, code, file, completion",
-          enum: ["comment", "code", "file", "completion"]
-        },
-        content: {
-          type: "string",
-          description: "Output content (required)"
-        },
-        agentName: {
-          type: "string",
-          description: "Name of the agent adding the output"
-        },
-        metadata: {
-          type: "object",
-          description: "Additional metadata for the output"
-        }
-      },
-      required: ["planId", "taskId", "type", "content"]
-    }
-  },
-  {
-    name: "complete_task",
-    description: `Complete a task with an optional summary.
-    
-This:
-- Sets the task status to 'completed'
-- Records the completion timestamp
-- Optionally adds a completion summary
-
-Returns the completed task and whether all sibling sub-tasks are now complete.
-
-Use this when you finish working on a task.`,
-    inputSchema: {
-      type: "object",
-      properties: {
-        planId: {
-          type: "string",
-          description: "The plan ID containing the task (required)"
-        },
-        taskId: {
-          type: "string",
-          description: "The task ID to complete (required)"
-        },
-        summary: {
-          type: "string",
-          description: "Completion summary describing what was done"
-        }
-      },
-      required: ["planId", "taskId"]
-    }
-  },
-  {
-    name: "create_requirement",
-    description: `Create a new requirement in a plan following EARS patterns.
-    
-EARS (Easy Approach to Requirements Syntax) patterns:
-- ubiquitous: THE <system> SHALL <response>
-- event: WHEN <trigger>, THE <system> SHALL <response>
-- state: WHILE <condition>, THE <system> SHALL <response>
-- unwanted: IF <condition>, THEN THE <system> SHALL <response>
-- optional: WHERE <option>, THE <system> SHALL <response>
-- complex: Combination of above patterns
-
-Returns the created requirement with ID.
-
-Use this to add structured requirements to a plan.`,
-    inputSchema: {
-      type: "object",
-      properties: {
-        planId: {
-          type: "string",
-          description: "The plan ID to add the requirement to (required)"
-        },
-        title: {
-          type: "string",
-          description: "Requirement title (required)"
-        },
-        description: {
-          type: "string",
-          description: "Detailed description or user story"
-        },
-        earsPattern: {
-          type: "string",
-          description: "EARS pattern type",
-          enum: ["ubiquitous", "event", "state", "unwanted", "optional", "complex"]
-        },
-        acceptanceCriteria: {
-          type: "array",
-          items: { type: "string" },
-          description: "Array of acceptance criteria for this requirement"
-        }
-      },
-      required: ["planId", "title"]
-    }
-  },
-  {
-    name: "create_design_note",
-    description: `Create a design note in a plan to document architectural decisions.
-    
-Design notes capture:
-- Technical implementation details
-- Architectural decisions and rationale
-- Trade-offs and alternatives considered
-- Links to related requirements
-
-Returns the created design note with ID.
-
-Use this to document HOW requirements will be implemented.`,
-    inputSchema: {
-      type: "object",
-      properties: {
-        planId: {
-          type: "string",
-          description: "The plan ID to add the design note to (required)"
-        },
-        content: {
-          type: "string",
-          description: "Design note content (required)"
-        },
-        requirementIds: {
-          type: "array",
-          items: { type: "string" },
-          description: "Array of requirement IDs this design note relates to"
-        }
-      },
-      required: ["planId", "content"]
-    }
-  },
-  {
-    name: "get_design_notes",
-    description: `Get all design notes from a plan, including UI designs.
-    
-Returns an array of design notes with:
-- id: Design note ID
-- content: Full content (may include HTML code for UI designs)
-- requirementIds: Linked requirement IDs
-- createdAt, updatedAt
-
-UI Design notes typically contain:
-- Design description and style
-- Screenshot references
-- Full HTML/CSS code in markdown code blocks
-
-Use this to:
-- Retrieve UI designs generated by the AI UI Designer
-- Get architectural decisions and implementation details
-- Access HTML/CSS code for implementing designs`,
-    inputSchema: {
-      type: "object",
-      properties: {
-        planId: {
-          type: "string",
-          description: "The plan ID to get design notes from (required)"
-        },
-        filterUiDesigns: {
-          type: "boolean",
-          description: "If true, only return UI design notes (containing HTML code)",
-          default: false
-        }
-      },
-      required: ["planId"]
-    }
-  },
-  // ==================== TIME & CONTEXT TOOLS ====================
-  {
-    name: "get_current_time",
-    description: `Get current date and time information to reduce AI hallucinations.
-    
-Returns comprehensive time context including:
-- Current date and time (local and UTC)
-- Timezone information
-- Week number, quarter
-- Days until end of month/year
-
-Use this to:
-- Provide accurate timeline estimates
-- Avoid hallucinating dates or versions
-- Give context-aware recommendations
-- Plan sprints and deadlines accurately`,
-    inputSchema: {
-      type: "object",
-      properties: {
-        format: {
-          type: "string",
-          description: 'Output format: "full" for comprehensive info, "short" for brief',
-          enum: ["full", "short"],
-          default: "full"
-        }
-      }
+      required: ["code", "language"]
     }
   },
   {
     name: "web_search",
-    description: `Search the web for latest information to reduce hallucinations.
-    
-Use this to find:
-- Latest package versions and dependencies
-- Current best practices and documentation
-- Technology comparisons and recommendations
-- Up-to-date tutorials and guides
-
-Returns search results with:
-- title, link, snippet
-- date (if available)
-- source information
-
-IMPORTANT: Always use this tool when:
-- User asks about "latest" or "current" versions
-- Recommending dependencies or packages
-- Discussing best practices that may have changed
-- Any information that could be outdated`,
+    description: "Search the live web and return compact, citable results. Costs 1 NoteClaw credit; failed searches are refunded. This paid tool supports allowlists and blocklists for domain control. Cite factual claims with the returned URLs and verify important claims on the source page.",
     inputSchema: {
       type: "object",
       properties: {
         query: {
           type: "string",
-          description: "Search query (required)"
+          description: "The focused web search query."
         },
-        num: {
-          type: "number",
-          description: "Number of results to return (default: 5, max: 10)",
+        maxResults: {
+          type: "integer",
+          minimum: 1,
+          maximum: 10,
           default: 5
+        },
+        allowedDomains: {
+          type: "array",
+          items: { type: "string" },
+          maxItems: 10,
+          description: 'Optional domain allowlist, such as ["openai.com", "arxiv.org"].'
+        },
+        blockedDomains: {
+          type: "array",
+          items: { type: "string" },
+          maxItems: 20,
+          description: "Optional domains to exclude from results."
         }
       },
       required: ["query"]
     }
+  },
+  {
+    name: "deep_research_start",
+    description: "Start an asynchronous multi-step web research job. It generates research angles, collects sources, ranks credibility, and synthesizes a cited report. Standard and quick depth cost 5 NoteClaw credits; deep depth costs 10. Failed jobs are refunded. Use notebookId with useNotebookContext to align research with saved memories.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string" },
+        depth: {
+          type: "string",
+          enum: researchDepths,
+          default: "standard"
+        },
+        template: {
+          type: "string",
+          enum: researchTemplates,
+          default: "general"
+        },
+        notebookId: {
+          type: "string",
+          description: "Optional NoteClaw notebook owned by this account."
+        },
+        useNotebookContext: {
+          type: "boolean",
+          default: false,
+          description: "Use relevant notebook sources to guide queries and compare findings."
+        },
+        provider: {
+          type: "string",
+          enum: ["gemini", "openrouter"],
+          default: "gemini"
+        },
+        model: {
+          type: "string",
+          description: "Optional model identifier configured for this account."
+        }
+      },
+      required: ["query"]
+    }
+  },
+  {
+    name: "deep_research_status",
+    description: "Check the progress of a deep research job. Poll until status is completed or failed; completed jobs return a sessionId.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        jobId: { type: "string" }
+      },
+      required: ["jobId"]
+    }
+  },
+  {
+    name: "deep_research_result",
+    description: "Retrieve a completed deep research report and its cited sources using either the background job ID or completed research session ID.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        jobId: { type: "string" },
+        sessionId: { type: "string" }
+      }
+    }
+  },
+  {
+    name: "research_save_to_notebook",
+    description: "Save a completed research report and its collected citation list as a readable source inside a NoteClaw notebook. Repeated calls are idempotent.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sessionId: { type: "string" },
+        notebookId: {
+          type: "string",
+          description: "Target notebook. Optional when research was started with notebookId."
+        },
+        title: {
+          type: "string",
+          maxLength: 180,
+          description: "Optional display title for the saved research source."
+        }
+      },
+      required: ["sessionId"]
+    }
   }
 ];
-var VerifyCodeSchema = external_exports3.object({
-  code: external_exports3.string().min(1),
-  language: external_exports3.string().min(1),
-  context: external_exports3.string().optional(),
-  strictMode: external_exports3.boolean().optional().default(false)
-});
-var VerifyAndSaveSchema = external_exports3.object({
-  code: external_exports3.string().min(1),
-  language: external_exports3.string().min(1),
-  title: external_exports3.string().min(1),
-  description: external_exports3.string().optional(),
-  notebookId: external_exports3.string().optional(),
-  context: external_exports3.string().optional(),
-  strictMode: external_exports3.boolean().optional().default(false)
-});
-var BatchVerifySchema = external_exports3.object({
-  snippets: external_exports3.array(external_exports3.object({
-    id: external_exports3.string(),
-    code: external_exports3.string(),
-    language: external_exports3.string(),
-    context: external_exports3.string().optional(),
-    strictMode: external_exports3.boolean().optional()
-  }))
-});
-var AnalyzeCodeSchema = external_exports3.object({
-  code: external_exports3.string().min(1),
-  language: external_exports3.string().min(1),
-  analysisType: external_exports3.enum(["performance", "security", "readability", "comprehensive"]).optional().default("comprehensive")
-});
-var GetSourcesSchema = external_exports3.object({
-  notebookId: external_exports3.string().optional(),
-  language: external_exports3.string().optional()
-});
-var CreateAgentNotebookSchema = external_exports3.object({
-  agentName: external_exports3.string().min(1),
-  agentIdentifier: external_exports3.string().min(1),
-  title: external_exports3.string().optional(),
-  description: external_exports3.string().optional(),
-  category: external_exports3.string().optional(),
-  webhookUrl: external_exports3.string().url().optional(),
-  webhookSecret: external_exports3.string().min(16).optional(),
-  metadata: external_exports3.record(external_exports3.string(), external_exports3.any()).optional()
-});
-var SaveCodeWithContextSchema = external_exports3.object({
-  code: external_exports3.string().min(1),
-  language: external_exports3.string().min(1),
-  title: external_exports3.string().min(1),
-  description: external_exports3.string().optional(),
-  notebookId: external_exports3.string().min(1),
-  agentSessionId: external_exports3.string().optional(),
-  conversationContext: external_exports3.string().optional(),
-  verification: external_exports3.object({
-    isValid: external_exports3.boolean(),
-    score: external_exports3.number(),
-    errors: external_exports3.array(external_exports3.string()).optional(),
-    warnings: external_exports3.array(external_exports3.string()).optional(),
-    suggestions: external_exports3.array(external_exports3.string()).optional()
-  }).optional(),
-  strictMode: external_exports3.boolean().optional().default(false)
-});
-var MemoryGetSchema = external_exports3.object({
-  agentSessionId: external_exports3.string().optional(),
-  agentIdentifier: external_exports3.string().optional(),
-  namespace: external_exports3.string().optional().default("default")
-});
-var MemoryPutSchema = external_exports3.object({
-  agentSessionId: external_exports3.string().optional(),
-  agentIdentifier: external_exports3.string().optional(),
-  namespace: external_exports3.string().optional().default("default"),
-  mode: external_exports3.enum(["merge", "replace", "append"]).optional().default("merge"),
-  memory: external_exports3.record(external_exports3.string(), external_exports3.any()).optional().default({}),
-  historyField: external_exports3.string().optional().default("history"),
-  item: external_exports3.any().optional(),
-  items: external_exports3.array(external_exports3.any()).optional(),
-  maxHistoryItems: external_exports3.number().int().min(0).optional(),
-  keepRecent: external_exports3.number().int().min(0).optional(),
-  summaryMaxItems: external_exports3.number().int().min(1).optional(),
-  compactToNamespace: external_exports3.string().optional(),
-  dedupeKey: external_exports3.string().optional()
-});
-var MemoryCompactSchema = external_exports3.object({
-  agentSessionId: external_exports3.string().optional(),
-  agentIdentifier: external_exports3.string().optional(),
-  namespace: external_exports3.string().optional().default("default"),
-  targetNamespace: external_exports3.string().optional(),
-  historyField: external_exports3.string().optional().default("history"),
-  keepRecent: external_exports3.number().int().min(0).optional().default(20),
-  summaryMaxItems: external_exports3.number().int().min(1).optional().default(50)
-});
-var GetFollowupMessagesSchema = external_exports3.object({
-  agentSessionId: external_exports3.string().optional(),
-  agentIdentifier: external_exports3.string().optional()
-});
-var RespondToFollowupSchema = external_exports3.object({
-  messageId: external_exports3.string().min(1),
-  response: external_exports3.string().min(1),
-  agentSessionId: external_exports3.string().optional(),
-  codeUpdate: external_exports3.object({
-    code: external_exports3.string(),
-    description: external_exports3.string().optional()
-  }).optional()
-});
-var RegisterWebhookSchema = external_exports3.object({
-  agentSessionId: external_exports3.string().optional(),
-  agentIdentifier: external_exports3.string().optional(),
-  webhookUrl: external_exports3.string().url(),
-  webhookSecret: external_exports3.string().min(16)
-});
-var GetSourceSchema = external_exports3.object({
-  sourceId: external_exports3.string().min(1)
-});
-var SearchSourcesSchema = external_exports3.object({
-  query: external_exports3.string().optional(),
-  language: external_exports3.string().optional(),
-  notebookId: external_exports3.string().optional(),
-  limit: external_exports3.number().optional().default(20)
-});
-var UpdateSourceSchema = external_exports3.object({
-  sourceId: external_exports3.string().min(1),
-  code: external_exports3.string().optional(),
-  title: external_exports3.string().optional(),
-  description: external_exports3.string().optional(),
-  language: external_exports3.string().optional(),
-  revalidate: external_exports3.boolean().optional().default(false)
-});
-var DeleteSourceSchema = external_exports3.object({
-  sourceId: external_exports3.string().min(1)
-});
-var ExportSourcesSchema = external_exports3.object({
-  notebookId: external_exports3.string().optional(),
-  language: external_exports3.string().optional(),
-  includeVerification: external_exports3.boolean().optional().default(true),
-  includeConversations: external_exports3.boolean().optional().default(false)
-});
-var GetUsageStatsSchema = external_exports3.object({
-  period: external_exports3.enum(["week", "month", "year", "all"]).optional().default("month")
-});
-var ListEbooksSchema = external_exports3.object({});
-var GetEbookSchema = external_exports3.object({
-  ebookId: external_exports3.string().min(1),
-  includeChapters: external_exports3.boolean().optional().default(true)
-});
-var EbookImageInputSchema = external_exports3.object({
-  id: external_exports3.string().optional(),
-  prompt: external_exports3.string().optional().default(""),
-  url: external_exports3.string().min(1),
-  caption: external_exports3.string().optional().default(""),
-  type: external_exports3.string().optional().default("generated")
-});
-var EbookChapterInputSchema = external_exports3.object({
-  id: external_exports3.string().optional(),
-  title: external_exports3.string().min(1),
-  content: external_exports3.string().optional().default(""),
-  chapterOrder: external_exports3.number().int().positive().optional(),
-  images: external_exports3.array(EbookImageInputSchema).optional().default([]),
-  status: external_exports3.enum(["draft", "generating", "completed", "error"]).optional()
-});
-var CreateEbookSchema = external_exports3.object({
-  ebookId: external_exports3.string().optional(),
-  title: external_exports3.string().min(1),
-  topic: external_exports3.string().optional(),
-  targetAudience: external_exports3.string().optional(),
-  notebookId: external_exports3.string().optional(),
-  selectedModel: external_exports3.string().optional(),
-  status: external_exports3.enum(["draft", "generating", "completed", "error"]).optional().default("draft"),
-  coverImage: external_exports3.string().optional(),
-  branding: external_exports3.record(external_exports3.string(), external_exports3.any()).optional(),
-  chapters: external_exports3.array(EbookChapterInputSchema).optional().default([])
-});
-var GenerateEbookSchema = external_exports3.object({
-  ebookId: external_exports3.string().optional(),
-  title: external_exports3.string().min(1),
-  topic: external_exports3.string().optional(),
-  targetAudience: external_exports3.string().optional(),
-  notebookId: external_exports3.string().optional(),
-  selectedModel: external_exports3.string().optional(),
-  branding: external_exports3.record(external_exports3.string(), external_exports3.any()).optional(),
-  chapterCount: external_exports3.number().int().min(3).max(12).optional(),
-  chapterInstructions: external_exports3.string().optional(),
-  generateChapterImages: external_exports3.boolean().optional().default(false),
-  imageSource: external_exports3.enum(["web", "ai", "auto"]).optional().default("web"),
-  imageModel: external_exports3.string().optional(),
-  imageStyle: external_exports3.string().optional(),
-  createPlaceholderCover: external_exports3.boolean().optional().default(false)
-});
-var GitHubListReposSchema = external_exports3.object({
-  type: external_exports3.enum(["all", "owner", "member"]).optional().default("all"),
-  sort: external_exports3.enum(["created", "updated", "pushed", "full_name"]).optional().default("updated"),
-  perPage: external_exports3.number().optional().default(30),
-  page: external_exports3.number().optional().default(1)
-});
-var GitHubRepoTreeSchema = external_exports3.object({
-  owner: external_exports3.string().min(1),
-  repo: external_exports3.string().min(1),
-  branch: external_exports3.string().optional()
-});
-var GitHubGetFileSchema = external_exports3.object({
-  owner: external_exports3.string().min(1),
-  repo: external_exports3.string().min(1),
-  path: external_exports3.string().min(1),
-  branch: external_exports3.string().optional()
-});
-var GitHubSearchCodeSchema = external_exports3.object({
-  query: external_exports3.string().min(1),
-  repo: external_exports3.string().optional(),
-  language: external_exports3.string().optional(),
-  path: external_exports3.string().optional(),
-  perPage: external_exports3.number().optional().default(20)
-});
-var GitHubGetReadmeSchema = external_exports3.object({
-  owner: external_exports3.string().min(1),
-  repo: external_exports3.string().min(1)
-});
-var GitHubCreateIssueSchema = external_exports3.object({
-  owner: external_exports3.string().min(1),
-  repo: external_exports3.string().min(1),
-  title: external_exports3.string().min(1),
-  body: external_exports3.string().optional(),
-  labels: external_exports3.array(external_exports3.string()).optional()
-});
-var GitHubAddCommentSchema = external_exports3.object({
-  owner: external_exports3.string().min(1),
-  repo: external_exports3.string().min(1),
-  issueNumber: external_exports3.number(),
-  body: external_exports3.string().min(1)
-});
-var GitHubAddAsSourceSchema = external_exports3.object({
-  notebookId: external_exports3.string().min(1),
-  owner: external_exports3.string().min(1),
-  repo: external_exports3.string().min(1),
-  path: external_exports3.string().min(1),
-  branch: external_exports3.string().optional()
-});
-var GitHubAnalyzeRepoSchema = external_exports3.object({
-  owner: external_exports3.string().min(1),
-  repo: external_exports3.string().min(1),
-  focus: external_exports3.string().optional(),
-  includeFiles: external_exports3.array(external_exports3.string()).optional()
-});
-var ListPlansSchema = external_exports3.object({
-  status: external_exports3.enum(["draft", "active", "completed", "archived"]).optional(),
-  includeArchived: external_exports3.boolean().optional().default(false),
-  limit: external_exports3.number().optional().default(50),
-  offset: external_exports3.number().optional().default(0)
-});
-var GetPlanSchema = external_exports3.object({
-  planId: external_exports3.string().min(1),
-  includeRelations: external_exports3.boolean().optional().default(true)
-});
-var GetProjectSchema = external_exports3.object({
-  projectId: external_exports3.string().min(1),
-  includeRelations: external_exports3.boolean().optional().default(true)
-});
-var CreatePlanSchema = external_exports3.object({
-  title: external_exports3.string().min(1),
-  description: external_exports3.string().optional(),
-  isPrivate: external_exports3.boolean().optional().default(true)
-});
-var CreateTaskSchema = external_exports3.object({
-  planId: external_exports3.string().min(1),
-  title: external_exports3.string().min(1),
-  description: external_exports3.string().optional(),
-  parentTaskId: external_exports3.string().optional(),
-  requirementIds: external_exports3.array(external_exports3.string()).optional(),
-  priority: external_exports3.enum(["low", "medium", "high", "critical"]).optional().default("medium")
-});
-var UpdateTaskStatusSchema = external_exports3.object({
-  planId: external_exports3.string().min(1),
-  taskId: external_exports3.string().min(1),
-  status: external_exports3.enum(["not_started", "in_progress", "paused", "blocked", "completed"]),
-  reason: external_exports3.string().optional()
-});
-var AddTaskOutputSchema = external_exports3.object({
-  planId: external_exports3.string().min(1),
-  taskId: external_exports3.string().min(1),
-  type: external_exports3.enum(["comment", "code", "file", "completion"]),
-  content: external_exports3.string().min(1),
-  agentName: external_exports3.string().optional(),
-  metadata: external_exports3.record(external_exports3.string(), external_exports3.any()).optional()
-});
-var CompleteTaskSchema = external_exports3.object({
-  planId: external_exports3.string().min(1),
-  taskId: external_exports3.string().min(1),
-  summary: external_exports3.string().optional()
-});
-var CreateRequirementSchema = external_exports3.object({
-  planId: external_exports3.string().min(1),
-  title: external_exports3.string().min(1),
-  description: external_exports3.string().optional(),
-  earsPattern: external_exports3.enum(["ubiquitous", "event", "state", "unwanted", "optional", "complex"]).optional(),
-  acceptanceCriteria: external_exports3.array(external_exports3.string()).optional()
-});
-var CreateDesignNoteSchema = external_exports3.object({
-  planId: external_exports3.string().min(1),
-  content: external_exports3.string().min(1),
-  requirementIds: external_exports3.array(external_exports3.string()).optional()
-});
-var GetDesignNotesSchema = external_exports3.object({
-  planId: external_exports3.string().min(1),
-  filterUiDesigns: external_exports3.boolean().optional().default(false)
-});
-var GetCurrentTimeSchema = external_exports3.object({
-  format: external_exports3.enum(["full", "short"]).optional().default("full")
-});
-var WebSearchSchema = external_exports3.object({
-  query: external_exports3.string().min(1),
-  num: external_exports3.number().min(1).max(10).optional().default(5)
-});
-var githubApi = axios_default.create({
-  baseURL: `${BACKEND_URL}/api/github`,
-  headers: {
-    "Content-Type": "application/json",
-    ...API_KEY && { "Authorization": `Bearer ${API_KEY}` }
-  },
-  timeout: 3e4
-});
-var planningApi = axios_default.create({
-  baseURL: `${BACKEND_URL}/api/planning`,
-  headers: {
-    "Content-Type": "application/json",
-    ...API_KEY && { "Authorization": `Bearer ${API_KEY}` }
-  },
-  timeout: 3e4
-});
-var ebookApi = axios_default.create({
-  baseURL: `${BACKEND_URL}/api/ebooks`,
-  headers: {
-    "Content-Type": "application/json",
-    ...API_KEY && { "Authorization": `Bearer ${API_KEY}` }
-  },
-  timeout: 3e4
-});
 var server = new Server(
   {
-    name: "coding-agent-mcp",
-    version: "1.3.0"
+    name: "noteclaw-memory",
+    version: "2.0.0"
   },
   {
     capabilities: {
@@ -45510,854 +43677,198 @@ var server = new Server(
     }
   }
 );
-server.setRequestHandler(ListToolsRequestSchema, async () => {
-  return { tools };
-});
+server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }));
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  const { name, arguments: args } = request.params;
+  const { name, arguments: args = {} } = request.params;
   try {
     switch (name) {
-      case "verify_code": {
-        const input = VerifyCodeSchema.parse(args);
-        const response = await api.post("/verify", input);
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(response.data, null, 2)
-            }
-          ]
-        };
+      case "memory_session_open": {
+        const input = MemorySessionOpenSchema.parse(args);
+        const response = await api.post("/memory/sessions", input);
+        return textResult(response.data);
       }
-      case "verify_and_save": {
-        const input = VerifyAndSaveSchema.parse(args);
-        const response = await api.post("/verify-and-save", input);
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(response.data, null, 2)
-            }
-          ]
-        };
+      case "memory_sessions_list": {
+        const response = await api.get("/memory/sessions");
+        return textResult(response.data);
       }
-      case "batch_verify": {
-        const input = BatchVerifySchema.parse(args);
-        const response = await api.post("/batch-verify", input);
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(response.data, null, 2)
-            }
-          ]
-        };
+      case "memory_topics_list": {
+        const input = MemoryTopicsListSchema.parse(args);
+        const query = new URLSearchParams();
+        if (input.agentSessionId) {
+          query.set("agentSessionId", input.agentSessionId);
+        }
+        const suffix = query.size > 0 ? `?${query.toString()}` : "";
+        const response = await api.get(`/memory/topics${suffix}`);
+        return textResult(response.data);
       }
-      case "analyze_code": {
-        const input = AnalyzeCodeSchema.parse(args);
-        const response = await api.post("/analyze", input);
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(response.data, null, 2)
-            }
-          ]
-        };
-      }
-      case "get_verified_sources": {
-        const input = GetSourcesSchema.parse(args);
-        const params = new URLSearchParams();
-        if (input.notebookId) params.append("notebookId", input.notebookId);
-        if (input.language) params.append("language", input.language);
-        const response = await api.get(`/sources?${params.toString()}`);
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(response.data, null, 2)
-            }
-          ]
-        };
-      }
-      // ==================== AGENT COMMUNICATION HANDLERS ====================
-      case "create_agent_notebook": {
-        const input = CreateAgentNotebookSchema.parse(args);
-        const response = await api.post("/notebooks", input);
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(response.data, null, 2)
-            }
-          ]
-        };
-      }
-      case "save_code_with_context": {
-        const input = SaveCodeWithContextSchema.parse(args);
-        const response = await api.post("/sources/with-context", input);
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(response.data, null, 2)
-            }
-          ]
-        };
+      case "memory_topic_get": {
+        const input = MemoryTopicGetSchema.parse(args);
+        const query = new URLSearchParams();
+        if (input.agentSessionId) {
+          query.set("agentSessionId", input.agentSessionId);
+        }
+        const suffix = query.size > 0 ? `?${query.toString()}` : "";
+        const response = await api.get(
+          `/memory/topics/${encodeURIComponent(input.notebookId)}/context${suffix}`
+        );
+        return textResult(response.data);
       }
       case "memory_get": {
         const input = MemoryGetSchema.parse(args);
-        const params = new URLSearchParams();
-        if (input.agentSessionId) params.append("agentSessionId", input.agentSessionId);
-        if (input.agentIdentifier) params.append("agentIdentifier", input.agentIdentifier);
-        if (input.namespace) params.append("namespace", input.namespace);
-        const response = await api.get(`/memory?${params.toString()}`);
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(response.data, null, 2)
-            }
-          ]
-        };
+        const query = new URLSearchParams({
+          namespace: input.namespace
+        });
+        if (input.agentSessionId) {
+          query.set("agentSessionId", input.agentSessionId);
+        }
+        if (input.agentIdentifier) {
+          query.set("agentIdentifier", input.agentIdentifier);
+        }
+        const response = await api.get(`/memory?${query.toString()}`);
+        return textResult(response.data);
       }
       case "memory_put": {
         const input = MemoryPutSchema.parse(args);
         const response = await api.put("/memory", input);
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(response.data, null, 2)
-            }
-          ]
-        };
+        return textResult(response.data);
       }
       case "memory_compact": {
         const input = MemoryCompactSchema.parse(args);
         const response = await api.post("/memory/compact", input);
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(response.data, null, 2)
-            }
-          ]
-        };
-      }
-      case "get_followup_messages": {
-        const input = GetFollowupMessagesSchema.parse(args);
-        const params = new URLSearchParams();
-        if (input.agentSessionId) params.append("agentSessionId", input.agentSessionId);
-        if (input.agentIdentifier) params.append("agentIdentifier", input.agentIdentifier);
-        const response = await api.get(`/followups?${params.toString()}`);
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(response.data, null, 2)
-            }
-          ]
-        };
-      }
-      case "respond_to_followup": {
-        const input = RespondToFollowupSchema.parse(args);
-        const { messageId, ...body } = input;
-        const response = await api.post(`/followups/${messageId}/respond`, body);
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(response.data, null, 2)
-            }
-          ]
-        };
-      }
-      case "register_webhook": {
-        const input = RegisterWebhookSchema.parse(args);
-        const response = await api.post("/webhook/register", input);
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(response.data, null, 2)
-            }
-          ]
-        };
+        return textResult(response.data);
       }
       case "get_websocket_info": {
+        const input = WebSocketInfoSchema.parse(args);
         const response = await api.get("/websocket/info");
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(response.data, null, 2)
-            }
-          ]
-        };
-      }
-      case "get_quota": {
-        const response = await api.get("/quota");
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(response.data, null, 2)
-            }
-          ]
-        };
-      }
-      case "list_notebooks": {
-        const response = await api.get("/notebooks/list");
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(response.data, null, 2)
-            }
-          ]
-        };
-      }
-      case "list_ebooks": {
-        ListEbooksSchema.parse(args || {});
-        const response = await ebookApi.get("/");
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(response.data, null, 2)
-            }
-          ]
-        };
-      }
-      case "get_ebook": {
-        const input = GetEbookSchema.parse(args);
-        const ebookResponse = await ebookApi.get(`/${input.ebookId}`);
-        let chapters = [];
-        if (input.includeChapters) {
-          const chaptersResponse = await ebookApi.get(`/${input.ebookId}/chapters`);
-          chapters = chaptersResponse.data?.chapters || [];
-        }
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify({
-                success: true,
-                ebook: ebookResponse.data?.project || ebookResponse.data,
-                chapters
-              }, null, 2)
-            }
-          ]
-        };
-      }
-      case "create_ebook": {
-        const input = CreateEbookSchema.parse(args);
-        const projectResponse = await ebookApi.post("/", {
-          id: input.ebookId,
-          notebookId: input.notebookId,
-          title: input.title,
-          topic: input.topic || input.title,
-          targetAudience: input.targetAudience,
-          branding: input.branding,
-          selectedModel: input.selectedModel || "mcp-agent",
-          status: input.status,
-          coverImage: input.coverImage
+        const data = response.data;
+        const socketUrl = data.websocket?.url;
+        const target = input.agentSessionId ? `sessionId=${encodeURIComponent(input.agentSessionId)}` : input.agentIdentifier ? `agentIdentifier=${encodeURIComponent(input.agentIdentifier)}` : "agentIdentifier=YOUR_AGENT_IDENTIFIER";
+        const client = input.clientIdentifier ? `&clientIdentifier=${encodeURIComponent(input.clientIdentifier)}` : "&clientIdentifier=YOUR_CLIENT_IDENTIFIER";
+        return textResult({
+          ...data,
+          connectionTemplate: socketUrl ? `${socketUrl}?token=YOUR_API_TOKEN&${target}${client}` : void 0,
+          note: "Use the same API token configured for this MCP server. Multiple clients can connect to the same session when each uses a stable clientIdentifier. The token is intentionally not echoed."
         });
-        const project = projectResponse.data?.project || projectResponse.data;
-        const projectId = project?.id;
-        if (!projectId) {
-          throw new Error("Ebook save succeeded but no project ID was returned");
-        }
-        let chapters = [];
-        if (input.chapters.length > 0) {
-          const chaptersPayload = input.chapters.map((chapter, index) => {
-            const chapterOrder = chapter.chapterOrder ?? index + 1;
-            return {
-              id: chapter.id,
-              title: chapter.title,
-              content: chapter.content,
-              chapterOrder,
-              chapter_order: chapterOrder,
-              images: chapter.images,
-              status: chapter.status || (chapter.content ? "completed" : "draft")
-            };
-          });
-          const chaptersResponse = await ebookApi.post(
-            `/${projectId}/chapters/batch`,
-            { chapters: chaptersPayload }
-          );
-          chapters = chaptersResponse.data?.chapters || [];
-        } else {
-          const chaptersResponse = await ebookApi.get(`/${projectId}/chapters`);
-          chapters = chaptersResponse.data?.chapters || [];
-        }
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify({
-                success: true,
-                ebook: project,
-                chapters
-              }, null, 2)
-            }
-          ]
-        };
       }
-      case "generate_ebook": {
-        const input = GenerateEbookSchema.parse(args);
-        const response = await ebookApi.post("/generate", {
-          ebookId: input.ebookId,
-          title: input.title,
-          topic: input.topic || input.title,
-          targetAudience: input.targetAudience,
-          notebookId: input.notebookId,
-          selectedModel: input.selectedModel,
-          branding: input.branding,
-          chapterCount: input.chapterCount,
-          chapterInstructions: input.chapterInstructions,
-          generateChapterImages: input.generateChapterImages,
-          imageSource: input.imageSource,
-          imageModel: input.imageModel,
-          imageStyle: input.imageStyle,
-          createPlaceholderCover: input.createPlaceholderCover
+      case "review_code": {
+        const input = CodeReviewSchema.parse(args);
+        const response = await api.post("/review", {
+          code: input.code,
+          language: input.language,
+          context: input.context,
+          saveReview: input.saveReview,
+          reviewType: input.strictMode ? "security" : "comprehensive"
         });
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(response.data, null, 2)
-            }
-          ]
-        };
-      }
-      case "get_source": {
-        const input = GetSourceSchema.parse(args);
-        const response = await api.get(`/sources/${input.sourceId}`);
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(response.data, null, 2)
-            }
-          ]
-        };
-      }
-      case "search_sources": {
-        const input = SearchSourcesSchema.parse(args);
-        const params = new URLSearchParams();
-        if (input.query) params.append("query", input.query);
-        if (input.language) params.append("language", input.language);
-        if (input.notebookId) params.append("notebookId", input.notebookId);
-        if (input.limit) params.append("limit", input.limit.toString());
-        const response = await api.get(`/sources/search?${params.toString()}`);
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(response.data, null, 2)
-            }
-          ]
-        };
-      }
-      case "update_source": {
-        const input = UpdateSourceSchema.parse(args);
-        const { sourceId, ...body } = input;
-        const response = await api.put(`/sources/${sourceId}`, body);
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(response.data, null, 2)
-            }
-          ]
-        };
-      }
-      case "delete_source": {
-        const input = DeleteSourceSchema.parse(args);
-        const response = await api.delete(`/sources/${input.sourceId}`);
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(response.data, null, 2)
-            }
-          ]
-        };
-      }
-      case "export_sources": {
-        const input = ExportSourcesSchema.parse(args);
-        const params = new URLSearchParams();
-        if (input.notebookId) params.append("notebookId", input.notebookId);
-        if (input.language) params.append("language", input.language);
-        if (input.includeVerification !== void 0) params.append("includeVerification", input.includeVerification.toString());
-        if (input.includeConversations !== void 0) params.append("includeConversations", input.includeConversations.toString());
-        const response = await api.get(`/sources/export?${params.toString()}`);
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(response.data, null, 2)
-            }
-          ]
-        };
-      }
-      case "get_usage_stats": {
-        const input = GetUsageStatsSchema.parse(args);
-        const params = new URLSearchParams();
-        if (input.period) params.append("period", input.period);
-        const response = await api.get(`/stats?${params.toString()}`);
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(response.data, null, 2)
-            }
-          ]
-        };
-      }
-      // ==================== GITHUB TOOL HANDLERS ====================
-      case "github_status": {
-        const response = await githubApi.get("/status");
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(response.data, null, 2)
-            }
-          ]
-        };
-      }
-      case "github_list_repos": {
-        const input = GitHubListReposSchema.parse(args);
-        const params = new URLSearchParams();
-        if (input.type) params.append("type", input.type);
-        if (input.sort) params.append("sort", input.sort);
-        if (input.perPage) params.append("perPage", input.perPage.toString());
-        if (input.page) params.append("page", input.page.toString());
-        const response = await githubApi.get(`/repos?${params.toString()}`);
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(response.data, null, 2)
-            }
-          ]
-        };
-      }
-      case "github_get_repo_tree": {
-        const input = GitHubRepoTreeSchema.parse(args);
-        const params = input.branch ? `?branch=${input.branch}` : "";
-        const response = await githubApi.get(`/repos/${input.owner}/${input.repo}/tree${params}`);
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(response.data, null, 2)
-            }
-          ]
-        };
-      }
-      case "github_get_file": {
-        const input = GitHubGetFileSchema.parse(args);
-        const params = input.branch ? `?branch=${input.branch}` : "";
-        const response = await githubApi.get(`/repos/${input.owner}/${input.repo}/contents/${input.path}${params}`);
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(response.data, null, 2)
-            }
-          ]
-        };
-      }
-      case "github_search_code": {
-        const input = GitHubSearchCodeSchema.parse(args);
-        const params = new URLSearchParams();
-        params.append("q", input.query);
-        if (input.repo) params.append("repo", input.repo);
-        if (input.language) params.append("language", input.language);
-        if (input.path) params.append("path", input.path);
-        if (input.perPage) params.append("perPage", input.perPage.toString());
-        const response = await githubApi.get(`/search?${params.toString()}`);
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(response.data, null, 2)
-            }
-          ]
-        };
-      }
-      case "github_get_readme": {
-        const input = GitHubGetReadmeSchema.parse(args);
-        const response = await githubApi.get(`/repos/${input.owner}/${input.repo}/readme`);
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(response.data, null, 2)
-            }
-          ]
-        };
-      }
-      case "github_create_issue": {
-        const input = GitHubCreateIssueSchema.parse(args);
-        const { owner, repo, ...body } = input;
-        const response = await githubApi.post(`/repos/${owner}/${repo}/issues`, body);
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(response.data, null, 2)
-            }
-          ]
-        };
-      }
-      case "github_add_comment": {
-        const input = GitHubAddCommentSchema.parse(args);
-        const { owner, repo, issueNumber, body } = input;
-        const response = await githubApi.post(`/repos/${owner}/${repo}/issues/${issueNumber}/comments`, { body });
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(response.data, null, 2)
-            }
-          ]
-        };
-      }
-      case "github_add_as_source": {
-        const input = GitHubAddAsSourceSchema.parse(args);
-        const response = await githubApi.post("/add-source", input);
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(response.data, null, 2)
-            }
-          ]
-        };
-      }
-      case "github_analyze_repo": {
-        const input = GitHubAnalyzeRepoSchema.parse(args);
-        const response = await githubApi.post("/analyze", input);
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(response.data, null, 2)
-            }
-          ]
-        };
-      }
-      case "get_source_analysis": {
-        const input = external_exports3.object({ sourceId: external_exports3.string() }).parse(args);
-        const response = await githubApi.get(`/sources/${input.sourceId}/analysis`);
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(response.data, null, 2)
-            }
-          ]
-        };
-      }
-      case "reanalyze_source": {
-        const input = external_exports3.object({ sourceId: external_exports3.string() }).parse(args);
-        const response = await githubApi.post(`/sources/${input.sourceId}/reanalyze`);
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(response.data, null, 2)
-            }
-          ]
-        };
-      }
-      // ==================== PLANNING MODE TOOL HANDLERS ====================
-      case "list_plans":
-      case "list_projects": {
-        const input = ListPlansSchema.parse(args);
-        const params = new URLSearchParams();
-        if (input.status) params.append("status", input.status);
-        if (input.includeArchived !== void 0) params.append("includeArchived", input.includeArchived.toString());
-        if (input.limit) params.append("limit", input.limit.toString());
-        if (input.offset) params.append("offset", input.offset.toString());
-        const response = await planningApi.get(`/?${params.toString()}`);
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(response.data, null, 2)
-            }
-          ]
-        };
-      }
-      case "get_plan": {
-        const input = GetPlanSchema.parse(args);
-        const params = input.includeRelations !== void 0 ? `?includeRelations=${input.includeRelations}` : "";
-        const response = await planningApi.get(`/${input.planId}${params}`);
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(response.data, null, 2)
-            }
-          ]
-        };
-      }
-      case "get_project": {
-        const input = GetProjectSchema.parse(args);
-        const params = input.includeRelations !== void 0 ? `?includeRelations=${input.includeRelations}` : "";
-        const response = await planningApi.get(`/${input.projectId}${params}`);
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(response.data, null, 2)
-            }
-          ]
-        };
-      }
-      case "create_plan":
-      case "create_project": {
-        const input = CreatePlanSchema.parse(args);
-        const response = await planningApi.post("/", input);
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(response.data, null, 2)
-            }
-          ]
-        };
-      }
-      case "create_task": {
-        const input = CreateTaskSchema.parse(args);
-        const { planId, ...body } = input;
-        const response = await planningApi.post(`/${planId}/tasks`, body);
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(response.data, null, 2)
-            }
-          ]
-        };
-      }
-      case "update_task_status": {
-        const input = UpdateTaskStatusSchema.parse(args);
-        const { planId, taskId, ...body } = input;
-        const response = await planningApi.post(`/${planId}/tasks/${taskId}/status`, body);
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(response.data, null, 2)
-            }
-          ]
-        };
-      }
-      case "add_task_output": {
-        const input = AddTaskOutputSchema.parse(args);
-        const { planId, taskId, ...body } = input;
-        const response = await planningApi.post(`/${planId}/tasks/${taskId}/output`, body);
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(response.data, null, 2)
-            }
-          ]
-        };
-      }
-      case "complete_task": {
-        const input = CompleteTaskSchema.parse(args);
-        const { planId, taskId, ...body } = input;
-        const response = await planningApi.post(`/${planId}/tasks/${taskId}/complete`, body);
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(response.data, null, 2)
-            }
-          ]
-        };
-      }
-      case "create_requirement": {
-        const input = CreateRequirementSchema.parse(args);
-        const { planId, ...body } = input;
-        const response = await planningApi.post(`/${planId}/requirements`, body);
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(response.data, null, 2)
-            }
-          ]
-        };
-      }
-      case "create_design_note": {
-        const input = CreateDesignNoteSchema.parse(args);
-        const { planId, ...body } = input;
-        const response = await planningApi.post(`/${planId}/design-notes`, body);
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(response.data, null, 2)
-            }
-          ]
-        };
-      }
-      case "get_design_notes": {
-        const input = GetDesignNotesSchema.parse(args);
-        const { planId, filterUiDesigns } = input;
-        const response = await planningApi.get(`/${planId}/design-notes`, {
-          params: { filterUiDesigns: filterUiDesigns ? "true" : "false" }
-        });
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(response.data, null, 2)
-            }
-          ]
-        };
-      }
-      // ==================== TIME & CONTEXT TOOL HANDLERS ====================
-      case "get_current_time": {
-        const input = GetCurrentTimeSchema.parse(args);
-        const { format } = input;
-        const now = /* @__PURE__ */ new Date();
-        const utcNow = now.toISOString();
-        const startOfYear = new Date(now.getFullYear(), 0, 1);
-        const dayOfYear = Math.floor((now.getTime() - startOfYear.getTime()) / (24 * 60 * 60 * 1e3));
-        const weekNumber = Math.ceil((dayOfYear + startOfYear.getDay() + 1) / 7);
-        const quarter = Math.ceil((now.getMonth() + 1) / 3);
-        const lastDayOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-        const daysUntilEndOfMonth = lastDayOfMonth.getDate() - now.getDate();
-        const lastDayOfYear = new Date(now.getFullYear(), 11, 31);
-        const daysUntilEndOfYear = Math.floor((lastDayOfYear.getTime() - now.getTime()) / (24 * 60 * 60 * 1e3));
-        const timezoneOffset = now.getTimezoneOffset();
-        const timezoneHours = Math.floor(Math.abs(timezoneOffset) / 60);
-        const timezoneMinutes = Math.abs(timezoneOffset) % 60;
-        const timezoneSign = timezoneOffset <= 0 ? "+" : "-";
-        const timezone = `UTC${timezoneSign}${timezoneHours.toString().padStart(2, "0")}:${timezoneMinutes.toString().padStart(2, "0")}`;
-        if (format === "short") {
-          return {
-            content: [
-              {
-                type: "text",
-                text: JSON.stringify({
-                  date: now.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" }),
-                  time: now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
-                  utc: utcNow
-                }, null, 2)
-              }
-            ]
-          };
-        }
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify({
-                localDate: now.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" }),
-                localTime: now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
-                utcTime: utcNow,
-                timezone,
-                weekNumber,
-                quarter: `Q${quarter} ${now.getFullYear()}`,
-                daysUntilEndOfMonth,
-                daysUntilEndOfYear,
-                timestamp: now.getTime(),
-                note: "Use web_search tool to verify latest package versions and best practices"
-              }, null, 2)
-            }
-          ]
-        };
+        return textResult(response.data);
       }
       case "web_search": {
         const input = WebSearchSchema.parse(args);
-        const { query, num } = input;
-        try {
-          const response = await axios_default.post(`${BACKEND_URL}/api/search/proxy`, {
-            query,
-            type: "search",
-            num: num || 5
-          }, {
-            headers: {
-              "Content-Type": "application/json",
-              ...API_KEY && { "Authorization": `Bearer ${API_KEY}` }
-            },
-            timeout: 15e3
-          });
-          const results = response.data?.organic || [];
-          return {
-            content: [
-              {
-                type: "text",
-                text: JSON.stringify({
-                  success: true,
-                  query,
-                  resultsCount: results.length,
-                  results: results.slice(0, num || 5).map((r) => ({
-                    title: r.title,
-                    link: r.link,
-                    snippet: r.snippet,
-                    date: r.date || null
-                  })),
-                  searchedAt: (/* @__PURE__ */ new Date()).toISOString(),
-                  note: "Results are from web search. Verify information from official sources when possible."
-                }, null, 2)
-              }
-            ]
-          };
-        } catch (error48) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: JSON.stringify({
-                  success: false,
-                  query,
-                  error: error48.message || "Web search failed",
-                  suggestion: "Try a different query or check if the search service is available"
-                }, null, 2)
-              }
-            ]
-          };
-        }
+        const response = await api.post("/research/search", input, {
+          timeout: 6e4
+        });
+        return textResult(response.data);
+      }
+      case "deep_research_start": {
+        const input = DeepResearchStartSchema.parse(args);
+        const response = await api.post("/research/jobs", input);
+        return textResult(response.data);
+      }
+      case "deep_research_status": {
+        const input = DeepResearchStatusSchema.parse(args);
+        const response = await api.get(
+          `/research/jobs/${encodeURIComponent(input.jobId)}`
+        );
+        return textResult(response.data);
+      }
+      case "deep_research_result": {
+        const input = DeepResearchResultSchema.parse(args);
+        const query = new URLSearchParams();
+        if (input.jobId) query.set("jobId", input.jobId);
+        if (input.sessionId) query.set("sessionId", input.sessionId);
+        const response = await api.get(`/research/result?${query.toString()}`);
+        return textResult(response.data);
+      }
+      case "research_save_to_notebook": {
+        const input = ResearchSaveToNotebookSchema.parse(args);
+        const response = await api.post(
+          `/research/sessions/${encodeURIComponent(input.sessionId)}/save-to-notebook`,
+          {
+            notebookId: input.notebookId,
+            title: input.title
+          }
+        );
+        return textResult(response.data);
       }
       default:
         throw new Error(`Unknown tool: ${name}`);
     }
   } catch (error48) {
-    const errorMessage = error48.response?.data?.error || error48.message || "Unknown error";
     return {
       content: [
         {
           type: "text",
-          text: JSON.stringify({
-            success: false,
-            error: errorMessage,
-            details: error48.response?.data || null
-          }, null, 2)
+          text: JSON.stringify(
+            formatErrorPayload(error48),
+            null,
+            2
+          )
         }
       ],
       isError: true
     };
   }
 });
+function textResult(value) {
+  return {
+    content: [
+      {
+        type: "text",
+        text: JSON.stringify(value, null, 2)
+      }
+    ]
+  };
+}
+function formatError2(error48) {
+  if (axios_default.isAxiosError(error48)) {
+    const responseError = error48.response?.data?.error;
+    if (typeof responseError === "string") {
+      return responseError;
+    }
+    if (error48.response?.status === 401) {
+      return "Authentication failed. Set NOTECLAW_API_TOKEN (or the legacy CODING_AGENT_API_KEY) to an active NoteClaw MCP token.";
+    }
+    return error48.message;
+  }
+  if (error48 instanceof external_exports3.ZodError) {
+    return error48.issues.map((issue2) => `${issue2.path.join(".") || "input"}: ${issue2.message}`).join("; ");
+  }
+  return error48 instanceof Error ? error48.message : String(error48);
+}
+function formatErrorPayload(error48) {
+  const message = formatError2(error48);
+  if (axios_default.isAxiosError(error48) && error48.response?.data && typeof error48.response.data === "object" && !Array.isArray(error48.response.data)) {
+    return {
+      ...error48.response.data,
+      success: false,
+      error: message
+    };
+  }
+  return {
+    success: false,
+    error: message
+  };
+}
 async function main() {
+  if (!API_TOKEN) {
+    console.error(
+      "NoteClaw Memory MCP: NOTECLAW_API_TOKEN is not set; authenticated tools will fail until a token is configured."
+    );
+  }
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("Coding Agent MCP Server running on stdio");
+  console.error("NoteClaw Memory MCP server running on stdio");
 }
 main().catch((error48) => {
-  console.error("Fatal error:", error48);
+  console.error("Failed to start NoteClaw Memory MCP server:", error48);
   process.exit(1);
 });

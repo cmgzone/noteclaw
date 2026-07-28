@@ -9,7 +9,12 @@ import {
     generateQuestions,
     type ChatMessage
 } from '../services/aiService.js';
-import { checkCredits, consumeCredits, calculateChatCreditCost } from '../services/creditService.js';
+import {
+    checkCredits,
+    consumeCredits,
+    refundCredits,
+    calculateChatCreditCost,
+} from '../services/creditService.js';
 import { getCache, setCache, CacheTTL, CacheKeys, getOrSetCache } from '../services/cacheService.js';
 import pool from '../config/database.js';
 import { encryptSecret, decryptSecretAllowLegacy } from '../services/secretEncryptionService.js';
@@ -512,7 +517,7 @@ router.post('/chat', async (req: AuthRequest, res: Response) => {
                         const hasPremiumAccess = await userHasPremiumAccess(req.userId!);
                         if (!hasPremiumAccess) {
                             if (consumedCredits) {
-                                await consumeCredits(userId, -creditCost, 'refund', {
+                                await refundCredits(userId, creditCost, billingFeature || 'ai_chat', {
                                     reason: 'Premium model access denied',
                                     billingFeature,
                                 });
@@ -589,7 +594,7 @@ router.post('/chat', async (req: AuthRequest, res: Response) => {
     } catch (error: any) {
         if (consumedCredits) {
             try {
-                await consumeCredits(userId, -creditCost, 'refund', {
+                await refundCredits(userId, creditCost, billingFeature || 'ai_chat', {
                     reason: error?.message || 'AI chat generation failed',
                     billingFeature,
                     route: 'chat',
@@ -746,7 +751,7 @@ router.post('/chat/stream', async (req: AuthRequest, res: Response) => {
                         if (!hasPremiumAccess) {
                             // Refund credits since we can't process the request
                             if (consumedCredits) {
-                                await consumeCredits(userId, -creditCost, 'refund', {
+                                await refundCredits(userId, creditCost, effectiveBillingFeature, {
                                     reason: 'Premium model access denied',
                                     billingFeature: effectiveBillingFeature,
                                     route: 'chat_stream',

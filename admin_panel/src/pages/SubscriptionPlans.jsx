@@ -2,6 +2,30 @@ import { useState, useEffect } from 'react';
 import api from '../lib/api';
 import { Plus, Edit2, Trash2, Check, X, Loader2, DollarSign, Calendar } from 'lucide-react';
 
+const PLAN_FEATURES = [
+    { key: 'memory_bank', label: 'Durable memory bank', description: 'Agent memory sessions and namespaces' },
+    { key: 'notebook_chat', label: 'Notebook chat', description: 'Chat with stored agent memories' },
+    { key: 'websocket_collaboration', label: 'WebSocket collaboration', description: 'Live shared sessions for multiple agents' },
+    { key: 'code_review', label: 'Code review', description: 'MCP code-quality and security review' },
+    { key: 'web_search', label: 'Web search', description: 'Current web results with citations' },
+    { key: 'deep_research', label: 'Deep research', description: 'Background multi-step research reports' },
+    { key: 'research_save_to_notebook', label: 'Save research', description: 'Store research reports in notebooks' },
+];
+
+const defaultFeatureAccess = (isFreePlan = false) =>
+    Object.fromEntries(PLAN_FEATURES.map(({ key }) => [key, !isFreePlan]));
+
+const normalizeFeatureAccess = (value, isFreePlan = false) => {
+    const defaults = defaultFeatureAccess(isFreePlan);
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return defaults;
+    return Object.fromEntries(
+        PLAN_FEATURES.map(({ key }) => [
+            key,
+            typeof value[key] === 'boolean' ? value[key] : defaults[key],
+        ]),
+    );
+};
+
 export default function SubscriptionPlans() {
     const [plans, setPlans] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -15,7 +39,8 @@ export default function SubscriptionPlans() {
         price: 0,
         is_active: true,
         is_free_plan: false,
-        google_play_product_id: ''
+        google_play_product_id: '',
+        feature_access: defaultFeatureAccess(false),
     });
 
     useEffect(() => {
@@ -46,6 +71,7 @@ export default function SubscriptionPlans() {
                     price: formData.price,
                     isActive: formData.is_active,
                     isFreePlan: formData.is_free_plan,
+                    featureAccess: formData.feature_access,
                     googlePlayProductId: formData.is_free_plan
                         ? null
                         : (formData.google_play_product_id?.trim() || null)
@@ -58,6 +84,7 @@ export default function SubscriptionPlans() {
                     price: formData.price,
                     isActive: formData.is_active,
                     isFreePlan: formData.is_free_plan,
+                    featureAccess: formData.feature_access,
                     googlePlayProductId: formData.is_free_plan
                         ? null
                         : (formData.google_play_product_id?.trim() || null)
@@ -95,7 +122,11 @@ export default function SubscriptionPlans() {
             price: plan.price,
             is_active: plan.is_active,
             is_free_plan: plan.is_free_plan,
-            google_play_product_id: plan.google_play_product_id || ''
+            google_play_product_id: plan.google_play_product_id || '',
+            feature_access: normalizeFeatureAccess(
+                plan.feature_access,
+                plan.is_free_plan,
+            ),
         });
         setShowForm(true);
     };
@@ -108,7 +139,8 @@ export default function SubscriptionPlans() {
             price: 0,
             is_active: true,
             is_free_plan: false,
-            google_play_product_id: ''
+            google_play_product_id: '',
+            feature_access: defaultFeatureAccess(false),
         });
         setEditingPlan(null);
         setShowForm(false);
@@ -139,7 +171,7 @@ export default function SubscriptionPlans() {
                     <div>
                         <h1 className="text-3xl font-bold mb-2">Subscription Plans</h1>
                         <p className="text-muted-foreground">
-                            Manage subscription tiers, pricing, and Google Play product mappings
+                            Manage pricing, billing mappings, and the exact features each plan can access
                         </p>
                     </div>
                     <button
@@ -208,7 +240,8 @@ export default function SubscriptionPlans() {
                                             is_free_plan: e.target.checked,
                                             google_play_product_id: e.target.checked
                                                 ? ''
-                                                : formData.google_play_product_id
+                                                : formData.google_play_product_id,
+                                            feature_access: defaultFeatureAccess(e.target.checked),
                                         })}
                                         className="rounded"
                                     />
@@ -224,6 +257,48 @@ export default function SubscriptionPlans() {
                                 className="w-full rounded-md border border-border bg-background p-2"
                                 rows={3}
                             />
+                        </div>
+                        <div>
+                            <div className="mb-3">
+                                <h3 className="text-sm font-semibold">Feature access</h3>
+                                <p className="text-xs text-muted-foreground">
+                                    These switches are enforced by the web app, Flutter app, MCP routes, and WebSocket connection.
+                                </p>
+                            </div>
+                            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                                {PLAN_FEATURES.map((feature) => {
+                                    const enabled = formData.feature_access?.[feature.key] === true;
+                                    return (
+                                        <label
+                                            key={feature.key}
+                                            className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition ${
+                                                enabled
+                                                    ? 'border-primary/50 bg-primary/5'
+                                                    : 'border-border bg-background'
+                                            }`}
+                                        >
+                                            <input
+                                                type="checkbox"
+                                                checked={enabled}
+                                                onChange={(event) => setFormData({
+                                                    ...formData,
+                                                    feature_access: {
+                                                        ...formData.feature_access,
+                                                        [feature.key]: event.target.checked,
+                                                    },
+                                                })}
+                                                className="mt-1 rounded"
+                                            />
+                                            <span>
+                                                <span className="block text-sm font-medium">{feature.label}</span>
+                                                <span className="block text-xs text-muted-foreground">
+                                                    {feature.description}
+                                                </span>
+                                            </span>
+                                        </label>
+                                    );
+                                })}
+                            </div>
                         </div>
                         <div>
                             <label className="block text-sm font-medium mb-1">Google Play Product ID</label>
@@ -292,6 +367,36 @@ export default function SubscriptionPlans() {
                             {plan.description && (
                                 <p className="text-sm text-muted-foreground">{plan.description}</p>
                             )}
+                            <div className="mt-4">
+                                <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                    Enabled features
+                                </div>
+                                <div className="flex flex-wrap gap-1.5">
+                                    {PLAN_FEATURES.filter(
+                                        ({ key }) => normalizeFeatureAccess(
+                                            plan.feature_access,
+                                            plan.is_free_plan,
+                                        )[key],
+                                    ).map((feature) => (
+                                        <span
+                                            key={feature.key}
+                                            className="rounded-full border border-primary/20 bg-primary/5 px-2 py-1 text-[11px] text-primary"
+                                        >
+                                            {feature.label}
+                                        </span>
+                                    ))}
+                                    {PLAN_FEATURES.every(
+                                        ({ key }) => !normalizeFeatureAccess(
+                                            plan.feature_access,
+                                            plan.is_free_plan,
+                                        )[key],
+                                    ) && (
+                                        <span className="text-xs text-muted-foreground">
+                                            Subscription management only
+                                        </span>
+                                    )}
+                                </div>
+                            </div>
                             <div className="mt-3 space-y-1">
                                 {plan.google_play_product_id ? (
                                     <div className="rounded-md bg-secondary/60 px-3 py-2">

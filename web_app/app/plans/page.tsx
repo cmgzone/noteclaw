@@ -14,7 +14,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { useAuth } from "@/lib/auth-context";
-import api, { Subscription } from "@/lib/api";
+import api, { PlanFeatureAccess, Subscription } from "@/lib/api";
 
 interface Plan {
     id: string;
@@ -23,7 +23,18 @@ interface Plan {
     credits_per_month: number;
     price: string;
     is_free_plan: boolean;
+    feature_access: PlanFeatureAccess;
 }
+
+const featureLabels: Array<[keyof PlanFeatureAccess, string]> = [
+    ["memory_bank", "Durable agent memory"],
+    ["notebook_chat", "Chat with memory notebooks"],
+    ["websocket_collaboration", "Shared WebSocket sessions"],
+    ["code_review", "Agent code review"],
+    ["web_search", "Live web search"],
+    ["deep_research", "Deep research reports"],
+    ["research_save_to_notebook", "Save research to notebooks"],
+];
 
 export default function PlansPage() {
     const { isAuthenticated, isLoading: authLoading } = useAuth();
@@ -34,12 +45,7 @@ export default function PlansPage() {
     const [upgrading, setUpgrading] = useState<string | null>(null);
 
     useEffect(() => {
-        if (!authLoading && !isAuthenticated) {
-            router.push("/login");
-            return;
-        }
-
-        if (isAuthenticated) {
+        if (!authLoading) {
             loadData();
         }
     }, [authLoading, isAuthenticated, router]);
@@ -47,12 +53,14 @@ export default function PlansPage() {
     const loadData = async () => {
         setIsLoading(true);
         try {
-            const [plansData, subData] = await Promise.all([
-                api.getPlans(),
-                api.getSubscription(),
-            ]);
+            const plansData = await api.getPlans();
             setPlans(plansData);
-            setCurrentSubscription(subData);
+            if (isAuthenticated) {
+                const subData = await api.getSubscription();
+                setCurrentSubscription(subData);
+            } else {
+                setCurrentSubscription(null);
+            }
         } catch (error) {
             console.error("Failed to load plans:", error);
         } finally {
@@ -61,6 +69,11 @@ export default function PlansPage() {
     };
 
     const handleUpgrade = async (planId: string, isFree: boolean) => {
+        if (!isAuthenticated) {
+            router.push(`/signup?plan=${encodeURIComponent(planId)}`);
+            return;
+        }
+
         if (isFree) {
             // For downgrading to free, just show a message
             alert("To downgrade to the Free plan, please contact support or wait for your current subscription to expire.");
@@ -88,24 +101,24 @@ export default function PlansPage() {
 
     const getPlanIcon = (name: string) => {
         switch (name.toLowerCase()) {
-            case 'pro': return <Crown className="text-blue-400" size={24} />;
-            case 'ultra': return <Rocket className="text-purple-400" size={24} />;
-            default: return <Zap className="text-amber-400" size={24} />;
+            case 'pro': return <Crown className="text-[#a8ebe7]" size={24} />;
+            case 'ultra': return <Rocket className="text-[#d5b5ef]" size={24} />;
+            default: return <Zap className="text-[#62d3d0]" size={24} />;
         }
     };
 
     const getPlanColor = (name: string) => {
         switch (name.toLowerCase()) {
-            case 'pro': return 'from-blue-600 to-blue-800';
-            case 'ultra': return 'from-purple-600 to-purple-800';
-            default: return 'from-neutral-700 to-neutral-800';
+            case 'pro': return 'from-[#318f96] to-[#68408d]';
+            case 'ultra': return 'from-[#68408d] to-[#3d2556]';
+            default: return 'from-[#1d5c63] to-[#412b55]';
         }
     };
 
     if (authLoading || isLoading) {
         return (
             <div className="min-h-screen bg-neutral-950 flex items-center justify-center">
-                <Loader2 className="animate-spin text-blue-500" size={40} />
+                <Loader2 className="animate-spin text-[#62d3d0]" size={40} />
             </div>
         );
     }
@@ -114,9 +127,9 @@ export default function PlansPage() {
         <div className="min-h-screen bg-neutral-950 text-white">
             <nav className="border-b border-white/5 bg-neutral-900/50 backdrop-blur-xl">
                 <div className="container mx-auto flex h-16 items-center justify-between px-6">
-                    <Link href="/dashboard" className="flex items-center gap-2 text-neutral-400 hover:text-white transition-colors">
+                    <Link href={isAuthenticated ? "/dashboard" : "/"} className="flex items-center gap-2 text-neutral-400 hover:text-white transition-colors">
                         <ArrowLeft size={20} />
-                        <span>Back to Dashboard</span>
+                        <span>{isAuthenticated ? "Back to Dashboard" : "Back to home"}</span>
                     </Link>
                     <Link href="/" className="flex items-center gap-2">
                         <Image src="/icon.png" alt="NoteClaw" width={24} height={24} className="rounded-md" />
@@ -127,13 +140,22 @@ export default function PlansPage() {
 
             <main className="container mx-auto px-6 py-12">
                 <div className="text-center mb-12">
-                    <h1 className="text-4xl font-bold tracking-tight mb-4">Choose Your Plan</h1>
+                    <div className="mb-3 text-xs font-semibold uppercase tracking-[0.2em] text-[#62d3d0]">
+                        Subscription
+                    </div>
+                    <h1 className="text-4xl font-bold tracking-tight mb-4">Choose what your agents can do</h1>
                     <p className="text-neutral-400 text-lg max-w-2xl mx-auto">
-                        Unlock more credits and premium features to supercharge your research.
+                        Every plan publishes its exact memory, collaboration, review, and research access.
                     </p>
                 </div>
 
-                <div className="grid gap-8 md:grid-cols-3 max-w-5xl mx-auto">
+                <div
+                    className={
+                        plans.length <= 2
+                            ? "mx-auto grid max-w-4xl gap-8 md:grid-cols-2"
+                            : "mx-auto grid max-w-6xl gap-8 md:grid-cols-3"
+                    }
+                >
                     {plans.map((plan, i) => {
                         const isCurrentPlan = currentSubscription?.plan_id === plan.id;
                         const isPremium = !plan.is_free_plan;
@@ -145,12 +167,12 @@ export default function PlansPage() {
                                 animate={{ opacity: 1, y: 0 }}
                                 transition={{ delay: i * 0.1 }}
                                 className={`relative rounded-2xl border ${isCurrentPlan
-                                    ? 'border-blue-500/50 ring-2 ring-blue-500/20'
+                                    ? 'border-[#62d3d0]/50 ring-2 ring-[#62d3d0]/20'
                                     : 'border-white/5'
                                     } bg-neutral-900/50 p-8 backdrop-blur-sm`}
                             >
                                 {isCurrentPlan && (
-                                    <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 bg-blue-500 text-xs font-bold rounded-full">
+                                    <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 bg-[#68408d] text-xs font-bold rounded-full">
                                         Current Plan
                                     </div>
                                 )}
@@ -172,28 +194,23 @@ export default function PlansPage() {
 
                                 <ul className="space-y-3 mb-8">
                                     <li className="flex items-center gap-2 text-sm">
-                                        <Check size={16} className="text-green-400" />
+                                        <Check size={16} className="text-[#62d3d0]" />
                                         <span>{plan.credits_per_month.toLocaleString()} credits/month</span>
                                     </li>
-                                    <li className="flex items-center gap-2 text-sm">
-                                        <Check size={16} className="text-green-400" />
-                                        <span>{plan.is_free_plan ? '5 notebooks' : 'Unlimited notebooks'}</span>
-                                    </li>
-                                    <li className="flex items-center gap-2 text-sm">
-                                        <Check size={16} className="text-green-400" />
-                                        <span>{plan.is_free_plan ? 'Basic support' : 'Priority support'}</span>
-                                    </li>
-                                    {isPremium && (
-                                        <>
-                                            <li className="flex items-center gap-2 text-sm">
-                                                <Check size={16} className="text-green-400" />
-                                                <span>Advanced AI models</span>
+                                    {featureLabels
+                                        .filter(([key]) => plan.feature_access?.[key] === true)
+                                        .map(([key, label]) => (
+                                            <li key={key} className="flex items-center gap-2 text-sm">
+                                                <Check size={16} className="text-[#62d3d0]" />
+                                                <span>{label}</span>
                                             </li>
-                                            <li className="flex items-center gap-2 text-sm">
-                                                <Check size={16} className="text-green-400" />
-                                                <span>Unlimited Deep Research</span>
-                                            </li>
-                                        </>
+                                        ))}
+                                    {featureLabels.every(
+                                        ([key]) => plan.feature_access?.[key] !== true,
+                                    ) && (
+                                        <li className="text-sm text-neutral-500">
+                                            Account and subscription management only
+                                        </li>
                                     )}
                                 </ul>
 
@@ -203,7 +220,7 @@ export default function PlansPage() {
                                     className={`w-full py-3 rounded-lg font-semibold transition-all ${isCurrentPlan
                                         ? 'bg-neutral-800 text-neutral-500 cursor-not-allowed'
                                         : isPremium
-                                            ? 'bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white'
+                                            ? 'bg-gradient-to-r from-[#318f96] to-[#68408d] hover:brightness-110 text-white'
                                             : 'bg-white/10 hover:bg-white/20 text-white border border-white/10'
                                         }`}
                                 >
@@ -211,6 +228,8 @@ export default function PlansPage() {
                                         <Loader2 className="animate-spin mx-auto" size={20} />
                                     ) : isCurrentPlan ? (
                                         'Current Plan'
+                                    ) : !isAuthenticated ? (
+                                        'Create account'
                                     ) : plan.is_free_plan ? (
                                         'Downgrade'
                                     ) : (
@@ -222,8 +241,37 @@ export default function PlansPage() {
                     })}
                 </div>
 
-                <div className="mt-12 text-center text-neutral-500 text-sm">
-                    <p>Need more credits? <Link href="/dashboard" className="text-blue-400 hover:underline">Purchase credit packs</Link> anytime.</p>
+                <section className="mx-auto mt-10 max-w-4xl rounded-2xl border border-white/10 bg-neutral-900/60 p-6">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                        <div>
+                            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#62d3d0]">
+                                Credit usage
+                            </p>
+                            <h2 className="mt-2 text-xl font-semibold">Pay only for model-powered work</h2>
+                        </div>
+                        <p className="max-w-md text-sm text-neutral-400">
+                            Failed operations are refunded. Memory storage, retrieval, WebSocket collaboration,
+                            and saving finished research are free.
+                        </p>
+                    </div>
+                    <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                        {[
+                            ["Notebook chat", "1 credit"],
+                            ["Web search", "1 credit"],
+                            ["Code review", "2 credits"],
+                            ["Deep research", "5 credits"],
+                            ["Deep depth", "10 credits"],
+                        ].map(([label, cost]) => (
+                            <div key={label} className="rounded-xl border border-white/5 bg-black/20 px-4 py-3">
+                                <div className="text-sm text-neutral-400">{label}</div>
+                                <div className="mt-1 font-semibold text-white">{cost}</div>
+                            </div>
+                        ))}
+                    </div>
+                </section>
+
+                <div className="mt-8 text-center text-neutral-500 text-sm">
+                    <p>Plan access is controlled centrally by your NoteClaw administrator.</p>
                 </div>
             </main>
         </div>

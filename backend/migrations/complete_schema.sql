@@ -91,6 +91,7 @@ CREATE TABLE IF NOT EXISTS subscription_plans (
     is_free_plan BOOLEAN DEFAULT false,
     is_active BOOLEAN DEFAULT true,
     features JSONB DEFAULT '[]',
+    feature_access JSONB NOT NULL DEFAULT '{}',
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -103,6 +104,7 @@ CREATE TABLE IF NOT EXISTS user_subscriptions (
     credits_consumed_this_month INTEGER DEFAULT 0,
     last_renewal_date TIMESTAMPTZ,
     next_renewal_date TIMESTAMPTZ,
+    status TEXT NOT NULL DEFAULT 'active',
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE(user_id)
@@ -116,8 +118,12 @@ CREATE TABLE IF NOT EXISTS credit_transactions (
     description TEXT,
     balance_after INTEGER,
     metadata JSONB,
+    idempotency_key TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
+CREATE UNIQUE INDEX IF NOT EXISTS idx_credit_transactions_idempotency_key
+    ON credit_transactions (idempotency_key)
+    WHERE idempotency_key IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS credit_packages (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

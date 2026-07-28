@@ -1,51 +1,47 @@
 <p align="center">
-  <img src="assets/images/logo.png" alt="NoteClaw Logo" width="140" />
+  <img src="assets/images/logo.png" alt="NoteClaw logo" width="120" />
 </p>
 
-# NoteClow
+# NoteClaw Memory
 
-NoteClow is an AI-powered knowledge workspace with:
+NoteClaw is a durable memory bank for third-party AI agents.
 
-- Flutter app for notebooks, sources, chat, planning, and social learning
-- Node/TypeScript backend API for auth, notebooks, AI workflows, and integrations
-- MCP server so coding agents can connect to your NoteClow account and tools
+Agents connect through MCP, store context in named namespaces, compact working
+history into long-term checkpoints, and receive live memory events over
+WebSocket. Paid agents can also search the live web, run cited deep-research
+jobs, and save completed reports back into notebooks. The Flutter app is the
+small control surface for:
 
-This repository contains the app, backend, and MCP in one place.
+- creating and revoking MCP access tokens;
+- seeing active agent sessions and WebSocket presence;
+- inspecting stored memory by namespace;
+- checking working-memory and checkpoint health.
+- organizing memories and sources into notebook topics;
+- allowing each agent session to read only selected topics;
+- controlling paid access to web search, deep research, and code review.
 
-## Repository Structure
+Plan access is data-driven. In the admin panel, each free or paid plan can
+independently enable durable memory, notebook chat, WebSocket collaboration,
+code review, web search, deep research, and research-to-notebook saving. Those
+entitlements are enforced by every client and backend transport.
 
-- `lib/` - Flutter application
-- `backend/src/` - Backend API
-- `backend/mcp-server/` - MCP server for coding agents
-- `admin_panel/` - Admin web panel
-- `web_app/` - Marketing/dashboard web app
+Model-powered MCP work is also metered on the backend: notebook chat and web
+search cost 1 credit, code review costs 2, standard deep research costs 5, and
+deep-depth research costs 10. Memory reads/writes, WebSocket collaboration,
+research polling, and saving completed reports are free. Failed metered
+operations are refunded. Stripe checkout grants the first monthly allowance;
+verified recurring invoices grant later allowances idempotently, while failed
+or canceled subscriptions lose paid access.
 
-## Core Features
+## Components
 
-- Source-grounded AI chat and notebook workflows
-- Multi-source ingestion (text, web, PDFs, media)
-- Planning mode with tasks and AI support
-- Social features (friends, groups, feed, leaderboard)
-- Agent connections and API token management
-- MCP integration for third-party coding agents
+- `lib/` — Flutter memory-bank control surface
+- `backend/src/` — authenticated memory API and WebSocket service
+- `backend/mcp-server/` — standalone MCP server
 
-## Tech Stack
+## Run locally
 
-- Flutter + Riverpod + GoRouter
-- Node.js + Express + TypeScript
-- PostgreSQL + Redis
-- MCP SDK (`@modelcontextprotocol/sdk`)
-
-## Local Development
-
-### 1) Flutter App
-
-```bash
-flutter pub get
-flutter run
-```
-
-### 2) Backend API
+Start the backend:
 
 ```bash
 cd backend
@@ -53,104 +49,37 @@ npm install
 npm run dev
 ```
 
-Backend default environment is configured through `backend/.env`.
+Start the Flutter app:
 
-### 3) MCP Server
+```bash
+flutter pub get
+flutter run
+```
+
+Build the MCP server:
 
 ```bash
 cd backend/mcp-server
 npm install
 npm run build
-npm run dev
 ```
 
-MCP server expects:
-
-```env
-BACKEND_URL=http://localhost:3000
-CODING_AGENT_API_KEY=nclaw_your_personal_token
-```
-
-## MCP Client Configuration
-
-Example for MCP clients (Kiro / Claude Desktop style):
+Configure an MCP client with the token created in the app:
 
 ```json
 {
   "mcpServers": {
-    "coding-agent": {
+    "noteclaw-memory": {
       "command": "node",
       "args": ["/absolute/path/to/noteclaw/backend/mcp-server/dist/index.js"],
       "env": {
         "BACKEND_URL": "http://localhost:3000",
-        "CODING_AGENT_API_KEY": "nclaw_your_personal_token"
+        "NOTECLAW_API_TOKEN": "nclaw_your_token"
       }
     }
   }
 }
 ```
 
-Generate token in the app:
-
-- Settings → Agent Connections → API Tokens
-
-For full MCP details, see `backend/mcp-server/README.md`.
-
-## Deployment
-
-### Deploy Repository to GitHub
-
-```bash
-git add -A
-git commit -m "your message"
-git push origin render-deploy
-git push origin render-deploy:main
-```
-
-### Deploy Backend
-
-Use `backend/DEPLOYMENT.md` for production deployment options:
-
-- GitHub Actions
-- Render
-- Railway
-- Docker / self-hosted
-
-### Deploy Flutter App
-
-Build targets:
-
-```bash
-flutter build apk
-flutter build web
-flutter build windows
-```
-
-### Deploy MCP
-
-MCP is distributed from this repo through the standalone GitHub-hosted bundle at `backend/mcp-server/github-install/index.cjs`.
-
-End users should run the GitHub install scripts described in `backend/mcp-server/README.md`, which download the bundled runtime directly from the repo. No npm, npx, or GitHub Releases download is required for the hosted MCP package.
-
-If you want to build it locally instead:
-
-```bash
-cd backend/mcp-server
-npm install
-npm run build
-npm run build:standalone
-node dist/index.js
-```
-
-## Important Notes
-
-- Never commit real secrets or API keys
-- Keep `.env` files local and use platform secrets in production
-- Use personal API tokens (`nclaw_...`) for MCP authentication
-
-## Additional Docs
-
-- `APP_OVERVIEW.md`
-- `QUICK_FEATURES_GUIDE.md`
-- `backend/DEPLOYMENT.md`
-- `backend/mcp-server/README.md`
+The legacy `CODING_AGENT_API_KEY` environment variable is still accepted.
+See `backend/mcp-server/README.md` for the memory tools and WebSocket protocol.

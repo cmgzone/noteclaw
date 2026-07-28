@@ -30,6 +30,7 @@ async function ensureTables() {
                 is_active BOOLEAN DEFAULT true,
                 is_free_plan BOOLEAN DEFAULT false,
                 features JSONB DEFAULT '[]',
+                feature_access JSONB NOT NULL DEFAULT '{}',
                 created_at TIMESTAMPTZ DEFAULT NOW(),
                 updated_at TIMESTAMPTZ DEFAULT NOW()
             );
@@ -46,6 +47,7 @@ async function ensureTables() {
                 credits_consumed_this_month INTEGER DEFAULT 0,
                 last_renewal_date TIMESTAMPTZ,
                 next_renewal_date TIMESTAMPTZ,
+                status TEXT NOT NULL DEFAULT 'active',
                 created_at TIMESTAMPTZ DEFAULT NOW(),
                 updated_at TIMESTAMPTZ DEFAULT NOW(),
                 UNIQUE(user_id)
@@ -65,8 +67,18 @@ async function ensureTables() {
                 payment_method TEXT,
                 payment_id TEXT,
                 metadata JSONB,
+                idempotency_key TEXT,
                 created_at TIMESTAMPTZ DEFAULT NOW()
             );
+        `);
+        await client.query(`
+            ALTER TABLE credit_transactions
+            ADD COLUMN IF NOT EXISTS idempotency_key TEXT
+        `);
+        await client.query(`
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_credit_transactions_idempotency_key
+            ON credit_transactions (idempotency_key)
+            WHERE idempotency_key IS NOT NULL
         `);
         console.log('✅ credit_transactions table ready');
 

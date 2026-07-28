@@ -1,2010 +1,1536 @@
-// ignore_for_file: deprecated_member_use
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons/lucide_icons.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 
 import '../../core/api/api_service.dart';
-import '../../theme/app_theme.dart';
-import '../../core/extensions/color_compat.dart';
-import '../../ui/widgets/agent_notebook_badge.dart';
+import '../../core/auth/custom_auth_service.dart';
+import '../memory/memory_models.dart';
 import 'api_tokens_section.dart';
 
-/// Model for agent session data
-/// Requirements: 4.1, 4.4
-class AgentSession {
-  final String id;
-  final String agentName;
-  final String agentIdentifier;
-  final String status;
-  final String? notebookId;
-  final String? notebookTitle;
-  final DateTime lastActivity;
-  final DateTime createdAt;
-  final Map<String, dynamic>? metadata;
-  final List<String> memoryNamespaces;
-  final DateTime? memoryUpdatedAt;
-  final bool hasMemory;
-  final int totalHistoryItems;
-  final int totalCheckpoints;
-  final int totalStructuredItems;
-  final bool hasLongTermMemory;
-  final String memoryLongTermStatus;
-  final List<Map<String, dynamic>> namespaceStats;
-
-  const AgentSession({
-    required this.id,
-    required this.agentName,
-    required this.agentIdentifier,
-    required this.status,
-    this.notebookId,
-    this.notebookTitle,
-    required this.lastActivity,
-    required this.createdAt,
-    this.metadata,
-    this.memoryNamespaces = const [],
-    this.memoryUpdatedAt,
-    this.hasMemory = false,
-    this.totalHistoryItems = 0,
-    this.totalCheckpoints = 0,
-    this.totalStructuredItems = 0,
-    this.hasLongTermMemory = false,
-    this.memoryLongTermStatus = 'empty',
-    this.namespaceStats = const [],
-  });
-
-  factory AgentSession.fromJson(Map<String, dynamic> json) {
-    return AgentSession(
-      id: json['id'] as String,
-      agentName: json['agent_name'] as String? ??
-          json['agentName'] as String? ??
-          'Unknown Agent',
-      agentIdentifier: json['agent_identifier'] as String? ??
-          json['agentIdentifier'] as String? ??
-          '',
-      status: json['status'] as String? ?? 'active',
-      notebookId:
-          json['notebook_id'] as String? ?? json['notebookId'] as String?,
-      notebookTitle:
-          json['notebook_title'] as String? ?? json['notebookTitle'] as String?,
-      lastActivity: json['last_activity'] != null
-          ? DateTime.parse(json['last_activity'] as String)
-          : json['lastActivity'] != null
-              ? DateTime.parse(json['lastActivity'] as String)
-              : DateTime.now(),
-      createdAt: json['created_at'] != null
-          ? DateTime.parse(json['created_at'] as String)
-          : json['createdAt'] != null
-              ? DateTime.parse(json['createdAt'] as String)
-              : DateTime.now(),
-      metadata: json['metadata'] as Map<String, dynamic>?,
-      memoryNamespaces: json['memory_namespaces'] is List
-          ? List<String>.from(json['memory_namespaces'])
-          : const [],
-      memoryUpdatedAt: json['memory_updated_at'] != null
-          ? DateTime.tryParse(json['memory_updated_at'] as String)
-          : json['memoryUpdatedAt'] != null
-              ? DateTime.tryParse(json['memoryUpdatedAt'] as String)
-              : null,
-      hasMemory:
-          json['has_memory'] as bool? ?? json['hasMemory'] as bool? ?? false,
-      totalHistoryItems: json['total_history_items'] as int? ??
-          json['totalHistoryItems'] as int? ??
-          0,
-      totalCheckpoints: json['total_checkpoint_count'] as int? ??
-          json['totalCheckpointCount'] as int? ??
-          0,
-      totalStructuredItems: json['total_structured_items'] as int? ??
-          json['totalStructuredItems'] as int? ??
-          0,
-      hasLongTermMemory: json['has_long_term_memory'] as bool? ??
-          json['hasLongTermMemory'] as bool? ??
-          false,
-      memoryLongTermStatus: json['long_term_status'] as String? ??
-          json['longTermStatus'] as String? ??
-          'empty',
-      namespaceStats: json['namespace_stats'] is List
-          ? List<Map<String, dynamic>>.from(
-              (json['namespace_stats'] as List).map(
-                (item) => Map<String, dynamic>.from(item as Map),
-              ),
-            )
-          : json['namespaceStats'] is List
-              ? List<Map<String, dynamic>>.from(
-                  (json['namespaceStats'] as List).map(
-                    (item) => Map<String, dynamic>.from(item as Map),
-                  ),
-                )
-              : const [],
-    );
-  }
-
-  bool get isActive => status == 'active';
-  bool get isExpired => status == 'expired';
-  bool get isDisconnected => status == 'disconnected';
-}
-
-/// State for agent connections
-class AgentConnectionsState {
-  final List<AgentSession> sessions;
-  final bool isLoading;
-  final String? error;
-
-  const AgentConnectionsState({
-    this.sessions = const [],
+class MemoryWorkspaceState {
+  const MemoryWorkspaceState({
+    this.notebooks = const [],
+    this.websocketInfo = const {},
+    this.topicAccess = const {},
     this.isLoading = false,
     this.error,
   });
 
-  AgentConnectionsState copyWith({
-    List<AgentSession>? sessions,
-    bool? isLoading,
-    String? error,
-  }) {
-    return AgentConnectionsState(
-      sessions: sessions ?? this.sessions,
-      isLoading: isLoading ?? this.isLoading,
-      error: error,
-    );
-  }
+  final List<MemoryNotebook> notebooks;
+  final Map<String, dynamic> websocketInfo;
+  final Map<String, dynamic> topicAccess;
+  final bool isLoading;
+  final String? error;
 
-  int get activeCount => sessions.where((s) => s.isActive).length;
-  int get expiredCount => sessions.where((s) => s.isExpired).length;
-  int get disconnectedCount => sessions.where((s) => s.isDisconnected).length;
-  int get sessionsWithMemory => sessions.where((s) => s.hasMemory).length;
-  int get totalHistoryItems =>
-      sessions.fold(0, (count, session) => count + session.totalHistoryItems);
-  int get totalCheckpoints =>
-      sessions.fold(0, (count, session) => count + session.totalCheckpoints);
-  int get sessionsWithLongTermMemory =>
-      sessions.where((s) => s.hasLongTermMemory).length;
+  int get sourceCount =>
+      notebooks.fold(0, (total, notebook) => total + notebook.sourceCount);
+  int get liveConnections => notebooks.fold(
+        0,
+        (total, notebook) => total + notebook.session.websocketConnectionCount,
+      );
+  int get liveNotebooks =>
+      notebooks.where((notebook) => notebook.session.websocketConnected).length;
 }
 
-/// Provider for managing agent connections
-/// Requirements: 4.1, 4.4
-class AgentConnectionsNotifier extends StateNotifier<AgentConnectionsState> {
+class MemoryWorkspaceNotifier extends StateNotifier<MemoryWorkspaceState> {
+  MemoryWorkspaceNotifier(this.ref) : super(const MemoryWorkspaceState()) {
+    refresh();
+  }
+
   final Ref ref;
 
-  AgentConnectionsNotifier(this.ref) : super(const AgentConnectionsState()) {
-    loadSessions();
-  }
-
-  /// Load all agent sessions from the API
-  Future<void> loadSessions() async {
-    state = state.copyWith(isLoading: true, error: null);
-
-    try {
-      final apiService = ref.read(apiServiceProvider);
-      final notebooks = await apiService.getAgentNotebooks();
-      final memorySessions = await apiService.getAgentMemories();
-
-      final memoryBySessionId = <String, Map<String, dynamic>>{};
-      for (final row in memorySessions) {
-        final sessionData =
-            (row['session'] as Map<String, dynamic>?) ?? const <String, dynamic>{};
-        final memoryData =
-            (row['memory'] as Map<String, dynamic>?) ?? const <String, dynamic>{};
-        final sessionId = sessionData['id'] as String?;
-        if (sessionId == null || sessionId.isEmpty) {
-          continue;
-        }
-        final memoryUpdatedAtRaw = memoryData['memoryUpdatedAt'] ??
-            memoryData['memory_updated_at'];
-        memoryBySessionId[sessionId] = {
-          'hasMemory': memoryData['hasMemory'] as bool? ??
-              memoryData['has_memory'] as bool? ??
-              false,
-          'memoryNamespaces': memoryData['namespaces'] is List
-              ? List<String>.from(memoryData['namespaces'])
-              : const <String>[],
-          'namespaceStats': memoryData['namespaceStats'] is List
-              ? List<Map<String, dynamic>>.from(
-                  (memoryData['namespaceStats'] as List).map(
-                    (item) => Map<String, dynamic>.from(item as Map),
-                  ),
-                )
-              : const <Map<String, dynamic>>[],
-          'memoryUpdatedAt': memoryUpdatedAtRaw is String
-              ? DateTime.tryParse(memoryUpdatedAtRaw)
-              : null,
-          'totalHistoryItems': memoryData['totalHistoryItems'] as int? ??
-              memoryData['total_history_items'] as int? ??
-              0,
-          'totalCheckpoints': memoryData['totalCheckpointCount'] as int? ??
-              memoryData['total_checkpoint_count'] as int? ??
-              0,
-          'totalStructuredItems': memoryData['totalStructuredItems'] as int? ??
-              memoryData['total_structured_items'] as int? ??
-              0,
-          'hasLongTermMemory': memoryData['hasLongTermMemory'] as bool? ??
-              memoryData['has_long_term_memory'] as bool? ??
-              false,
-          'memoryLongTermStatus': memoryData['longTermStatus'] as String? ??
-              memoryData['long_term_status'] as String? ??
-              'empty',
-        };
-      }
-
-      final sessions = notebooks.map((n) {
-        final nestedSession =
-            n['session'] as Map<String, dynamic>? ?? const <String, dynamic>{};
-        final sessionId = n['agent_session_id'] as String? ??
-            nestedSession['id'] as String? ??
-            n['id'] as String;
-        final memoryInfo = memoryBySessionId[sessionId] ?? const <String, dynamic>{};
-
-        // Extract agent session info from notebook metadata
-        return AgentSession(
-          id: sessionId,
-          agentName: n['agent_name'] as String? ??
-              nestedSession['agentName'] as String? ??
-              n['agentName'] as String? ??
-              'Unknown Agent',
-          agentIdentifier: n['agent_identifier'] as String? ??
-              nestedSession['agentIdentifier'] as String? ??
-              n['agentIdentifier'] as String? ??
-              '',
-          status: n['agent_status'] as String? ??
-              nestedSession['status'] as String? ??
-              n['agentStatus'] as String? ??
-              'active',
-          notebookId: n['id'] as String?,
-          notebookTitle: n['title'] as String?,
-          lastActivity: n['last_activity'] != null
-              ? DateTime.parse(n['last_activity'] as String)
-              : n['updated_at'] != null
-                  ? DateTime.parse(n['updated_at'] as String)
-                  : DateTime.now(),
-          createdAt: n['created_at'] != null
-              ? DateTime.parse(n['created_at'] as String)
-              : DateTime.now(),
-          metadata: n['metadata'] as Map<String, dynamic>?,
-          hasMemory: memoryInfo['hasMemory'] as bool? ?? false,
-          memoryNamespaces: memoryInfo['memoryNamespaces'] is List
-              ? List<String>.from(memoryInfo['memoryNamespaces'])
-              : const [],
-          memoryUpdatedAt: memoryInfo['memoryUpdatedAt'] as DateTime?,
-          totalHistoryItems: memoryInfo['totalHistoryItems'] as int? ?? 0,
-          totalCheckpoints: memoryInfo['totalCheckpoints'] as int? ?? 0,
-          totalStructuredItems: memoryInfo['totalStructuredItems'] as int? ?? 0,
-          hasLongTermMemory: memoryInfo['hasLongTermMemory'] as bool? ?? false,
-          memoryLongTermStatus:
-              memoryInfo['memoryLongTermStatus'] as String? ?? 'empty',
-          namespaceStats: memoryInfo['namespaceStats'] is List
-              ? List<Map<String, dynamic>>.from(memoryInfo['namespaceStats'])
-              : const [],
-        );
-      }).toList();
-
-      state = state.copyWith(
-        sessions: sessions,
-        isLoading: false,
-      );
-    } catch (e) {
-      state = state.copyWith(
-        isLoading: false,
-        error: e.toString(),
-      );
-    }
-  }
-
-  /// Disconnect an agent session
-  /// Requirements: 4.3
-  Future<bool> disconnectSession(String sessionId) async {
-    try {
-      final apiService = ref.read(apiServiceProvider);
-      await apiService.disconnectAgent(sessionId);
-
-      // Update local state
-      final updatedSessions = state.sessions.map((s) {
-        if (s.id == sessionId) {
-          return AgentSession(
-            id: s.id,
-            agentName: s.agentName,
-            agentIdentifier: s.agentIdentifier,
-            status: 'disconnected',
-            notebookId: s.notebookId,
-            notebookTitle: s.notebookTitle,
-            lastActivity: DateTime.now(),
-            createdAt: s.createdAt,
-            metadata: s.metadata,
-            memoryNamespaces: s.memoryNamespaces,
-            memoryUpdatedAt: s.memoryUpdatedAt,
-            hasMemory: s.hasMemory,
-            totalHistoryItems: s.totalHistoryItems,
-            totalCheckpoints: s.totalCheckpoints,
-            totalStructuredItems: s.totalStructuredItems,
-            hasLongTermMemory: s.hasLongTermMemory,
-            memoryLongTermStatus: s.memoryLongTermStatus,
-            namespaceStats: s.namespaceStats,
-          );
-        }
-        return s;
-      }).toList();
-
-      state = state.copyWith(sessions: updatedSessions);
-      return true;
-    } catch (e) {
-      state = state.copyWith(error: e.toString());
-      return false;
-    }
-  }
-
-  /// Refresh sessions
   Future<void> refresh() async {
-    await loadSessions();
+    state = MemoryWorkspaceState(
+      notebooks: state.notebooks,
+      websocketInfo: state.websocketInfo,
+      topicAccess: state.topicAccess,
+      isLoading: true,
+    );
+
+    try {
+      final api = ref.read(apiServiceProvider);
+      final results = await Future.wait<dynamic>([
+        api.getMemoryNotebooks(),
+        api.getAgentWebSocketInfo(),
+        api.getAgentTopicAccess(),
+      ]);
+      final rows = results[0] as List<Map<String, dynamic>>;
+      state = MemoryWorkspaceState(
+        notebooks: rows
+            .map(MemoryNotebook.fromJson)
+            .where((notebook) => notebook.id.isNotEmpty)
+            .toList(growable: false),
+        websocketInfo: Map<String, dynamic>.from(
+          results[1] as Map<String, dynamic>,
+        ),
+        topicAccess: Map<String, dynamic>.from(
+          results[2] as Map<String, dynamic>,
+        ),
+      );
+    } catch (error) {
+      state = MemoryWorkspaceState(
+        notebooks: state.notebooks,
+        websocketInfo: state.websocketInfo,
+        topicAccess: state.topicAccess,
+        error: _friendlyError(error),
+      );
+    }
   }
 }
 
-/// Provider for agent connections
-final agentConnectionsProvider =
-    StateNotifierProvider<AgentConnectionsNotifier, AgentConnectionsState>(
-  (ref) => AgentConnectionsNotifier(ref),
+final memoryWorkspaceProvider =
+    StateNotifierProvider<MemoryWorkspaceNotifier, MemoryWorkspaceState>(
+  MemoryWorkspaceNotifier.new,
 );
 
-class _AgentMemorySnapshot {
-  final Map<String, dynamic> memoryByNamespace;
-  final Map<String, Map<String, dynamic>> memoryStatsByNamespace;
-  final String? memoryUpdatedAt;
-
-  const _AgentMemorySnapshot({
-    required this.memoryByNamespace,
-    required this.memoryStatsByNamespace,
-    required this.memoryUpdatedAt,
-  });
-}
-
-/// Screen showing all connected coding agents
-/// Requirements: 4.1, 4.4
 class AgentConnectionsScreen extends ConsumerWidget {
   const AgentConnectionsScreen({super.key});
 
-  Future<_AgentMemorySnapshot> _loadMemorySnapshot(
-    WidgetRef ref,
-    AgentSession session,
-  ) async {
-    final apiService = ref.read(apiServiceProvider);
-    final first = await apiService.getAgentMemory(
-      agentSessionId: session.id,
-      namespace: 'default',
-    );
-
-    final namespacesRaw = first['availableNamespaces'];
-    final namespaces = namespacesRaw is List
-        ? List<String>.from(namespacesRaw)
-        : <String>[];
-    final namespaceList = namespaces.isEmpty ? <String>['default'] : namespaces;
-
-    final memoryByNamespace = <String, dynamic>{};
-    final statsByNamespace = <String, Map<String, dynamic>>{};
-    for (final namespace in namespaceList) {
-      final response = namespace == 'default'
-          ? first
-          : await apiService.getAgentMemory(
-              agentSessionId: session.id,
-              namespace: namespace,
-            );
-      memoryByNamespace[namespace] = response['memory'];
-      final stats = response['memoryStats'];
-      if (stats is Map) {
-        statsByNamespace[namespace] = Map<String, dynamic>.from(stats);
-      }
-    }
-
-    return _AgentMemorySnapshot(
-      memoryByNamespace: memoryByNamespace,
-      memoryStatsByNamespace: statsByNamespace,
-      memoryUpdatedAt: first['memoryUpdatedAt'] as String?,
-    );
-  }
-
-  Future<void> _refreshAll(WidgetRef ref) async {
-    await Future.wait([
-      ref.read(agentConnectionsProvider.notifier).refresh(),
-      ref.read(apiTokensProvider.notifier).refresh(),
-      ref.read(mcpInsightsProvider.notifier).refresh(),
-    ]);
+  Future<void> _signOut(BuildContext context, WidgetRef ref) async {
+    await ref.read(customAuthStateProvider.notifier).signOut();
+    if (context.mounted) context.go('/login');
   }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final scheme = Theme.of(context).colorScheme;
-    final state = ref.watch(agentConnectionsProvider);
+    final workspace = ref.watch(memoryWorkspaceProvider);
 
     return Scaffold(
       appBar: AppBar(
-        flexibleSpace: Container(
-          decoration: const BoxDecoration(
-            gradient: AppTheme.premiumGradient,
-          ),
-        ),
-        title: const Text(
-          'Connect AI Agents',
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-        ),
-        iconTheme: const IconThemeData(color: Colors.white),
+        toolbarHeight: 72,
+        titleSpacing: 20,
+        title: const _Brand(),
         actions: [
           IconButton(
-            onPressed: () => _refreshAll(ref),
-            icon: const Icon(Icons.refresh),
-            tooltip: 'Refresh',
+            onPressed: () => context.push('/settings/account'),
+            tooltip: 'Account settings',
+            icon: const Icon(LucideIcons.settings, size: 19),
           ),
+          IconButton(
+            onPressed: workspace.isLoading
+                ? null
+                : () async {
+                    await Future.wait([
+                      ref.read(memoryWorkspaceProvider.notifier).refresh(),
+                      ref.read(apiTokensProvider.notifier).refresh(),
+                    ]);
+                  },
+            tooltip: 'Refresh workspace',
+            icon: const Icon(LucideIcons.refreshCw, size: 19),
+          ),
+          const SizedBox(width: 4),
+          IconButton(
+            onPressed: () => _signOut(context, ref),
+            tooltip: 'Sign out',
+            icon: const Icon(LucideIcons.logOut, size: 19),
+          ),
+          const SizedBox(width: 12),
         ],
       ),
       body: RefreshIndicator(
-        onRefresh: () => _refreshAll(ref),
+        onRefresh: () => ref.read(memoryWorkspaceProvider.notifier).refresh(),
         child: ListView(
-          padding: EdgeInsets.zero,
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(18, 14, 18, 48),
           children: [
-            // API Tokens Section - always visible
-            const ApiTokensSection(),
-            // Agent Sessions Section
-            if (state.isLoading)
-              const Padding(
-                padding: EdgeInsets.all(32),
-                child: Center(child: CircularProgressIndicator()),
-              )
-            else if (state.error != null)
-              _buildErrorState(context, ref, state.error!)
-            else if (state.sessions.isEmpty)
-              _buildEmptyState(context, scheme)
-            else
-              ..._buildSessionsListItems(context, ref, state, scheme),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildErrorState(BuildContext context, WidgetRef ref, String error) {
-    final scheme = Theme.of(context).colorScheme;
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              LucideIcons.alertCircle,
-              size: 64,
-              color: scheme.error,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Failed to load agents',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              error,
-              style: TextStyle(color: scheme.secondaryText),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 24),
-            FilledButton.icon(
-              onPressed: () => _refreshAll(ref),
-              icon: const Icon(Icons.refresh),
-              label: const Text('Retry'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildEmptyState(BuildContext context, ColorScheme scheme) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                color: scheme.primary.withValues(alpha: 0.1),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                LucideIcons.terminal,
-                size: 64,
-                color: scheme.primary,
-              ),
-            ).animate().scale(duration: 600.ms, curve: Curves.elasticOut),
-            const SizedBox(height: 24),
-            Text(
-              'No Connected Agents',
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-            ).animate().fadeIn(delay: 200.ms),
-            const SizedBox(height: 12),
-            Text(
-              'Connect Codex, Claude Code, OpenClaw, Kiro, and other coding agents via MCP to see them here.',
-              style: TextStyle(color: scheme.secondaryText),
-              textAlign: TextAlign.center,
-            ).animate().fadeIn(delay: 400.ms),
-            const SizedBox(height: 24),
-            OutlinedButton.icon(
-              onPressed: () {
-                // Show info dialog about connecting agents
-                _showConnectionInfoDialog(context);
-              },
-              icon: const Icon(LucideIcons.helpCircle),
-              label: const Text('How to Connect'),
-            ).animate().fadeIn(delay: 600.ms),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showConnectionInfoDialog(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        icon: Icon(LucideIcons.terminal, size: 48, color: scheme.primary),
-        title: const Text('Connect AI Agents'),
-        content: const SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'To connect a coding agent:\n\n'
-                '1. Configure the MCP server in your coding agent (Codex, Claude Code, OpenClaw, Kiro, etc.)\n\n'
-                '2. Use the create_agent_notebook tool to create a dedicated notebook\n\n'
-                '3. Save verified code using save_code_with_context and keep working memory synced with memory_put\n\n'
-                '4. Use append mode plus memory_compact to roll recent history into long-term checkpoints\n\n'
-                '5. Your agent will appear here once connected!',
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Got it'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  List<Widget> _buildSessionsListItems(
-    BuildContext context,
-    WidgetRef ref,
-    AgentConnectionsState state,
-    ColorScheme scheme,
-  ) {
-    return [
-      Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: _buildStatsSummary(context, state, scheme),
-      ),
-      const SizedBox(height: 24),
-      ...state.sessions.asMap().entries.map((entry) {
-        final index = entry.key;
-        final session = entry.value;
-        return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-          child: _AgentSessionCard(
-            session: session,
-            onDisconnect: () => _showDisconnectDialog(context, ref, session),
-            onViewNotebook: session.notebookId != null
-                ? () => context.push('/notebook/${session.notebookId}')
-                : null,
-            onViewMemory: () => _showMemoryDialog(context, ref, session),
-          ).animate().fadeIn(delay: Duration(milliseconds: index * 100)),
-        );
-      }),
-      const SizedBox(height: 32),
-    ];
-  }
-
-  Widget _buildStatsSummary(
-    BuildContext context,
-    AgentConnectionsState state,
-    ColorScheme scheme,
-  ) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            scheme.primary.withValues(alpha: 0.1),
-            scheme.secondary.withValues(alpha: 0.05),
-          ],
-        ),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: scheme.outline.withValues(alpha: 0.1),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Agent Memory Network',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Track live agent connections, persistent MCP history, and long-term checkpoint coverage.',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: scheme.secondaryText,
-                ),
-          ),
-          const SizedBox(height: 16),
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: [
-              _SummaryMetricCard(
-                icon: LucideIcons.checkCircle,
-                label: 'Active',
-                value: state.activeCount.toString(),
-                subtitle: '${state.sessions.length} total agents',
-                color: const Color(0xFF22C55E),
-              ),
-              _SummaryMetricCard(
-                icon: LucideIcons.brain,
-                label: 'Memory Ready',
-                value: state.sessionsWithMemory.toString(),
-                subtitle: '${state.totalHistoryItems} history items',
-                color: scheme.primary,
-              ),
-              _SummaryMetricCard(
-                icon: LucideIcons.archive,
-                label: 'Long-Term',
-                value: state.sessionsWithLongTermMemory.toString(),
-                subtitle: '${state.totalCheckpoints} checkpoints saved',
-                color: const Color(0xFF14B8A6),
-              ),
-              _SummaryMetricCard(
-                icon: LucideIcons.clock,
-                label: 'Needs Attention',
-                value:
-                    (state.expiredCount + state.disconnectedCount).toString(),
-                subtitle: '${state.expiredCount} expired, ${state.disconnectedCount} offline',
-                color: const Color(0xFFF59E0B),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showDisconnectDialog(
-    BuildContext context,
-    WidgetRef ref,
-    AgentSession session,
-  ) {
-    final scheme = Theme.of(context).colorScheme;
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        icon: Icon(LucideIcons.unplug, size: 48, color: scheme.error),
-        title: const Text('Disconnect Agent?'),
-        content: Text(
-          'Are you sure you want to disconnect ${session.agentName}?\n\n'
-          'The notebook and sources will remain accessible, but you won\'t receive new messages from this agent.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () async {
-              Navigator.pop(context);
-              final success = await ref
-                  .read(agentConnectionsProvider.notifier)
-                  .disconnectSession(session.id);
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      success
-                          ? '${session.agentName} disconnected'
-                          : 'Failed to disconnect agent',
+            Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 1180),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _WorkspaceHeader(state: workspace),
+                    const SizedBox(height: 16),
+                    _MetricStrip(state: workspace),
+                    const SizedBox(height: 18),
+                    _TopicAccessPanel(
+                      matrix: workspace.topicAccess,
                     ),
-                    backgroundColor: success ? Colors.green : Colors.red,
-                  ),
-                );
-              }
-            },
-            style: FilledButton.styleFrom(
-              backgroundColor: scheme.error,
-            ),
-            child: const Text('Disconnect'),
-          ),
-        ],
-      ),
-    );
-  }
+                    const SizedBox(height: 28),
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        final notebooks = _NotebookSection(state: workspace);
+                        const access = Column(
+                          children: [
+                            _AgentToolsCard(),
+                            SizedBox(height: 14),
+                            _ConnectionCard(),
+                          ],
+                        );
 
-  Future<void> _showMemoryDialog(
-    BuildContext context,
-    WidgetRef ref,
-    AgentSession session,
-  ) async {
-    final scheme = Theme.of(context).colorScheme;
+                        if (constraints.maxWidth < 880) {
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              notebooks,
+                              const SizedBox(height: 18),
+                              access,
+                            ],
+                          );
+                        }
 
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => const AlertDialog(
-        content: Padding(
-          padding: EdgeInsets.symmetric(vertical: 8),
-          child: Row(
-            children: [
-              SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-              SizedBox(width: 12),
-              Text('Loading memory...'),
-            ],
-          ),
-        ),
-      ),
-    );
-
-    try {
-      final snapshot = await _loadMemorySnapshot(ref, session);
-
-      if (context.mounted) {
-        Navigator.pop(context);
-      }
-
-      if (!context.mounted) {
-        return;
-      }
-
-      showDialog(
-        context: context,
-        builder: (context) => _AgentMemoryViewerDialog(
-          session: session,
-          memoryByNamespace: snapshot.memoryByNamespace,
-          memoryStatsByNamespace: snapshot.memoryStatsByNamespace,
-          memoryUpdatedAt: snapshot.memoryUpdatedAt,
-        ),
-      );
-    } catch (e) {
-      if (context.mounted) {
-        Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to load memory: $e'),
-            backgroundColor: scheme.error,
-          ),
-        );
-      }
-    }
-  }
-}
-
-class _AgentMemoryViewerDialog extends StatefulWidget {
-  final AgentSession session;
-  final Map<String, dynamic> memoryByNamespace;
-  final Map<String, Map<String, dynamic>> memoryStatsByNamespace;
-  final String? memoryUpdatedAt;
-
-  const _AgentMemoryViewerDialog({
-    required this.session,
-    required this.memoryByNamespace,
-    required this.memoryStatsByNamespace,
-    required this.memoryUpdatedAt,
-  });
-
-  @override
-  State<_AgentMemoryViewerDialog> createState() =>
-      _AgentMemoryViewerDialogState();
-}
-
-class _AgentMemoryViewerDialogState extends State<_AgentMemoryViewerDialog>
-    with SingleTickerProviderStateMixin {
-  late final List<String> _namespaces;
-  late final TabController _tabController;
-  final TextEditingController _searchController = TextEditingController();
-  String _query = '';
-  int _selectedNamespaceIndex = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    _namespaces = widget.memoryByNamespace.keys.toList(growable: false);
-    _tabController = TabController(length: _namespaces.length, vsync: this);
-    _tabController.addListener(() {
-      if (!mounted || _tabController.indexIsChanging) {
-        return;
-      }
-      if (_selectedNamespaceIndex != _tabController.index) {
-        setState(() {
-          _selectedNamespaceIndex = _tabController.index;
-        });
-      }
-    });
-    _searchController.addListener(() {
-      setState(() {
-        _query = _searchController.text.trim().toLowerCase();
-      });
-    });
-  }
-
-  @override
-  void dispose() {
-    _tabController.dispose();
-    _searchController.dispose();
-    super.dispose();
-  }
-
-  String _namespaceText(String namespace) {
-    final memory = widget.memoryByNamespace[namespace];
-    return const JsonEncoder.withIndent('  ').convert(memory);
-  }
-
-  Map<String, dynamic> _namespaceStats(String namespace) =>
-      widget.memoryStatsByNamespace[namespace] ?? const <String, dynamic>{};
-
-  int get _totalHistoryItems => widget.memoryStatsByNamespace.values.fold(
-        0,
-        (count, stats) => count + ((stats['historyLength'] as int?) ?? 0),
-      );
-
-  int get _totalCheckpoints => widget.memoryStatsByNamespace.values.fold(
-        0,
-        (count, stats) => count + ((stats['checkpointCount'] as int?) ?? 0),
-      );
-
-  int get _durableNamespaces => widget.memoryStatsByNamespace.values
-      .where((stats) => (stats['longTermStatus'] as String?) == 'durable')
-      .length;
-
-  String get _selectedNamespace {
-    if (_namespaces.isEmpty) {
-      return 'default';
-    }
-    final safeIndex = _selectedNamespaceIndex.clamp(0, _namespaces.length - 1);
-    return _namespaces[safeIndex];
-  }
-
-  String _namespaceLabel(String namespace) {
-    final stats = _namespaceStats(namespace);
-    final history = (stats['historyLength'] as int?) ?? 0;
-    final checkpoints = (stats['checkpointCount'] as int?) ?? 0;
-    if (history == 0 && checkpoints == 0) {
-      return namespace;
-    }
-    return '$namespace  $history/$checkpoints';
-  }
-
-  String _filteredText(String fullText) {
-    if (_query.isEmpty) {
-      return fullText;
-    }
-    final lines = const LineSplitter().convert(fullText);
-    final filtered = lines
-        .where((line) => line.toLowerCase().contains(_query))
-        .toList(growable: false);
-    if (filtered.isEmpty) {
-      return 'No matches for "$_query"';
-    }
-    return filtered.join('\n');
-  }
-
-  Future<void> _copyCurrentNamespace() async {
-    if (_namespaces.isEmpty) return;
-    final namespace = _selectedNamespace;
-    final text = _namespaceText(namespace);
-    await Clipboard.setData(ClipboardData(text: text));
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Copied "$namespace" memory'),
-        backgroundColor: Colors.green,
-      ),
-    );
-  }
-
-  void _selectNamespace(String? namespace) {
-    if (namespace == null || _namespaces.isEmpty) {
-      return;
-    }
-    final index = _namespaces.indexOf(namespace);
-    if (index < 0) {
-      return;
-    }
-    setState(() {
-      _selectedNamespaceIndex = index;
-    });
-    if (_tabController.index != index) {
-      _tabController.animateTo(index);
-    }
-  }
-
-  Widget _buildMetricCards(
-    BuildContext context,
-    ColorScheme scheme,
-    String? updatedAt, {
-    required bool compact,
-  }) {
-    final cards = [
-      SizedBox(
-        width: compact ? 170 : 170,
-        child: _SummaryMetricCard(
-          icon: LucideIcons.layers,
-          label: 'Namespaces',
-          value: _namespaces.length.toString(),
-          subtitle: '$_durableNamespaces durable',
-          color: scheme.primary,
-        ),
-      ),
-      SizedBox(
-        width: compact ? 170 : 170,
-        child: _SummaryMetricCard(
-          icon: LucideIcons.history,
-          label: 'History',
-          value: _totalHistoryItems.toString(),
-          subtitle: 'Persistent timeline items',
-          color: const Color(0xFF6366F1),
-        ),
-      ),
-      SizedBox(
-        width: compact ? 170 : 170,
-        child: _SummaryMetricCard(
-          icon: LucideIcons.archive,
-          label: 'Checkpoints',
-          value: _totalCheckpoints.toString(),
-          subtitle: updatedAt != null && updatedAt.isNotEmpty
-              ? 'Updated ${updatedAt.length > 24 ? '${updatedAt.substring(0, 24)}...' : updatedAt}'
-              : 'Awaiting long-term summaries',
-          color: const Color(0xFF14B8A6),
-        ),
-      ),
-    ];
-
-    if (compact) {
-      return SizedBox(
-        height: 164,
-        child: ListView.separated(
-          scrollDirection: Axis.horizontal,
-          itemCount: cards.length,
-          separatorBuilder: (_, __) => const SizedBox(width: 12),
-          itemBuilder: (context, index) => cards[index],
-        ),
-      );
-    }
-
-    return Wrap(
-      spacing: 12,
-      runSpacing: 12,
-      children: cards,
-    );
-  }
-
-  Widget _buildNamespacePanel(
-    BuildContext context,
-    String namespace, {
-    required bool compact,
-  }) {
-    final scheme = Theme.of(context).colorScheme;
-    final fullText = _namespaceText(namespace);
-    final display = _filteredText(fullText);
-    final stats = _namespaceStats(namespace);
-    final longTermStatus = stats['longTermStatus'] as String? ?? 'empty';
-
-    return Container(
-      width: double.infinity,
-      padding: EdgeInsets.all(compact ? 10 : 12),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest.withValues(alpha: 0.3),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _MemoryInfoChip(
-                label: '${(stats['fieldCount'] as int?) ?? 0} fields',
-                color: scheme.primary,
-              ),
-              _MemoryInfoChip(
-                label: '${(stats['historyLength'] as int?) ?? 0} history',
-                color: const Color(0xFF6366F1),
-              ),
-              _MemoryInfoChip(
-                label: '${(stats['checkpointCount'] as int?) ?? 0} checkpoints',
-                color: const Color(0xFF14B8A6),
-              ),
-              _MemoryInfoChip(
-                label: longTermStatus.toUpperCase(),
-                color: longTermStatus == 'durable'
-                    ? const Color(0xFF22C55E)
-                    : longTermStatus == 'warming'
-                        ? const Color(0xFFF59E0B)
-                        : scheme.outline,
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Expanded(
-            child: Scrollbar(
-              thumbVisibility: !compact,
-              child: SingleChildScrollView(
-                padding: EdgeInsets.only(bottom: compact ? 24 : 0),
-                child: SelectableText(
-                  display,
-                  style: TextStyle(
-                    fontFamily: 'monospace',
-                    fontSize: compact ? 11.5 : 12,
-                    height: 1.4,
-                    color: scheme.onSurface,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final size = MediaQuery.sizeOf(context);
-    final updatedAt = widget.memoryUpdatedAt;
-    final isCompact = size.width < 720 || size.height < 760;
-
-    if (isCompact) {
-      return Dialog(
-        insetPadding: EdgeInsets.zero,
-        backgroundColor: scheme.surface,
-        child: SizedBox(
-          width: size.width,
-          height: size.height,
-          child: SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        width: 42,
-                        height: 42,
-                        decoration: BoxDecoration(
-                          color: scheme.primary.withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        child: Icon(
-                          LucideIcons.brain,
-                          size: 20,
-                          color: scheme.primary,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
+                        return Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              '${widget.session.agentName} Memory',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .titleLarge
-                                  ?.copyWith(fontWeight: FontWeight.w700),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              'Browse namespaces, search stored JSON, and copy the active memory block.',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .bodySmall
-                                  ?.copyWith(color: scheme.secondaryText),
-                            ),
+                            Expanded(flex: 7, child: notebooks),
+                            const SizedBox(width: 18),
+                            const Expanded(flex: 4, child: access),
                           ],
-                        ),
-                      ),
-                      IconButton(
-                        tooltip: 'Copy namespace',
-                        onPressed: _copyCurrentNamespace,
-                        icon: const Icon(LucideIcons.copy),
-                      ),
-                      IconButton(
-                        tooltip: 'Close',
-                        onPressed: () => Navigator.pop(context),
-                        icon: const Icon(Icons.close),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  _buildMetricCards(context, scheme, updatedAt, compact: true),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _searchController,
-                    decoration: InputDecoration(
-                      isDense: true,
-                      hintText: 'Search memory JSON',
-                      prefixIcon: const Icon(LucideIcons.search, size: 16),
-                      suffixIcon: _query.isEmpty
-                          ? null
-                          : IconButton(
-                              onPressed: () => _searchController.clear(),
-                              icon: const Icon(Icons.close, size: 16),
-                            ),
+                        );
+                      },
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    value: _selectedNamespace,
-                    isExpanded: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Namespace',
-                      prefixIcon: Icon(LucideIcons.layers, size: 16),
-                    ),
-                    items: _namespaces
-                        .map(
-                          (namespace) => DropdownMenuItem<String>(
-                            value: namespace,
-                            child: Text(
-                              _namespaceLabel(namespace),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: _selectNamespace,
-                  ),
-                  const SizedBox(height: 12),
-                  Expanded(
-                    child: _buildNamespacePanel(
-                      context,
-                      _selectedNamespace,
-                      compact: true,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    return AlertDialog(
-      icon: Icon(LucideIcons.brain, size: 36, color: scheme.primary),
-      title: Text('${widget.session.agentName} Memory'),
-      contentPadding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
-      content: SizedBox(
-        width: size.width * 0.9 > 820 ? 820 : size.width * 0.9,
-        height: size.height * 0.8 > 680 ? 680 : size.height * 0.8,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildMetricCards(context, scheme, updatedAt, compact: false),
-            const SizedBox(height: 10),
-            TextField(
-              controller: _searchController,
-              decoration: InputDecoration(
-                isDense: true,
-                hintText: 'Search memory JSON',
-                prefixIcon: const Icon(LucideIcons.search, size: 16),
-                suffixIcon: _query.isEmpty
-                    ? null
-                    : IconButton(
-                        onPressed: () => _searchController.clear(),
-                        icon: const Icon(Icons.close, size: 16),
-                      ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Container(
-              decoration: BoxDecoration(
-                color: scheme.surfaceContainerHighest.withValues(alpha: 0.3),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: TabBar(
-                controller: _tabController,
-                isScrollable: true,
-                tabAlignment: TabAlignment.start,
-                onTap: (index) {
-                  setState(() {
-                    _selectedNamespaceIndex = index;
-                  });
-                },
-                tabs: _namespaces
-                    .map((namespace) => Tab(text: _namespaceLabel(namespace)))
-                    .toList(),
-              ),
-            ),
-            const SizedBox(height: 10),
-            Expanded(
-              child: TabBarView(
-                controller: _tabController,
-                children: _namespaces
-                    .map(
-                      (namespace) => _buildNamespacePanel(
-                        context,
-                        namespace,
-                        compact: false,
-                      ),
-                    )
-                    .toList(),
+                    const SizedBox(height: 18),
+                    const _TokenAccessCard(),
+                  ],
+                ),
               ),
             ),
           ],
         ),
       ),
-      actions: [
-        TextButton.icon(
-          onPressed: _copyCurrentNamespace,
-          icon: const Icon(LucideIcons.copy, size: 16),
-          label: const Text('Copy Namespace'),
-        ),
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Close'),
-        ),
-      ],
     );
   }
 }
 
-class _SummaryMetricCard extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String value;
-  final String subtitle;
-  final Color color;
-
-  const _SummaryMetricCard({
-    required this.icon,
-    required this.label,
-    required this.value,
-    required this.subtitle,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 170,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: color.withValues(alpha: 0.16)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(icon, size: 18, color: color),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            value,
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: color,
-                ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            subtitle,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.secondaryText,
-                ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _MemoryInfoChip extends StatelessWidget {
-  final String label;
-  final Color color;
-
-  const _MemoryInfoChip({
-    required this.label,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        label,
-        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: color,
-              fontWeight: FontWeight.w700,
-            ),
-      ),
-    );
-  }
-}
-
-/// Card widget for displaying an agent session
-/// Requirements: 4.1, 4.2, 4.3
-class _AgentSessionCard extends StatelessWidget {
-  final AgentSession session;
-  final VoidCallback onDisconnect;
-  final VoidCallback? onViewNotebook;
-  final VoidCallback onViewMemory;
-
-  const _AgentSessionCard({
-    required this.session,
-    required this.onDisconnect,
-    this.onViewNotebook,
-    required this.onViewMemory,
-  });
-
-  IconData _getAgentIcon() {
-    final name = session.agentName.toLowerCase();
-    if (name.contains('claude')) return Icons.smart_toy_outlined;
-    if (name.contains('kiro')) return Icons.auto_awesome;
-    if (name.contains('openclaw') || name.contains('cursor')) return Icons.code;
-    if (name.contains('copilot')) return Icons.assistant;
-    return Icons.terminal;
-  }
-
-  Color _statusColor() {
-    switch (session.status.toLowerCase()) {
-      case 'active':
-        return const Color(0xFF22C55E);
-      case 'expired':
-        return const Color(0xFFF59E0B);
-      case 'disconnected':
-        return const Color(0xFFEF4444);
-      default:
-        return const Color(0xFF64748B);
-    }
-  }
-
-  String _memoryHeadline() {
-    if (!session.hasMemory) {
-      return 'Memory bank is empty';
-    }
-    switch (session.memoryLongTermStatus) {
-      case 'durable':
-        return 'Long-term memory is protected';
-      case 'warming':
-        return 'Checkpointing is warming up';
-      default:
-        return 'Working memory is live';
-    }
-  }
-
-  String _memorySubtitle() {
-    if (!session.hasMemory) {
-      return 'This agent has not written MCP memory yet.';
-    }
-    final namespaces = session.memoryNamespaces.length;
-    if (session.totalCheckpoints > 0) {
-      return '$namespaces namespaces synced with ${session.totalCheckpoints} long-term checkpoints.';
-    }
-    if (session.totalHistoryItems > 0) {
-      return '$namespaces namespaces tracking ${session.totalHistoryItems} recent history items.';
-    }
-    return '$namespaces namespaces saved and ready for future checkpoints.';
-  }
-
-  Color _memoryAccent(BuildContext context) {
-    if (!session.hasMemory) {
-      return Theme.of(context).colorScheme.outline;
-    }
-    switch (session.memoryLongTermStatus) {
-      case 'durable':
-        return const Color(0xFF14B8A6);
-      case 'warming':
-        return const Color(0xFFF59E0B);
-      default:
-        return Theme.of(context).colorScheme.primary;
-    }
-  }
-
-  String _formatTimeAgo(DateTime dateTime) {
-    final now = DateTime.now();
-    final difference = now.difference(dateTime);
-
-    if (difference.inDays > 30) {
-      return '${(difference.inDays / 30).floor()} months ago';
-    } else if (difference.inDays > 0) {
-      return '${difference.inDays} days ago';
-    } else if (difference.inHours > 0) {
-      return '${difference.inHours} hours ago';
-    } else if (difference.inMinutes > 0) {
-      return '${difference.inMinutes} minutes ago';
-    }
-    return 'Just now';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final text = Theme.of(context).textTheme;
-    final statusColor = _statusColor();
-    final memoryAccent = _memoryAccent(context);
-    final notebookLabel = session.notebookTitle ?? 'Notebook unavailable';
-
-    return Container(
-      decoration: BoxDecoration(
-        color: scheme.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: scheme.outline.withValues(alpha: 0.1),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: scheme.shadow.withValues(alpha: 0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  statusColor.withValues(alpha: 0.12),
-                  memoryAccent.withValues(alpha: 0.08),
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(16)),
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: scheme.surface.withValues(alpha: 0.72),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: statusColor.withValues(alpha: 0.2),
-                    ),
-                  ),
-                  child: Icon(
-                    _getAgentIcon(),
-                    size: 24,
-                    color: statusColor,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        session.agentName,
-                        style: text.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      AgentNotebookBadge(
-                        agentName: session.agentIdentifier,
-                        status: session.status,
-                        compact: true,
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        _memoryHeadline(),
-                        style: text.bodyMedium?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        _memorySubtitle(),
-                        style: text.bodySmall?.copyWith(
-                          color: scheme.secondaryText,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    _StatusChip(status: session.status),
-                    const SizedBox(height: 6),
-                    _MemoryHealthChip(
-                      hasMemory: session.hasMemory,
-                      namespaceCount: session.memoryNamespaces.length,
-                      updatedAt: session.memoryUpdatedAt,
-                      longTermStatus: session.memoryLongTermStatus,
-                      checkpointCount: session.totalCheckpoints,
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: memoryAccent.withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: memoryAccent.withValues(alpha: 0.15),
-                    ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Icon(
-                            LucideIcons.bookOpen,
-                            size: 16,
-                            color: memoryAccent,
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              notebookLabel,
-                              style: text.titleSmall?.copyWith(
-                                fontWeight: FontWeight.w700,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        session.notebookId != null
-                            ? 'Notebook-linked memory keeps agent context, saved code, and follow-up work connected over time.'
-                            : 'This agent session is active, but it is not attached to a notebook yet.',
-                        style: text.bodySmall?.copyWith(
-                          color: scheme.secondaryText,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 14),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: [
-                    _SessionSignalChip(
-                      icon: LucideIcons.layers,
-                      label: 'Namespaces',
-                      value: session.memoryNamespaces.length.toString(),
-                      color: scheme.primary,
-                    ),
-                    _SessionSignalChip(
-                      icon: LucideIcons.history,
-                      label: 'History',
-                      value: session.totalHistoryItems.toString(),
-                      color: const Color(0xFF6366F1),
-                    ),
-                    _SessionSignalChip(
-                      icon: LucideIcons.archive,
-                      label: 'Checkpoints',
-                      value: session.totalCheckpoints.toString(),
-                      color: const Color(0xFF14B8A6),
-                    ),
-                    _SessionSignalChip(
-                      icon: LucideIcons.database,
-                      label: 'Structured',
-                      value: session.totalStructuredItems.toString(),
-                      color: const Color(0xFFF97316),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 14),
-                _DetailRow(
-                  icon: LucideIcons.clock,
-                  label: 'Last Activity',
-                  value: _formatTimeAgo(session.lastActivity),
-                ),
-                const SizedBox(height: 8),
-                _DetailRow(
-                  icon: LucideIcons.calendar,
-                  label: 'Connected',
-                  value: _formatTimeAgo(session.createdAt),
-                ),
-                const SizedBox(height: 8),
-                _DetailRow(
-                  icon: LucideIcons.brain,
-                  label: 'Memory',
-                  value: session.hasMemory
-                      ? '${session.memoryNamespaces.length} namespaces, ${session.totalHistoryItems} history items'
-                      : 'No memory saved',
-                ),
-                if (session.memoryUpdatedAt != null) ...[
-                  const SizedBox(height: 8),
-                  _DetailRow(
-                    icon: LucideIcons.clock3,
-                    label: 'Memory Updated',
-                    value: _formatTimeAgo(session.memoryUpdatedAt!),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              border: Border(
-                top: BorderSide(
-                  color: scheme.outline.withValues(alpha: 0.1),
-                ),
-              ),
-            ),
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                OutlinedButton.icon(
-                  onPressed: onViewMemory,
-                  icon: const Icon(LucideIcons.brain, size: 16),
-                  label: const Text('Inspect Memory'),
-                ),
-                if (onViewNotebook != null)
-                  OutlinedButton.icon(
-                    onPressed: onViewNotebook,
-                    icon: const Icon(LucideIcons.externalLink, size: 16),
-                    label: const Text('Open Notebook'),
-                  ),
-                if (session.isActive)
-                  FilledButton.icon(
-                    onPressed: onDisconnect,
-                    icon: const Icon(LucideIcons.unplug, size: 16),
-                    label: const Text('Disconnect'),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: scheme.error,
-                    ),
-                  ),
-                if (session.isExpired || session.isDisconnected)
-                  OutlinedButton.icon(
-                    onPressed: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text(
-                            'To reconnect, use the coding agent to create a new session',
-                          ),
-                        ),
-                      );
-                    },
-                    icon: const Icon(LucideIcons.refreshCw, size: 16),
-                    label: const Text('Reconnect Info'),
-                  ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SessionSignalChip extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String value;
-  final Color color;
-
-  const _SessionSignalChip({
-    required this.icon,
-    required this.label,
-    required this.value,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      width: 136,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: color.withValues(alpha: 0.16),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, size: 16, color: color),
-          const SizedBox(height: 10),
-          Text(
-            value,
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  color: color,
-                ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            label,
-            style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  color: scheme.secondaryText,
-                  fontWeight: FontWeight.w600,
-                ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Status chip widget
-class _StatusChip extends StatelessWidget {
-  final String status;
-
-  const _StatusChip({required this.status});
-
-  Color _getColor() {
-    switch (status.toLowerCase()) {
-      case 'active':
-        return const Color(0xFF22C55E);
-      case 'expired':
-        return const Color(0xFFF59E0B);
-      case 'disconnected':
-        return const Color(0xFFEF4444);
-      default:
-        return Colors.grey;
-    }
-  }
-
-  String _getLabel() {
-    switch (status.toLowerCase()) {
-      case 'active':
-        return 'Active';
-      case 'expired':
-        return 'Expired';
-      case 'disconnected':
-        return 'Disconnected';
-      default:
-        return status;
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final color = _getColor();
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: color.withValues(alpha: 0.3),
-        ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 6,
-            height: 6,
-            decoration: BoxDecoration(
-              color: color,
-              shape: BoxShape.circle,
-            ),
-          ),
-          const SizedBox(width: 6),
-          Text(
-            _getLabel(),
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              color: color,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _MemoryHealthChip extends StatelessWidget {
-  final bool hasMemory;
-  final int namespaceCount;
-  final DateTime? updatedAt;
-  final String longTermStatus;
-  final int checkpointCount;
-
-  const _MemoryHealthChip({
-    required this.hasMemory,
-    required this.namespaceCount,
-    required this.updatedAt,
-    required this.longTermStatus,
-    required this.checkpointCount,
-  });
-
-  Color _resolvedColor() {
-    if (!hasMemory) {
-      return const Color(0xFF9CA3AF);
-    }
-    if (longTermStatus == 'durable' || checkpointCount > 0) {
-      return const Color(0xFF14B8A6);
-    }
-    if (longTermStatus == 'warming') {
-      return const Color(0xFFF59E0B);
-    }
-    return _chipColor();
-  }
-
-  String _resolvedLabel() {
-    if (!hasMemory) {
-      return 'Memory empty';
-    }
-    if (longTermStatus == 'durable' || checkpointCount > 0) {
-      return '$checkpointCount checkpoints';
-    }
-    if (longTermStatus == 'warming') {
-      return 'Long-term warming';
-    }
-    if (updatedAt == null) {
-      return '$namespaceCount namespaces';
-    }
-    final age = DateTime.now().difference(updatedAt!);
-    if (age.inHours < 1) {
-      return '$namespaceCount ns - fresh';
-    }
-    if (age.inDays < 1) {
-      return '$namespaceCount ns - ${age.inHours}h';
-    }
-    return '$namespaceCount ns - ${age.inDays}d';
-  }
-
-  Color _chipColor() {
-    if (!hasMemory) {
-      return const Color(0xFF9CA3AF);
-    }
-    if (updatedAt == null) {
-      return const Color(0xFF10B981);
-    }
-    final age = DateTime.now().difference(updatedAt!);
-    if (age.inDays <= 1) {
-      return const Color(0xFF22C55E);
-    }
-    if (age.inDays <= 7) {
-      return const Color(0xFFF59E0B);
-    }
-    return const Color(0xFFEF4444);
-  }
-
-  // ignore: unused_element
-  String _label() {
-    if (!hasMemory) {
-      return 'Memory empty';
-    }
-    if (updatedAt == null) {
-      return '$namespaceCount namespaces';
-    }
-    final age = DateTime.now().difference(updatedAt!);
-    if (age.inHours < 1) {
-      return '$namespaceCount ns · fresh';
-    }
-    if (age.inDays < 1) {
-      return '$namespaceCount ns · ${age.inHours}h';
-    }
-    return '$namespaceCount ns · ${age.inDays}d';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final color = _resolvedColor();
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: color.withValues(alpha: 0.3)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(LucideIcons.brain, size: 10, color: color),
-          const SizedBox(width: 5),
-          Text(
-            _resolvedLabel(),
-            style: TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.w600,
-              color: color,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Detail row widget
-class _DetailRow extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String value;
-
-  const _DetailRow({
-    required this.icon,
-    required this.label,
-    required this.value,
-  });
+class _Brand extends StatelessWidget {
+  const _Brand();
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, size: 16, color: scheme.secondaryText),
-        const SizedBox(width: 8),
-        Text(
-          '$label:',
-          style: TextStyle(
-            fontSize: 13,
-            color: scheme.secondaryText,
+        Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            color: scheme.primary,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(
+            LucideIcons.brainCircuit,
+            color: scheme.onPrimary,
+            size: 20,
           ),
         ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            value,
-            style: const TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w500,
+        const SizedBox(width: 11),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'NoteClaw',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.3,
+                  ),
             ),
-            overflow: TextOverflow.ellipsis,
+            Text(
+              'AGENT MEMORY',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    fontSize: 9,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.2,
+                    color: scheme.primary,
+                  ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _WorkspaceHeader extends StatelessWidget {
+  const _WorkspaceHeader({required this.state});
+
+  final MemoryWorkspaceState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return _Panel(
+      padding: const EdgeInsets.all(24),
+      color: scheme.surface,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final copy = Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: scheme.primary.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  'PRIVATE WORKSPACE',
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: scheme.primary,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.9,
+                      ),
+                ),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                'Shared memory for every agent on your project.',
+                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.8,
+                      height: 1.12,
+                    ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'Agents on this account can restore durable settings, share '
+                'project context in real time, and request focused code reviews.',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                      height: 1.55,
+                    ),
+              ),
+            ],
+          );
+
+          final status = Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: scheme.outlineVariant),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _LiveDot(active: state.liveConnections > 0),
+                const SizedBox(width: 10),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      state.liveConnections > 0 ? 'Memory live' : 'Ready',
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    Text(
+                      state.liveConnections > 0
+                          ? '${state.liveConnections} active connection${state.liveConnections == 1 ? '' : 's'}'
+                          : 'Waiting for an agent',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                          ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          );
+
+          if (constraints.maxWidth < 680) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                copy,
+                const SizedBox(height: 20),
+                Align(alignment: Alignment.centerLeft, child: status),
+              ],
+            );
+          }
+
+          return Row(
+            children: [
+              Expanded(child: copy),
+              const SizedBox(width: 28),
+              status,
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _MetricStrip extends StatelessWidget {
+  const _MetricStrip({required this.state});
+
+  final MemoryWorkspaceState state;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final count = constraints.maxWidth >= 700
+            ? 3
+            : constraints.maxWidth >= 430
+                ? 2
+                : 1;
+        const gap = 12.0;
+        final width = (constraints.maxWidth - gap * (count - 1)) / count;
+        return Wrap(
+          spacing: gap,
+          runSpacing: gap,
+          children: [
+            _Metric(
+              width: width,
+              icon: LucideIcons.library,
+              value: '${state.notebooks.length}',
+              label: 'Memory notebooks',
+            ),
+            _Metric(
+              width: width,
+              icon: LucideIcons.layers,
+              value: '${state.sourceCount}',
+              label: 'Namespace sources',
+            ),
+            _Metric(
+              width: width,
+              icon: LucideIcons.radio,
+              value: '${state.liveConnections}',
+              label: 'Agents live',
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _Metric extends StatelessWidget {
+  const _Metric({
+    required this.width,
+    required this.icon,
+    required this.value,
+    required this.label,
+  });
+
+  final double width;
+  final IconData icon;
+  final String value;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return SizedBox(
+      width: width,
+      child: _Panel(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Icon(icon, size: 19, color: scheme.primary),
+            const SizedBox(width: 12),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  value,
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                ),
+                Text(
+                  label,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TopicAccessPanel extends ConsumerStatefulWidget {
+  const _TopicAccessPanel({required this.matrix});
+
+  final Map<String, dynamic> matrix;
+
+  @override
+  ConsumerState<_TopicAccessPanel> createState() => _TopicAccessPanelState();
+}
+
+class _TopicAccessPanelState extends ConsumerState<_TopicAccessPanel> {
+  String? _agentId;
+  Set<String> _selectedTopicIds = {};
+  bool _saving = false;
+
+  List<Map<String, dynamic>> get _agents =>
+      List<dynamic>.from(widget.matrix['agents'] as List? ?? const [])
+          .whereType<Map>()
+          .map((row) => Map<String, dynamic>.from(row))
+          .toList(growable: false);
+
+  List<Map<String, dynamic>> get _topics =>
+      List<dynamic>.from(widget.matrix['topics'] as List? ?? const [])
+          .whereType<Map>()
+          .map((row) => Map<String, dynamic>.from(row))
+          .toList(growable: false);
+
+  List<Map<String, dynamic>> get _grants =>
+      List<dynamic>.from(widget.matrix['grants'] as List? ?? const [])
+          .whereType<Map>()
+          .map((row) => Map<String, dynamic>.from(row))
+          .toList(growable: false);
+
+  @override
+  void initState() {
+    super.initState();
+    _syncSelection();
+  }
+
+  @override
+  void didUpdateWidget(covariant _TopicAccessPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.matrix != widget.matrix) _syncSelection();
+  }
+
+  void _syncSelection() {
+    final agents = _agents;
+    if (agents.isEmpty) {
+      _agentId = null;
+      _selectedTopicIds = {};
+      return;
+    }
+    final knownAgent = agents.any((agent) => agent['id'] == _agentId);
+    _selectAgent(
+      knownAgent ? _agentId! : agents.first['id']?.toString() ?? '',
+      rebuild: false,
+    );
+  }
+
+  void _selectAgent(String id, {bool rebuild = true}) {
+    void update() {
+      _agentId = id;
+      _selectedTopicIds = _grants
+          .where((grant) =>
+              grant['agentSessionId'] == id && grant['canRead'] == true)
+          .map((grant) => grant['notebookId']?.toString() ?? '')
+          .where((topicId) => topicId.isNotEmpty)
+          .toSet();
+    }
+
+    if (rebuild) {
+      setState(update);
+    } else {
+      update();
+    }
+  }
+
+  Future<void> _save() async {
+    final agentId = _agentId;
+    if (agentId == null || agentId.isEmpty) return;
+    setState(() => _saving = true);
+    try {
+      await ref.read(apiServiceProvider).updateAgentTopicAccess(
+            agentId,
+            _selectedTopicIds.toList(growable: false),
+          );
+      await ref.read(memoryWorkspaceProvider.notifier).refresh();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Agent topic access updated')),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(_friendlyError(error))),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _createTopic() async {
+    final agentId = _agentId;
+    if (agentId == null || agentId.isEmpty) return;
+    final controller = TextEditingController();
+    final title = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('New topic notebook'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLength: 120,
+          textInputAction: TextInputAction.done,
+          onSubmitted: (value) {
+            if (value.trim().isNotEmpty) {
+              Navigator.pop(dialogContext, value.trim());
+            }
+          },
+          decoration: const InputDecoration(
+            labelText: 'Topic name',
+            hintText: 'e.g. Product launch',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (controller.text.trim().isNotEmpty) {
+                Navigator.pop(dialogContext, controller.text.trim());
+              }
+            },
+            child: const Text('Create'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (title == null || title.isEmpty || !mounted) return;
+
+    setState(() => _saving = true);
+    try {
+      final api = ref.read(apiServiceProvider);
+      final topic = await api.createNotebook(
+        title: title,
+        description: 'Topic notebook for organized memories and sources',
+        category: 'Agent memory topic',
+      );
+      final topicId = topic['id']?.toString() ?? '';
+      if (topicId.isEmpty) throw Exception('The topic was not created.');
+      final nextIds = {..._selectedTopicIds, topicId};
+      await api.updateAgentTopicAccess(agentId, nextIds.toList(growable: false));
+      _selectedTopicIds = nextIds;
+      await ref.read(memoryWorkspaceProvider.notifier).refresh();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Topic “$title” created')),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(_friendlyError(error))),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final agents = _agents;
+    final topics = _topics;
+
+    return _Panel(
+      padding: const EdgeInsets.all(20),
+      color: scheme.surface,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(9),
+                decoration: BoxDecoration(
+                  color: scheme.primary.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child: Icon(
+                  LucideIcons.shieldCheck,
+                  color: scheme.primary,
+                  size: 19,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Topic access',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w800,
+                          ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Each notebook is a topic. Choose the memories and sources '
+                      'each agent may read through MCP.',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                            height: 1.45,
+                          ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          if (agents.isEmpty)
+            Text(
+              'Connect an agent and call memory_session_open to manage its topics.',
+              style: TextStyle(color: scheme.onSurfaceVariant),
+            )
+          else ...[
+            DropdownButtonFormField<String>(
+              initialValue: _agentId,
+              isExpanded: true,
+              decoration: const InputDecoration(
+                labelText: 'Agent',
+                prefixIcon: Icon(LucideIcons.bot, size: 18),
+              ),
+              items: agents
+                  .map(
+                    (agent) => DropdownMenuItem<String>(
+                      value: agent['id']?.toString(),
+                      child: Text(
+                        '${agent['agentName'] ?? 'Agent'} · '
+                        '${agent['agentIdentifier'] ?? ''}',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  )
+                  .toList(growable: false),
+              onChanged: (value) {
+                if (value != null) _selectAgent(value);
+              },
+            ),
+            const SizedBox(height: 14),
+            if (topics.isEmpty)
+              Text(
+                'No topic notebooks are available yet.',
+                style: TextStyle(color: scheme.onSurfaceVariant),
+              )
+            else
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: topics.map((topic) {
+                  final topicId = topic['id']?.toString() ?? '';
+                  final selected = _selectedTopicIds.contains(topicId);
+                  return FilterChip(
+                    selected: selected,
+                    showCheckmark: true,
+                    avatar: const Icon(LucideIcons.bookOpen, size: 15),
+                    label: Text(
+                      '${topic['title'] ?? 'Untitled'} '
+                      '(${topic['sourceCount'] ?? 0})',
+                    ),
+                    onSelected: (value) {
+                      setState(() {
+                        if (value) {
+                          _selectedTopicIds.add(topicId);
+                        } else {
+                          _selectedTopicIds.remove(topicId);
+                        }
+                      });
+                    },
+                  );
+                }).toList(growable: false),
+              ),
+            const SizedBox(height: 16),
+            Wrap(
+              alignment: WrapAlignment.end,
+              spacing: 10,
+              runSpacing: 8,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: _saving ? null : _createTopic,
+                  icon: const Icon(LucideIcons.plus, size: 17),
+                  label: const Text('New topic'),
+                ),
+                FilledButton.icon(
+                  onPressed: _saving ? null : _save,
+                  icon: _saving
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(LucideIcons.save, size: 17),
+                  label: const Text('Save access'),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _NotebookSection extends StatelessWidget {
+  const _NotebookSection({required this.state});
+
+  final MemoryWorkspaceState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _SectionHeader(
+          title: 'Memory notebooks',
+          subtitle:
+              'One readable notebook per shared agent or project session.',
+          trailing: state.isLoading && state.notebooks.isNotEmpty
+              ? const SizedBox(
+                  width: 17,
+                  height: 17,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : null,
+        ),
+        const SizedBox(height: 12),
+        if (state.isLoading && state.notebooks.isEmpty)
+          const _LoadingPanel()
+        else if (state.error != null && state.notebooks.isEmpty)
+          _EmptyPanel(
+            icon: LucideIcons.alertCircle,
+            title: 'Could not load memory',
+            description: state.error!,
+          )
+        else if (state.notebooks.isEmpty)
+          const _EmptyPanel(
+            icon: LucideIcons.library,
+            title: 'No memory notebooks yet',
+            description:
+                'Connect an agent through MCP. Its first memory session will appear here automatically.',
+          )
+        else
+          ...state.notebooks.map(
+            (notebook) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: _NotebookCard(notebook: notebook),
+            ),
+          ),
+        if (state.error != null && state.notebooks.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              state.error!,
+              style: TextStyle(color: scheme.error, fontSize: 12),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _NotebookCard extends StatelessWidget {
+  const _NotebookCard({required this.notebook});
+
+  final MemoryNotebook notebook;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final live = notebook.session.websocketConnected;
+    return _Panel(
+      padding: EdgeInsets.zero,
+      child: InkWell(
+        onTap: () => context.push('/memory-notebooks/${notebook.id}'),
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.all(17),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final icon = Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(
+                  color: scheme.primary.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  LucideIcons.bookOpen,
+                  color: scheme.primary,
+                  size: 21,
+                ),
+              );
+              final content = Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          notebook.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style:
+                              Theme.of(context).textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      if (notebook.isAgentNotebook)
+                        _StatusBadge(live: live)
+                      else
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: scheme.primary.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            'TOPIC',
+                            style: TextStyle(
+                              color: scheme.primary,
+                              fontSize: 9,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.7,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    notebook.isAgentNotebook
+                        ? notebook.session.agentIdentifier
+                        : (notebook.description.isNotEmpty
+                            ? notebook.description
+                            : 'Notebook memories and sources'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                          fontFamily: 'monospace',
+                        ),
+                  ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 6,
+                    children: [
+                      _Meta(
+                        icon: LucideIcons.layers,
+                        text:
+                            '${notebook.sourceCount} source${notebook.sourceCount == 1 ? '' : 's'}',
+                      ),
+                      _Meta(
+                        icon: LucideIcons.clock3,
+                        text: _relativeTime(notebook.updatedAt),
+                      ),
+                      const _Meta(
+                        icon: LucideIcons.messageSquare,
+                        text: 'Chat ready',
+                      ),
+                    ],
+                  ),
+                ],
+              );
+
+              if (constraints.maxWidth < 430) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    icon,
+                    const SizedBox(height: 13),
+                    content,
+                  ],
+                );
+              }
+
+              return Row(
+                children: [
+                  icon,
+                  const SizedBox(width: 14),
+                  Expanded(child: content),
+                  const SizedBox(width: 10),
+                  Icon(
+                    LucideIcons.chevronRight,
+                    color: scheme.onSurfaceVariant,
+                    size: 19,
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AgentToolsCard extends StatelessWidget {
+  const _AgentToolsCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return const _Panel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _SectionHeader(
+            title: 'Agent tools',
+            subtitle: 'A compact MCP surface with a clear purpose.',
+          ),
+          SizedBox(height: 16),
+          _ToolRow(
+            icon: LucideIcons.database,
+            title: 'Durable memory',
+            description: 'Read, write, compact, and restore project context.',
+            label: '7 tools',
+          ),
+          Divider(height: 25),
+          _ToolRow(
+            icon: LucideIcons.code2,
+            title: 'Code review',
+            description:
+                'Check correctness, security, and maintainability before shipping.',
+            label: 'review_code',
+          ),
+          Divider(height: 25),
+          _ToolRow(
+            icon: LucideIcons.search,
+            title: 'Web & deep research',
+            description:
+                'Search current sources, build cited reports, and save them to notebooks.',
+            label: '5 tools',
+          ),
+          Divider(height: 25),
+          _ToolRow(
+            icon: LucideIcons.radio,
+            title: 'Live collaboration',
+            description:
+                'Multiple agents share one session over authenticated WebSocket.',
+            label: 'real time',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ToolRow extends StatelessWidget {
+  const _ToolRow({
+    required this.icon,
+    required this.title,
+    required this.description,
+    required this.label,
+  });
+
+  final IconData icon;
+  final String title;
+  final String description;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 38,
+          height: 38,
+          decoration: BoxDecoration(
+            color: scheme.primary.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(icon, color: scheme.primary, size: 18),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                  ),
+                  Text(
+                    label,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: scheme.primary,
+                          fontWeight: FontWeight.w700,
+                          fontFamily: label.contains('_') ? 'monospace' : null,
+                        ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                description,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                      height: 1.45,
+                    ),
+              ),
+            ],
           ),
         ),
       ],
     );
   }
+}
+
+class _ConnectionCard extends StatelessWidget {
+  const _ConnectionCard();
+
+  Future<void> _copy(BuildContext context) async {
+    const command = 'npx -y @noteclaw/mcp-server';
+    await Clipboard.setData(const ClipboardData(text: command));
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('MCP command copied')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return _Panel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const _SectionHeader(
+            title: 'Connect an agent',
+            subtitle: 'Use one account token in any MCP-compatible client.',
+          ),
+          const SizedBox(height: 15),
+          Container(
+            padding: const EdgeInsets.all(13),
+            decoration: BoxDecoration(
+              color: scheme.surfaceContainerHighest.withValues(alpha: 0.55),
+              borderRadius: BorderRadius.circular(11),
+              border: Border.all(color: scheme.outlineVariant),
+            ),
+            child: Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'npx -y @noteclaw/mcp-server',
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontFamily: 'monospace', fontSize: 12),
+                  ),
+                ),
+                IconButton(
+                  onPressed: () => _copy(context),
+                  tooltip: 'Copy MCP command',
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(LucideIcons.copy, size: 17),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'Set NOTECLAW_API_TOKEN, then use the same project identifier on '
+            'every agent that should share memory.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                  height: 1.5,
+                ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TokenAccessCard extends ConsumerWidget {
+  const _TokenAccessCard();
+
+  void _createToken(BuildContext context, WidgetRef ref) {
+    showDialog<void>(
+      context: context,
+      builder: (context) => TokenGenerationDialog(
+        onGenerate: (name, expiresAt) =>
+            ref.read(apiTokensProvider.notifier).generateToken(name, expiresAt),
+      ),
+    );
+  }
+
+  void _revokeToken(BuildContext context, WidgetRef ref, ApiToken token) {
+    showDialog<void>(
+      context: context,
+      builder: (context) => RevokeTokenDialog(
+        token: token,
+        onRevoke: () =>
+            ref.read(apiTokensProvider.notifier).revokeToken(token.id),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(apiTokensProvider);
+    final scheme = Theme.of(context).colorScheme;
+
+    return _Panel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          LayoutBuilder(
+            builder: (context, constraints) {
+              const header = _SectionHeader(
+                title: 'MCP access',
+                subtitle:
+                    'Tokens authenticate both MCP calls and WebSocket sessions.',
+              );
+              final button = FilledButton.icon(
+                onPressed: state.canCreateMore
+                    ? () => _createToken(context, ref)
+                    : null,
+                icon: const Icon(LucideIcons.plus, size: 17),
+                label: const Text('New token'),
+              );
+              if (constraints.maxWidth < 560) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    header,
+                    const SizedBox(height: 14),
+                    button,
+                  ],
+                );
+              }
+              return Row(
+                children: [
+                  const Expanded(child: header),
+                  const SizedBox(width: 18),
+                  button,
+                ],
+              );
+            },
+          ),
+          const SizedBox(height: 16),
+          if (state.isLoading)
+            const LinearProgressIndicator()
+          else if (state.error != null)
+            Text(state.error!, style: TextStyle(color: scheme.error))
+          else if (state.tokens.isEmpty)
+            Text(
+              'Create a token to connect your first agent.',
+              style: TextStyle(color: scheme.onSurfaceVariant),
+            )
+          else
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: state.tokens
+                  .map(
+                    (token) => _TokenChip(
+                      token: token,
+                      onRevoke: () => _revokeToken(context, ref, token),
+                    ),
+                  )
+                  .toList(growable: false),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TokenChip extends StatelessWidget {
+  const _TokenChip({required this.token, required this.onRevoke});
+
+  final ApiToken token;
+  final VoidCallback onRevoke;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      constraints: const BoxConstraints(minWidth: 220, maxWidth: 340),
+      padding: const EdgeInsets.fromLTRB(12, 10, 5, 10),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(11),
+        border: Border.all(color: scheme.outlineVariant),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(LucideIcons.keyRound, size: 16, color: scheme.primary),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  token.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                  ),
+                ),
+                Text(
+                  token.displayToken,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: scheme.onSurfaceVariant,
+                    fontFamily: 'monospace',
+                    fontSize: 11,
+                  ),
+                ),
+                if (token.boundAgentSessionId != null)
+                  Text(
+                    'Bound · ${token.boundAgentSessionId}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: scheme.primary,
+                      fontFamily: 'monospace',
+                      fontSize: 9,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          IconButton(
+            onPressed: onRevoke,
+            tooltip: 'Revoke token',
+            visualDensity: VisualDensity.compact,
+            icon: Icon(LucideIcons.trash2, size: 16, color: scheme.error),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SectionHeader extends StatelessWidget {
+  const _SectionHeader({
+    required this.title,
+    required this.subtitle,
+    this.trailing,
+  });
+
+  final String title;
+  final String subtitle;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                subtitle,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+              ),
+            ],
+          ),
+        ),
+        if (trailing != null) ...[
+          const SizedBox(width: 12),
+          trailing!,
+        ],
+      ],
+    );
+  }
+}
+
+class _Panel extends StatelessWidget {
+  const _Panel({
+    required this.child,
+    this.padding = const EdgeInsets.all(18),
+    this.color,
+  });
+
+  final Widget child;
+  final EdgeInsetsGeometry padding;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: color ?? scheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: scheme.outlineVariant),
+        boxShadow: [
+          BoxShadow(
+            color: scheme.shadow.withValues(alpha: 0.04),
+            blurRadius: 24,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Padding(padding: padding, child: child),
+    );
+  }
+}
+
+class _LiveDot extends StatelessWidget {
+  const _LiveDot({required this.active});
+
+  final bool active;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = active ? const Color(0xFF36B7B4) : const Color(0xFF8D8792);
+    return Container(
+      width: 10,
+      height: 10,
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(color: color.withValues(alpha: 0.35), blurRadius: 7),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatusBadge extends StatelessWidget {
+  const _StatusBadge({required this.live});
+
+  final bool live;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final color = live ? const Color(0xFF278E92) : scheme.onSurfaceVariant;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _LiveDot(active: live),
+          const SizedBox(width: 6),
+          Text(
+            live ? 'Live' : 'Stored',
+            style: TextStyle(
+              color: color,
+              fontWeight: FontWeight.w700,
+              fontSize: 11,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Meta extends StatelessWidget {
+  const _Meta({required this.icon, required this.text});
+
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Theme.of(context).colorScheme.onSurfaceVariant;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 13, color: color),
+        const SizedBox(width: 5),
+        Text(text, style: TextStyle(color: color, fontSize: 11)),
+      ],
+    );
+  }
+}
+
+class _LoadingPanel extends StatelessWidget {
+  const _LoadingPanel();
+
+  @override
+  Widget build(BuildContext context) {
+    return const _Panel(
+      child: SizedBox(
+        height: 130,
+        child: Center(child: CircularProgressIndicator()),
+      ),
+    );
+  }
+}
+
+class _EmptyPanel extends StatelessWidget {
+  const _EmptyPanel({
+    required this.icon,
+    required this.title,
+    required this.description,
+  });
+
+  final IconData icon;
+  final String title;
+  final String description;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return _Panel(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 24),
+        child: Column(
+          children: [
+            Icon(icon, size: 28, color: scheme.primary),
+            const SizedBox(height: 12),
+            Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+            const SizedBox(height: 6),
+            Text(
+              description,
+              textAlign: TextAlign.center,
+              style: TextStyle(color: scheme.onSurfaceVariant, height: 1.45),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+String _relativeTime(DateTime? date) {
+  if (date == null) return 'No updates yet';
+  final difference = DateTime.now().difference(date);
+  if (difference.inMinutes < 1) return 'Updated now';
+  if (difference.inMinutes < 60) return '${difference.inMinutes}m ago';
+  if (difference.inHours < 24) return '${difference.inHours}h ago';
+  if (difference.inDays < 7) return '${difference.inDays}d ago';
+  return '${date.day}/${date.month}/${date.year}';
+}
+
+String _friendlyError(Object error) {
+  final message = error.toString();
+  return message.startsWith('Exception: ')
+      ? message.substring('Exception: '.length)
+      : message;
 }

@@ -70,6 +70,14 @@ class AgentSessionService {
       `INSERT INTO agent_sessions 
        (id, user_id, agent_name, agent_identifier, webhook_url, webhook_secret, status, metadata, last_activity, created_at)
        VALUES ($1, $2, $3, $4, $5, $6, 'active', $7, NOW(), NOW())
+       ON CONFLICT (user_id, agent_identifier)
+       DO UPDATE SET
+         agent_name = EXCLUDED.agent_name,
+         webhook_url = COALESCE(EXCLUDED.webhook_url, agent_sessions.webhook_url),
+         webhook_secret = COALESCE(EXCLUDED.webhook_secret, agent_sessions.webhook_secret),
+         status = 'active',
+         metadata = COALESCE(agent_sessions.metadata, '{}'::jsonb) || EXCLUDED.metadata,
+         last_activity = NOW()
        RETURNING *`,
       [sessionId, userId, agentName, agentIdentifier, webhookUrl, webhookSecret, JSON.stringify(metadata)]
     );

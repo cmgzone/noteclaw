@@ -23,15 +23,36 @@ import {
     Crown,
     Settings,
     Sparkles,
+    BookOpen,
+    LockKeyhole,
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { useAuth } from "@/lib/auth-context";
-import api, { ApiToken, McpStats, McpUsageEntry, VerifiedSource, AgentNotebook, McpQuota, McpUserSettings, AIModelOption } from "@/lib/api";
+import api, {
+    ApiToken,
+    McpStats,
+    McpUsageEntry,
+    VerifiedSource,
+    AgentNotebook,
+    McpQuota,
+    McpUserSettings,
+    AIModelOption,
+    TopicAccessMatrix,
+} from "@/lib/api";
+import SubscriptionFeatureGate from "@/components/subscription-feature-gate";
 
 export default function McpDashboardPage() {
+    return (
+        <SubscriptionFeatureGate feature="memory_bank">
+            <McpDashboardContent />
+        </SubscriptionFeatureGate>
+    );
+}
+
+function McpDashboardContent() {
     const { user, isLoading: authLoading, isAuthenticated, logout } = useAuth();
     const router = useRouter();
     const [stats, setStats] = useState<McpStats | null>(null);
@@ -42,8 +63,9 @@ export default function McpDashboardPage() {
     const [notebooks, setNotebooks] = useState<AgentNotebook[]>([]);
     const [settings, setSettings] = useState<McpUserSettings | null>(null);
     const [aiModels, setAiModels] = useState<AIModelOption[]>([]);
+    const [topicAccess, setTopicAccess] = useState<TopicAccessMatrix | null>(null);
     const [isLoading, setIsLoading] = useState(true);
-    const [activeTab, setActiveTab] = useState<"overview" | "tokens" | "usage" | "sources" | "settings">("overview");
+    const [activeTab, setActiveTab] = useState<"overview" | "tokens" | "topics" | "usage" | "sources" | "settings">("overview");
 
     useEffect(() => {
         if (!authLoading && !isAuthenticated) {
@@ -58,7 +80,7 @@ export default function McpDashboardPage() {
     const loadData = async () => {
         setIsLoading(true);
         try {
-            const [statsData, quotaData, tokensData, usageData, sourcesData, notebooksData, settingsData, modelsData] = await Promise.all([
+            const [statsData, quotaData, tokensData, usageData, sourcesData, notebooksData, settingsData, modelsData, topicAccessData] = await Promise.all([
                 api.getMcpStats().catch(() => null),
                 api.getMcpQuota().catch(() => null),
                 api.getApiTokens().catch(() => []),
@@ -67,6 +89,7 @@ export default function McpDashboardPage() {
                 api.getAgentNotebooks().catch(() => []),
                 api.getMcpSettings().catch(() => null),
                 api.getAIModels().catch(() => []),
+                api.getAgentTopicAccess().catch(() => null),
             ]);
             setStats(statsData);
             setQuota(quotaData);
@@ -76,6 +99,7 @@ export default function McpDashboardPage() {
             setNotebooks(notebooksData);
             setSettings(settingsData);
             setAiModels(modelsData);
+            setTopicAccess(topicAccessData);
         } catch (error) {
             console.error("Failed to load MCP data:", error);
         } finally {
@@ -131,8 +155,8 @@ export default function McpDashboardPage() {
                 </header>
 
                 {/* Tabs */}
-                <div className="flex gap-2 mb-6 border-b border-white/10 pb-4">
-                    {(["overview", "tokens", "usage", "sources", "settings"] as const).map((tab) => (
+                <div className="mb-6 flex max-w-full gap-2 overflow-x-auto border-b border-white/10 pb-4">
+                    {(["overview", "tokens", "topics", "usage", "sources", "settings"] as const).map((tab) => (
                         <button
                             key={tab}
                             onClick={() => setActiveTab(tab)}
@@ -141,6 +165,7 @@ export default function McpDashboardPage() {
                             }`}
                         >
                             {tab === "settings" && <Settings size={14} />}
+                            {tab === "topics" && <BookOpen size={14} />}
                             {tab.charAt(0).toUpperCase() + tab.slice(1)}
                         </button>
                     ))}
@@ -154,6 +179,7 @@ export default function McpDashboardPage() {
                     <>
                         {activeTab === "overview" && <OverviewTab stats={stats} quota={quota} tokens={tokens} usage={usage} notebooks={notebooks} />}
                         {activeTab === "tokens" && <TokensTab tokens={tokens} quota={quota} onRefresh={loadData} />}
+                        {activeTab === "topics" && <TopicsTab matrix={topicAccess} onRefresh={loadData} />}
                         {activeTab === "usage" && <UsageTab usage={usage} quota={quota} />}
                         {activeTab === "sources" && <SourcesTab sources={sources} quota={quota} />}
                         {activeTab === "settings" && <SettingsTab settings={settings} aiModels={aiModels} onRefresh={loadData} />}
@@ -461,14 +487,14 @@ function TokensTab({ tokens, quota, onRefresh }: { tokens: ApiToken[]; quota: Mc
             )}
 
             {/* Token List */}
-            <div className="rounded-xl border border-white/5 bg-neutral-900/50 overflow-hidden">
+            <div className="max-w-full overflow-x-auto rounded-xl border border-white/5 bg-neutral-900/50">
                 {tokens.length === 0 ? (
                     <div className="p-8 text-center text-neutral-500">
                         <Key size={40} className="mx-auto mb-4 opacity-50" />
                         <p>No API tokens yet. Create one to connect coding agents.</p>
                     </div>
                 ) : (
-                    <table className="w-full">
+                    <table className="w-full min-w-[760px]">
                         <thead className="bg-white/5">
                             <tr>
                                 <th className="text-left px-6 py-3 text-sm font-medium text-neutral-400">Name</th>
@@ -481,7 +507,14 @@ function TokensTab({ tokens, quota, onRefresh }: { tokens: ApiToken[]; quota: Mc
                         <tbody className="divide-y divide-white/5">
                             {tokens.map((token) => (
                                 <tr key={token.id} className="hover:bg-white/5">
-                                    <td className="px-6 py-4 font-medium">{token.name}</td>
+                                    <td className="px-6 py-4 font-medium">
+                                        <div>{token.name}</div>
+                                        {typeof token.metadata?.boundAgentSessionId === "string" && (
+                                            <div className="mt-1 max-w-44 truncate font-mono text-[10px] font-normal text-[#62d3d0]">
+                                                Bound: {token.metadata.boundAgentSessionId}
+                                            </div>
+                                        )}
+                                    </td>
                                     <td className="px-6 py-4 font-mono text-sm text-neutral-400">
                                         {token.tokenPrefix}...{token.tokenSuffix}
                                     </td>
@@ -634,6 +667,241 @@ function SourcesTab({ sources, quota }: { sources: VerifiedSource[]; quota: McpQ
     );
 }
 
+
+function TopicsTab({
+    matrix,
+    onRefresh,
+}: {
+    matrix: TopicAccessMatrix | null;
+    onRefresh: () => void;
+}) {
+    const [selectedAgentId, setSelectedAgentId] = useState("");
+    const [selectedTopics, setSelectedTopics] = useState<Set<string>>(new Set());
+    const [isSaving, setIsSaving] = useState(false);
+    const [saved, setSaved] = useState(false);
+    const [newTopicTitle, setNewTopicTitle] = useState("");
+    const [isCreatingTopic, setIsCreatingTopic] = useState(false);
+
+    useEffect(() => {
+        if (!matrix?.agents.length) {
+            setSelectedAgentId("");
+            setSelectedTopics(new Set());
+            return;
+        }
+        const agentId = matrix.agents.some((agent) => agent.id === selectedAgentId)
+            ? selectedAgentId
+            : matrix.agents[0].id;
+        setSelectedAgentId(agentId);
+        setSelectedTopics(
+            new Set(
+                matrix.grants
+                    .filter((grant) => grant.agentSessionId === agentId && grant.canRead)
+                    .map((grant) => grant.notebookId),
+            ),
+        );
+    }, [matrix, selectedAgentId]);
+
+    const selectAgent = (agentId: string) => {
+        setSelectedAgentId(agentId);
+        setSaved(false);
+        setSelectedTopics(
+            new Set(
+                (matrix?.grants || [])
+                    .filter((grant) => grant.agentSessionId === agentId && grant.canRead)
+                    .map((grant) => grant.notebookId),
+            ),
+        );
+    };
+
+    const toggleTopic = (topicId: string) => {
+        setSaved(false);
+        setSelectedTopics((current) => {
+            const next = new Set(current);
+            if (next.has(topicId)) next.delete(topicId);
+            else next.add(topicId);
+            return next;
+        });
+    };
+
+    const save = async () => {
+        if (!selectedAgentId) return;
+        setIsSaving(true);
+        setSaved(false);
+        try {
+            await api.updateAgentTopicAccess(
+                selectedAgentId,
+                Array.from(selectedTopics),
+            );
+            setSaved(true);
+            await onRefresh();
+        } catch (error) {
+            alert(error instanceof Error ? error.message : "Could not save topic access.");
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const createTopic = async () => {
+        const title = newTopicTitle.trim();
+        if (!title || !selectedAgentId) return;
+        setIsCreatingTopic(true);
+        try {
+            const topic = await api.createNotebook({
+                title,
+                description: "Topic notebook for organized memories and sources",
+                category: "Agent memory topic",
+            });
+            const nextIds = Array.from(new Set([...selectedTopics, topic.id]));
+            await api.updateAgentTopicAccess(selectedAgentId, nextIds);
+            setSelectedTopics(new Set(nextIds));
+            setNewTopicTitle("");
+            await onRefresh();
+        } catch (error) {
+            alert(error instanceof Error ? error.message : "Could not create the topic.");
+        } finally {
+            setIsCreatingTopic(false);
+        }
+    };
+
+    if (!matrix?.agents.length) {
+        return (
+            <div className="rounded-2xl border border-white/10 bg-neutral-900/60 p-8 text-center">
+                <Bot className="mx-auto mb-4 text-[#62d3d0]" size={28} />
+                <h3 className="text-lg font-semibold">Open an agent session first</h3>
+                <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-neutral-400">
+                    Create an API token, connect the MCP server, and call
+                    {" "}<code className="text-neutral-200">memory_session_open</code>.
+                    The agent will then appear here with its own topic selected.
+                </p>
+            </div>
+        );
+    }
+
+    return (
+        <div className="space-y-6">
+            <div className="rounded-2xl border border-[#62d3d0]/20 bg-[#62d3d0]/5 p-5">
+                <div className="flex items-start gap-3">
+                    <LockKeyhole className="mt-0.5 shrink-0 text-[#62d3d0]" size={20} />
+                    <div>
+                        <h3 className="font-semibold">Topic-driven agent memory</h3>
+                        <p className="mt-1 text-sm leading-6 text-neutral-400">
+                            Each notebook is a topic. Select exactly which topics this
+                            agent may read through MCP. Sources and memory namespaces
+                            stay organized inside their topic.
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <div className="grid gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
+                <aside className="min-w-0 rounded-2xl border border-white/10 bg-neutral-900/50 p-3">
+                    <div className="px-2 pb-3 text-xs font-semibold uppercase tracking-[0.16em] text-neutral-500">
+                        Agents
+                    </div>
+                    <div className="space-y-2">
+                        {matrix.agents.map((agent) => (
+                            <button
+                                key={agent.id}
+                                onClick={() => selectAgent(agent.id)}
+                                className={`w-full min-w-0 rounded-xl border p-3 text-left transition ${
+                                    selectedAgentId === agent.id
+                                        ? "border-[#62d3d0]/40 bg-[#62d3d0]/10"
+                                        : "border-transparent bg-white/[0.03] hover:bg-white/[0.06]"
+                                }`}
+                            >
+                                <div className="truncate text-sm font-medium">{agent.agentName}</div>
+                                <div className="mt-1 truncate text-xs text-neutral-500">{agent.agentIdentifier}</div>
+                            </button>
+                        ))}
+                    </div>
+                </aside>
+
+                <section className="min-w-0 rounded-2xl border border-white/10 bg-neutral-900/50 p-5">
+                    <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                            <h3 className="font-semibold">Allowed topics</h3>
+                            <p className="mt-1 text-sm text-neutral-500">
+                                {selectedTopics.size} of {matrix.topics.length} selected
+                            </p>
+                        </div>
+                        <button
+                            onClick={save}
+                            disabled={isSaving}
+                            className="inline-flex items-center justify-center gap-2 rounded-full bg-[#62d3d0] px-5 py-2.5 text-sm font-semibold text-black transition hover:bg-[#91e2df] disabled:opacity-50"
+                        >
+                            {isSaving ? <Loader2 className="animate-spin" size={16} /> : <Check size={16} />}
+                            {saved ? "Saved" : "Save access"}
+                        </button>
+                    </div>
+
+                    <div className="mb-5 flex min-w-0 flex-col gap-2 rounded-xl border border-white/8 bg-black/20 p-3 sm:flex-row">
+                        <input
+                            value={newTopicTitle}
+                            onChange={(event) => setNewTopicTitle(event.target.value)}
+                            onKeyDown={(event) => {
+                                if (event.key === "Enter") void createTopic();
+                            }}
+                            placeholder="New topic, e.g. Product launch"
+                            maxLength={120}
+                            className="min-w-0 flex-1 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2.5 text-sm outline-none transition focus:border-[#62d3d0]/50"
+                        />
+                        <button
+                            onClick={createTopic}
+                            disabled={isCreatingTopic || !newTopicTitle.trim()}
+                            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-[#62d3d0]/30 px-4 py-2.5 text-sm font-semibold text-[#62d3d0] transition hover:bg-[#62d3d0]/10 disabled:opacity-40"
+                        >
+                            {isCreatingTopic ? <Loader2 className="animate-spin" size={15} /> : <Plus size={15} />}
+                            New topic
+                        </button>
+                    </div>
+
+                    {matrix.topics.length === 0 ? (
+                        <div className="rounded-xl border border-dashed border-white/10 p-8 text-center text-sm text-neutral-500">
+                            No notebook topics are available yet.
+                        </div>
+                    ) : (
+                        <div className="grid min-w-0 gap-3 md:grid-cols-2">
+                            {matrix.topics.map((topic) => {
+                                const selected = selectedTopics.has(topic.id);
+                                return (
+                                    <button
+                                        key={topic.id}
+                                        onClick={() => toggleTopic(topic.id)}
+                                        className={`min-w-0 rounded-xl border p-4 text-left transition ${
+                                            selected
+                                                ? "border-[#62d3d0]/40 bg-[#62d3d0]/8"
+                                                : "border-white/8 bg-black/20 hover:border-white/20"
+                                        }`}
+                                    >
+                                        <div className="flex min-w-0 items-start gap-3">
+                                            <span className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border ${
+                                                selected
+                                                    ? "border-[#62d3d0] bg-[#62d3d0] text-black"
+                                                    : "border-neutral-600"
+                                            }`}>
+                                                {selected && <Check size={13} />}
+                                            </span>
+                                            <span className="min-w-0">
+                                                <span className="block truncate text-sm font-medium">{topic.title}</span>
+                                                <span className="mt-1 block line-clamp-2 text-xs leading-5 text-neutral-500">
+                                                    {topic.description || "Notebook memories and sources"}
+                                                </span>
+                                                <span className="mt-2 block text-[11px] text-neutral-600">
+                                                    {topic.sourceCount} source{topic.sourceCount === 1 ? "" : "s"}
+                                                    {topic.isAgentNotebook ? " · agent memory" : ""}
+                                                </span>
+                                            </span>
+                                        </div>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    )}
+                </section>
+            </div>
+        </div>
+    );
+}
 
 function SettingsTab({ settings, aiModels, onRefresh }: { settings: McpUserSettings | null; aiModels: AIModelOption[]; onRefresh: () => void }) {
     const [isSaving, setIsSaving] = useState(false);

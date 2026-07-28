@@ -13,6 +13,7 @@ class SubscriptionModel {
   final int creditsPerMonth;
   final double planPrice;
   final bool isFreePlan;
+  final Map<String, bool> featureAccess;
 
   SubscriptionModel({
     required this.id,
@@ -27,12 +28,14 @@ class SubscriptionModel {
     required this.creditsPerMonth,
     required this.planPrice,
     required this.isFreePlan,
+    required this.featureAccess,
   });
 
   factory SubscriptionModel.fromJson(Map<String, dynamic> json) {
     developer.log('[SUB_MODEL] Parsing JSON: $json', name: 'SubscriptionModel');
 
     try {
+      final isFreePlan = _parseBool(json['is_free_plan']) ?? false;
       final model = SubscriptionModel(
         id: _parseString(json['id']) ?? '',
         userId: _parseString(json['user_id']) ?? '',
@@ -46,7 +49,11 @@ class SubscriptionModel {
         status: _parseString(json['status']) ?? 'active',
         creditsPerMonth: _parseInt(json['credits_per_month']) ?? 30,
         planPrice: _parseDouble(json['plan_price']) ?? 0.0,
-        isFreePlan: _parseBool(json['is_free_plan']) ?? false,
+        isFreePlan: isFreePlan,
+        featureAccess: _parseFeatureAccess(
+          json['feature_access'],
+          isFreePlan: isFreePlan,
+        ),
       );
 
       developer.log(
@@ -96,6 +103,29 @@ class SubscriptionModel {
     return null;
   }
 
+  static Map<String, bool> _parseFeatureAccess(
+    dynamic value, {
+    required bool isFreePlan,
+  }) {
+    const keys = [
+      'memory_bank',
+      'notebook_chat',
+      'websocket_collaboration',
+      'code_review',
+      'web_search',
+      'deep_research',
+      'research_save_to_notebook',
+    ];
+    final fallback = !isFreePlan;
+    final source = value is Map ? value : const {};
+    return {
+      for (final key in keys)
+        key: source[key] is bool ? source[key] as bool : fallback,
+    };
+  }
+
+  bool canAccess(String feature) => featureAccess[feature] == true;
+
   Map<String, dynamic> toJson() {
     return {
       'id': id,
@@ -110,6 +140,7 @@ class SubscriptionModel {
       'credits_per_month': creditsPerMonth,
       'plan_price': planPrice,
       'is_free_plan': isFreePlan,
+      'feature_access': featureAccess,
     };
   }
 
@@ -126,6 +157,7 @@ class SubscriptionModel {
     int? creditsPerMonth,
     double? planPrice,
     bool? isFreePlan,
+    Map<String, bool>? featureAccess,
   }) {
     return SubscriptionModel(
       id: id ?? this.id,
@@ -141,6 +173,7 @@ class SubscriptionModel {
       creditsPerMonth: creditsPerMonth ?? this.creditsPerMonth,
       planPrice: planPrice ?? this.planPrice,
       isFreePlan: isFreePlan ?? this.isFreePlan,
+      featureAccess: featureAccess ?? this.featureAccess,
     );
   }
 }

@@ -6,6 +6,7 @@
  */
 
 import { Router, Request, Response } from 'express';
+import type { PoolClient } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
 import pool from '../config/database.js';
 import codeVerificationService, { 
@@ -15,7 +16,11 @@ import codeVerificationService, {
   type VerificationResult,
   type VerifiedSource
 } from '../services/codeVerificationService.js';
-import { authenticateToken, optionalAuth } from '../middleware/auth.js';
+import {
+  authenticateToken,
+  optionalAuth,
+  type AuthRequest,
+} from '../middleware/auth.js';
 import { agentSessionService } from '../services/agentSessionService.js';
 import { agentNotebookService } from '../services/agentNotebookService.js';
 import { sourceConversationService } from '../services/sourceConversationService.js';
@@ -27,8 +32,243 @@ import { unifiedContextBuilder } from '../services/unifiedContextBuilder.js';
 import { githubWebhookBuilder } from '../services/githubWebhookBuilder.js';
 import { mcpUserSettingsService } from '../services/mcpUserSettingsService.js';
 import { codeReviewService, type CodeReviewIssue } from '../services/codeReviewService.js';
+import {
+  generateWithGemini,
+  generateWithOpenRouter,
+  type ChatMessage,
+} from '../services/aiService.js';
+import {
+  getResearchJobStatus,
+  searchWeb,
+  startBackgroundResearch,
+  type ResearchConfig,
+  type ResearchDepth,
+  type ResearchTemplate,
+} from '../services/researchService.js';
+import {
+  PLAN_FEATURE_LABELS,
+  type PlanFeatureKey,
+  userHasPlanFeature,
+} from '../services/planFeatureService.js';
+import {
+  consumeCredits,
+  getFeatureCreditCost,
+  refundCredits,
+  type MeteredCreditFeature,
+} from '../services/creditService.js';
+import { tokenService } from '../services/tokenService.js';
+import {
+  agentCanReadTopic,
+  getGrantedTopicContext,
+  getOwnedTopicContext,
+  grantDefaultAgentTopic,
+  listAgentTopicAccessMatrix,
+  listGrantedAgentTopics,
+  replaceAgentTopicGrants,
+} from '../services/agentTopicAccessService.js';
 
 const router = Router();
+
+interface FeatureCreditCharge {
+  amount: number;
+  feature: MeteredCreditFeature;
+  newBalance: number | null;
+  charged: boolean;
+}
+
+const chargeFeatureCredits = async (
+  userId: string,
+  res: Response,
+  feature: MeteredCreditFeature,
+  options: {
+    depth?: string;
+    metadata?: Record<string, unknown>;
+    skip?: boolean;
+  } = {},
+): Promise<FeatureCreditCharge | null> => {
+  if (options.skip) {
+    return {
+      amount: 0,
+      feature,
+      newBalance: null,
+      charged: false,
+    };
+  }
+
+  const amount = getFeatureCreditCost(feature, { depth: options.depth });
+  const result = await consumeCredits(
+    userId,
+    amount,
+    feature,
+    options.metadata,
+  );
+
+  if (!result.success) {
+    res.status(result.error === 'No subscription found' ? 404 : 402).json({
+      success: false,
+      error: result.error || 'Unable to deduct credits',
+      code:
+        result.error === 'Insufficient credits'
+          ? 'INSUFFICIENT_CREDITS'
+          : 'CREDIT_CHARGE_FAILED',
+      feature,
+      creditsRequired: amount,
+      creditsAvailable: result.newBalance,
+      paymentRequired: result.error === 'Insufficient credits',
+    });
+    return null;
+  }
+
+  return {
+    amount,
+    feature,
+    newBalance: result.newBalance,
+    charged: true,
+  };
+};
+
+const refundFeatureCharge = async (
+  userId: string,
+  charge: FeatureCreditCharge | null | undefined,
+  metadata?: Record<string, unknown>,
+): Promise<void> => {
+  if (!charge?.charged || charge.amount <= 0) return;
+
+  await refundCredits(userId, charge.amount, charge.feature, metadata);
+};
+
+const researchDepths = new Set<ResearchDepth>(['quick', 'standard', 'deep']);
+const researchTemplates = new Set<ResearchTemplate>([
+  'general',
+  'academic',
+  'productComparison',
+  'marketAnalysis',
+  'howToGuide',
+  'prosAndCons',
+]);
+
+const normalizeDomain = (value: unknown): string | null => {
+  if (typeof value !== 'string') return null;
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .replace(/^www\./, '')
+    .split('/')[0];
+  return /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(normalized) ? normalized : null;
+};
+
+const hasDomain = (urlValue: unknown, domains: string[]): boolean => {
+  if (typeof urlValue !== 'string') return false;
+  try {
+    const hostname = new URL(urlValue).hostname.toLowerCase().replace(/^www\./, '');
+    return domains.some(
+      (domain) => hostname === domain || hostname.endsWith(`.${domain}`),
+    );
+  } catch {
+    return false;
+  }
+};
+
+const requirePlanFeatureAccess = async (
+  userId: string,
+  res: Response,
+  feature: PlanFeatureKey,
+  trackUsage = true,
+): Promise<boolean> => {
+  const entitlement = await userHasPlanFeature(userId, feature);
+  if (!entitlement.allowed) {
+    res.status(403).json({
+      success: false,
+      error:
+        `${PLAN_FEATURE_LABELS[feature]} is not included in the current `
+        + 'subscription plan.',
+      code: 'FEATURE_NOT_INCLUDED',
+      feature,
+      plan: entitlement.context.planName,
+      subscriptionStatus: entitlement.context.status,
+      upgradeRequired: true,
+    });
+    return false;
+  }
+
+  if (!trackUsage) {
+    return true;
+  }
+
+  const allowance = await mcpLimitsService.canMakeApiCall(userId);
+  if (!allowance.allowed) {
+    res.status(429).json({
+      success: false,
+      error: allowance.reason || 'MCP request limit reached.',
+      code: 'MCP_LIMIT_REACHED',
+    });
+    return false;
+  }
+
+  await mcpLimitsService.incrementApiCallCount(userId);
+  return true;
+};
+
+const verifyOwnedNotebook = async (
+  userId: string,
+  notebookId: string,
+): Promise<boolean> => {
+  const result = await pool.query(
+    'SELECT id FROM notebooks WHERE id = $1 AND user_id = $2',
+    [notebookId, userId],
+  );
+  return result.rows.length > 0;
+};
+
+const getBoundTokenSessionId = (req: Request): string | null => {
+  const authReq = req as AuthRequest;
+  if (authReq.authMethod !== 'api_token') return null;
+  const sessionId = authReq.tokenMetadata?.boundAgentSessionId;
+  return typeof sessionId === 'string' && sessionId.trim()
+    ? sessionId.trim()
+    : null;
+};
+
+const requireTokenSessionAccess = (
+  req: Request,
+  res: Response,
+  agentSessionId: string,
+): boolean => {
+  const authReq = req as AuthRequest;
+  if (authReq.authMethod !== 'api_token') return true;
+
+  const boundSessionId = getBoundTokenSessionId(req);
+  if (!boundSessionId) {
+    res.status(403).json({
+      success: false,
+      code: 'TOKEN_NOT_BOUND',
+      error:
+        'This MCP token has not opened an agent session. Call memory_session_open first.',
+    });
+    return false;
+  }
+  if (boundSessionId !== agentSessionId) {
+    res.status(403).json({
+      success: false,
+      code: 'TOKEN_SESSION_MISMATCH',
+      error:
+        'This MCP token is bound to another agent session. Use one token per agent.',
+    });
+    return false;
+  }
+  return true;
+};
+
+const requireAccountOwnerAuth = (req: Request, res: Response): boolean => {
+  if ((req as AuthRequest).authMethod !== 'api_token') return true;
+  res.status(403).json({
+    success: false,
+    code: 'ACCOUNT_OWNER_REQUIRED',
+    error: 'Only the signed-in account owner can change agent topic access.',
+  });
+  return false;
+};
 
 const sanitizeImageAttachments = (value: unknown): ImageAttachmentPayload[] => {
   if (!Array.isArray(value)) {
@@ -220,6 +460,12 @@ router.post('/verify', optionalAuth, async (req: Request, res: Response) => {
       return res.status(400).json({ 
         error: 'Missing required fields: code, language' 
       });
+    }
+    if (
+      userId
+      && !(await requirePlanFeatureAccess(userId, res, 'code_review', false))
+    ) {
+      return;
     }
 
     // Track API call if user is authenticated
@@ -417,6 +663,7 @@ router.post('/verify-and-save', authenticateToken, async (req: Request, res: Res
  */
 router.get('/sources', authenticateToken, async (req: Request, res: Response) => {
   try {
+    if (!requireAccountOwnerAuth(req, res)) return;
     const userId = (req as any).userId;
     const { notebookId, language } = req.query;
 
@@ -597,6 +844,7 @@ router.post('/analyze', optionalAuth, async (req: Request, res: Response) => {
  */
 router.delete('/sources/:id', authenticateToken, async (req: Request, res: Response) => {
   try {
+    if (!requireAccountOwnerAuth(req, res)) return;
     const { id } = req.params;
     const userId = (req as any).userId;
 
@@ -668,6 +916,15 @@ router.post('/notebooks', authenticateToken, async (req: Request, res: Response)
       session,
       { title, description }
     );
+    await grantDefaultAgentTopic(userId, session.id, notebook.id);
+    const authReq = req as AuthRequest;
+    if (authReq.authMethod === 'api_token' && authReq.tokenId) {
+      authReq.tokenMetadata = await tokenService.bindTokenToAgentSession(
+        authReq.tokenId,
+        userId,
+        session.id,
+      );
+    }
 
     console.log(`[Coding Agent] Notebook created/retrieved for ${agentName}: ${notebook.id}`);
 
@@ -701,6 +958,7 @@ router.post('/notebooks', authenticateToken, async (req: Request, res: Response)
  */
 router.post('/sources/with-context', authenticateToken, async (req: Request, res: Response) => {
   try {
+    if (!requireAccountOwnerAuth(req, res)) return;
     const userId = (req as any).userId;
     const { 
       code, 
@@ -1247,6 +1505,7 @@ router.post('/followups/send', authenticateToken, async (req: Request, res: Resp
  */
 router.get('/notebooks', authenticateToken, async (req: Request, res: Response) => {
   try {
+    if (!requireAccountOwnerAuth(req, res)) return;
     const userId = (req as any).userId;
 
     // Get all agent notebooks for this user
@@ -1414,6 +1673,8 @@ router.get('/websocket/status', authenticateToken, async (req: Request, res: Res
       agentIdentifier: session.agent_identifier,
       status: session.status,
       websocketConnected: agentWebSocketService.isAgentConnected(session.id),
+      websocketConnectionCount:
+        agentWebSocketService.getConnectionCount(session.id),
     }));
 
     const stats = agentWebSocketService.getStats();
@@ -1444,44 +1705,40 @@ router.get('/websocket/info', optionalAuth, async (req: Request, res: Response) 
       url: `${wsUrl}/ws/agent`,
       protocol: wsUrl.startsWith('wss://') ? 'wss' : 'ws',
       authentication:
-        'Query parameter: ?token=YOUR_API_TOKEN&sessionId=YOUR_SESSION_ID or ?token=YOUR_API_TOKEN&agentIdentifier=YOUR_AGENT_IDENTIFIER',
+        'Query parameters: token plus sessionId or agentIdentifier; add clientIdentifier to identify each connected agent',
       messageTypes: {
-        incoming: ['followup_message', 'ping'],
-        outgoing: ['response', 'pong'],
+        serverToAgent: [
+          'memory_ready',
+          'memory_changed',
+          'memory_compacted',
+          'agent_joined',
+          'agent_left',
+          'ping',
+          'error',
+        ],
+        agentToServer: ['pong', 'ping'],
       },
       behavior: {
-        pendingMessagesOnConnect:
-          'Unread follow-up messages are replayed immediately after the socket connects.',
+        memoryCommands:
+          'Open sessions and read or write memory with MCP tools. WebSocket delivers live presence and memory-change events.',
+        collaboration:
+          'Multiple clients may connect to one memory session. Give every client a stable clientIdentifier.',
+        keepAlive:
+          'Reply to each ping event with {"type":"pong"} within 60 seconds.',
       },
     },
     example: {
-      connect: `const ws = new WebSocket('${wsUrl}/ws/agent?token=nclaw_xxx&sessionId=xxx')`,
-      connectByAgentIdentifier: `const ws = new WebSocket('${wsUrl}/ws/agent?token=nclaw_xxx&agentIdentifier=your-agent-id')`,
-      incomingFollowup: JSON.stringify({
-        type: 'followup_message',
-        messageId: 'message-uuid',
+      connect: `const ws = new WebSocket('${wsUrl}/ws/agent?token=nclaw_xxx&sessionId=xxx&clientIdentifier=codex')`,
+      connectByAgentIdentifier: `const ws = new WebSocket('${wsUrl}/ws/agent?token=nclaw_xxx&agentIdentifier=project-id&clientIdentifier=claude')`,
+      memoryChanged: JSON.stringify({
+        type: 'memory_changed',
         payload: {
-          sourceId: 'source-uuid',
-          message: 'Please update this function',
-          imageAttachments: [
-            {
-              id: 'img-1',
-              name: 'screenshot.png',
-              mimeType: 'image/png',
-              base64Data: '<base64-data>',
-              sizeBytes: 12345,
-            },
-          ],
+          namespace: 'default',
+          mode: 'merge',
+          memoryUpdatedAt: new Date().toISOString(),
         },
       }),
-      sendResponse: JSON.stringify({
-        type: 'response',
-        messageId: 'message-uuid',
-        payload: {
-          response: 'Your response text',
-          codeUpdate: { code: '...', description: '...' },
-        },
-      }),
+      keepAliveReply: JSON.stringify({ type: 'pong' }),
     },
   });
 });
@@ -1492,13 +1749,14 @@ router.get('/websocket/info', optionalAuth, async (req: Request, res: Response) 
  */
 router.get('/notebooks/list', authenticateToken, async (req: Request, res: Response) => {
   try {
+    if (!requireAccountOwnerAuth(req, res)) return;
     const userId = (req as any).userId;
     const { includeSourceCount } = req.query;
 
     // Get all notebooks for this user
     const notebooksResult = await pool.query(
       `SELECT n.*, 
-              (SELECT COUNT(*) FROM sources s WHERE s.notebook_id = n.id AND s.type = 'code') as source_count
+              (SELECT COUNT(*) FROM sources s WHERE s.notebook_id = n.id) as source_count
        FROM notebooks n 
        WHERE n.user_id = $1 
        ORDER BY n.updated_at DESC`,
@@ -1535,6 +1793,7 @@ router.get('/notebooks/list', authenticateToken, async (req: Request, res: Respo
  */
 router.get('/sources/search', authenticateToken, async (req: Request, res: Response) => {
   try {
+    if (!requireAccountOwnerAuth(req, res)) return;
     const userId = (req as any).userId;
     const { query, language, notebookId, limit = '20' } = req.query;
 
@@ -1612,6 +1871,7 @@ router.get('/sources/search', authenticateToken, async (req: Request, res: Respo
  */
 router.get('/sources/export', authenticateToken, async (req: Request, res: Response) => {
   try {
+    if (!requireAccountOwnerAuth(req, res)) return;
     const userId = (req as any).userId;
     const { 
       notebookId, 
@@ -1698,6 +1958,7 @@ router.get('/sources/export', authenticateToken, async (req: Request, res: Respo
  */
 router.get('/sources/:id', authenticateToken, async (req: Request, res: Response) => {
   try {
+    if (!requireAccountOwnerAuth(req, res)) return;
     const userId = (req as any).userId;
     const { id } = req.params;
 
@@ -1747,6 +2008,7 @@ router.get('/sources/:id', authenticateToken, async (req: Request, res: Response
  */
 router.put('/sources/:id', authenticateToken, async (req: Request, res: Response) => {
   try {
+    if (!requireAccountOwnerAuth(req, res)) return;
     const userId = (req as any).userId;
     const { id } = req.params;
     const { code, title, description, language, revalidate = false } = req.body;
@@ -1988,6 +2250,7 @@ router.get('/stats', authenticateToken, async (req: Request, res: Response) => {
  */
 router.get('/context/:notebookId', authenticateToken, async (req: Request, res: Response) => {
   try {
+    if (!requireAccountOwnerAuth(req, res)) return;
     const userId = (req as any).userId;
     const { notebookId } = req.params;
     const { 
@@ -2058,6 +2321,7 @@ router.get('/context/:notebookId', authenticateToken, async (req: Request, res: 
  */
 router.get('/context/source/:sourceId', authenticateToken, async (req: Request, res: Response) => {
   try {
+    if (!requireAccountOwnerAuth(req, res)) return;
     const userId = (req as any).userId;
     const { sourceId } = req.params;
     const { format = 'json' } = req.query;
@@ -2118,6 +2382,17 @@ router.get('/context/agent/:sessionId/:notebookId', authenticateToken, async (re
     }
     if (session.userId !== userId) {
       return res.status(403).json({ error: 'Access denied' });
+    }
+    if (!requireTokenSessionAccess(req, res, sessionId)) return;
+    if (
+      (req as AuthRequest).authMethod === 'api_token' &&
+      !(await agentCanReadTopic(userId, sessionId, notebookId))
+    ) {
+      return res.status(403).json({
+        success: false,
+        code: 'TOPIC_NOT_GRANTED',
+        error: 'This agent does not have access to the selected topic.',
+      });
     }
 
     // Build context for the agent
@@ -2354,6 +2629,72 @@ const buildMemoryStats = (
   };
 };
 
+const getMemorySourceTitle = (namespace: string): string => {
+  const normalized = normalizeNamespace(namespace);
+  const knownTitles: Record<string, string> = {
+    default: 'General memory',
+    'project:shared': 'Shared project memory',
+    'project:state': 'Project state',
+    'project:plan': 'Current plan',
+    'project:decisions': 'Project decisions',
+    'project:tasks': 'Project tasks',
+    decisions: 'Decisions',
+    settings: 'Agent settings',
+  };
+  if (knownTitles[normalized]) {
+    return knownTitles[normalized];
+  }
+
+  const segments = normalized.split(':').filter(Boolean);
+  if (segments[0] === 'agent' && segments.length > 1) {
+    return `${titleCase(segments.slice(1).join(' '))} agent memory`;
+  }
+
+  return segments.map((segment) => titleCase(segment)).join(' / ');
+};
+
+const buildMemorySourceProjection = (
+  row: {
+    id?: string;
+    namespace: string;
+    memory: unknown;
+    version?: number | string | null;
+    created_at?: Date | string | null;
+    updated_at?: Date | string | null;
+  },
+  notebookId: string,
+) => {
+  const memory = parseStoredMemory(row.memory);
+  const version =
+    typeof row.version === 'number'
+      ? row.version
+      : Number(row.version ?? 0) || 0;
+  const stats = buildMemoryStats(row.namespace, memory, version);
+  const createdAt = row.created_at
+    ? new Date(row.created_at).toISOString()
+    : null;
+  const updatedAt = row.updated_at
+    ? new Date(row.updated_at).toISOString()
+    : createdAt;
+
+  return {
+    id: row.id || `memory:${row.namespace}`,
+    notebookId,
+    type: 'memory',
+    title: getMemorySourceTitle(row.namespace),
+    namespace: row.namespace,
+    content: JSON.stringify(memory, null, 2),
+    memory,
+    version,
+    memoryStats: stats,
+    summary: `${stats.nonEmptyFieldCount} populated field${stats.nonEmptyFieldCount === 1 ? '' : 's'} · version ${version}`,
+    createdAt,
+    updatedAt,
+    isMemorySource: true,
+    readOnly: true,
+  };
+};
+
 const compactMemoryHistory = (params: {
   sourceNamespace: string;
   sourceMemory: Record<string, any>;
@@ -2440,66 +2781,239 @@ const compactMemoryHistory = (params: {
 };
 
 const upsertMemoryEntry = async (
+  client: Pick<PoolClient, 'query'>,
   userId: string,
   sessionId: string,
   namespace: string,
   memory: Record<string, any>
-) => {
-  await pool.query(
+): Promise<{ version: number; updatedAt: string }> => {
+  const result = await client.query(
     `INSERT INTO agent_memory_entries (id, user_id, agent_session_id, namespace, memory, version, created_at, updated_at)
      VALUES ($1, $2, $3, $4, $5, 1, NOW(), NOW())
      ON CONFLICT (agent_session_id, namespace)
      DO UPDATE SET
        memory = EXCLUDED.memory,
        version = agent_memory_entries.version + 1,
-       updated_at = NOW()`,
+       updated_at = NOW()
+     RETURNING version, updated_at`,
     [uuidv4(), userId, sessionId, namespace, JSON.stringify(memory)]
+  );
+
+  return {
+    version: Number(result.rows[0].version),
+    updatedAt: new Date(result.rows[0].updated_at).toISOString(),
+  };
+};
+
+const lockMemorySession = async (
+  client: Pick<PoolClient, 'query'>,
+  userId: string,
+  sessionId: string,
+) => {
+  await client.query(
+    'SELECT pg_advisory_xact_lock(hashtext($1))',
+    [`noteclaw-memory:${userId}:${sessionId}`],
   );
 };
 
 const updateSessionMetadataMemory = async (
+  client: Pick<PoolClient, 'query'>,
   userId: string,
-  session: any,
+  sessionId: string,
   updates: Record<string, Record<string, any>>,
   memoryUpdatedAt: string
 ) => {
-  const existingMetadata = session.metadata || {};
-  const existingMemoryBank = getMetadataMemoryBank(existingMetadata);
-  const nextMemoryBank = { ...existingMemoryBank, ...updates };
-  const nextMetadata = {
-    ...existingMetadata,
-    memoryBank: nextMemoryBank,
-    memoryUpdatedAt,
-  };
-
-  await pool.query(
+  await client.query(
     `UPDATE agent_sessions
-     SET metadata = $1, last_activity = NOW()
-     WHERE id = $2 AND user_id = $3`,
-    [JSON.stringify(nextMetadata), session.id, userId]
+     SET metadata = jsonb_set(
+       jsonb_set(
+         COALESCE(metadata, '{}'::jsonb),
+         '{memoryBank}',
+         COALESCE(metadata->'memoryBank', '{}'::jsonb) || $1::jsonb,
+         true
+       ),
+       '{memoryUpdatedAt}',
+       to_jsonb($2::text),
+       true
+     ),
+     last_activity = NOW()
+     WHERE id = $3 AND user_id = $4`,
+    [JSON.stringify(updates), memoryUpdatedAt, sessionId, userId]
   );
 };
+
+const touchMemoryNotebook = async (
+  client: Pick<PoolClient, 'query'>,
+  userId: string,
+  sessionId: string,
+) => {
+  await client.query(
+    `UPDATE notebooks
+     SET updated_at = NOW()
+     WHERE user_id = $1 AND agent_session_id = $2`,
+    [userId, sessionId],
+  );
+};
+
+router.post('/memory/sessions', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).userId;
+    if (!(await requirePlanFeatureAccess(userId, res, 'memory_bank', false))) {
+      return;
+    }
+    const {
+      agentName,
+      agentIdentifier,
+      metadata = {},
+    } = req.body as {
+      agentName?: string;
+      agentIdentifier?: string;
+      metadata?: Record<string, any>;
+    };
+
+    if (!agentName?.trim() || !agentIdentifier?.trim()) {
+      return res.status(400).json({
+        error: 'agentName and agentIdentifier are required',
+      });
+    }
+
+    if (
+      metadata == null ||
+      typeof metadata !== 'object' ||
+      Array.isArray(metadata)
+    ) {
+      return res.status(400).json({
+        error: 'metadata must be an object',
+      });
+    }
+
+    const authReq = req as AuthRequest;
+    const existingBoundSessionId = getBoundTokenSessionId(req);
+    if (authReq.authMethod === 'api_token' && existingBoundSessionId) {
+      const boundSession = await agentSessionService.getSession(
+        existingBoundSessionId,
+      );
+      if (
+        !boundSession ||
+        boundSession.userId !== userId ||
+        boundSession.agentIdentifier !== agentIdentifier.trim()
+      ) {
+        return res.status(403).json({
+          success: false,
+          code: 'TOKEN_SESSION_MISMATCH',
+          error:
+            'This token is already assigned to a different agent. Create a separate token for this agent.',
+        });
+      }
+    }
+
+    await mcpLimitsService.incrementApiCallCount(userId);
+
+    const session = await agentSessionService.createSession(userId, {
+      agentName: agentName.trim(),
+      agentIdentifier: agentIdentifier.trim(),
+      metadata: {
+        ...metadata,
+        purpose: 'memory-bank',
+        transport: 'mcp-websocket',
+      },
+    });
+    const notebook = await agentNotebookService.createOrGetMemoryNotebook(
+      userId,
+      session,
+      {
+        title:
+          typeof metadata.notebookTitle === 'string'
+            ? metadata.notebookTitle
+            : undefined,
+        description:
+          typeof metadata.notebookDescription === 'string'
+            ? metadata.notebookDescription
+            : undefined,
+      },
+    );
+    await grantDefaultAgentTopic(userId, session.id, notebook.id);
+    if (authReq.authMethod === 'api_token' && authReq.tokenId) {
+      authReq.tokenMetadata = await tokenService.bindTokenToAgentSession(
+        authReq.tokenId,
+        userId,
+        session.id,
+      );
+    }
+
+    res.json({
+      success: true,
+      session: {
+        id: session.id,
+        agentName: session.agentName,
+        agentIdentifier: session.agentIdentifier,
+        status: session.status,
+        createdAt: session.createdAt,
+        lastActivity: session.lastActivity,
+        websocketConnected: agentWebSocketService.isAgentConnected(session.id),
+        websocketConnectionCount:
+          agentWebSocketService.getConnectionCount(session.id),
+      },
+      notebook: {
+        id: notebook.id,
+        title: notebook.title,
+        description: notebook.description,
+        sourceModel: 'memory-namespace',
+      },
+      topicAccess: {
+        defaultTopicId: notebook.id,
+        message:
+          'This agent starts with its own topic. The account owner can grant additional topics in Agent access settings.',
+      },
+      websocket: {
+        path: '/ws/agent',
+        authentication:
+          '?token=YOUR_API_TOKEN&sessionId=SESSION_ID&clientIdentifier=CLIENT_ID or ?token=YOUR_API_TOKEN&agentIdentifier=AGENT_IDENTIFIER&clientIdentifier=CLIENT_ID',
+      },
+    });
+  } catch (error: any) {
+    console.error('Open memory session error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
 
 router.get('/memory/sessions', authenticateToken, async (req: Request, res: Response) => {
   try {
     const userId = (req as any).userId;
+    if (!(await requirePlanFeatureAccess(userId, res, 'memory_bank', false))) {
+      return;
+    }
 
     await mcpLimitsService.incrementApiCallCount(userId);
+
+    const boundSessionId = getBoundTokenSessionId(req);
+    if (
+      (req as AuthRequest).authMethod === 'api_token' &&
+      !boundSessionId
+    ) {
+      return res.status(403).json({
+        success: false,
+        code: 'TOKEN_NOT_BOUND',
+        error: 'Call memory_session_open before listing agent memory.',
+      });
+    }
 
     const sessionsResult = await pool.query(
       `SELECT a.*, n.title as notebook_title
        FROM agent_sessions a
        LEFT JOIN notebooks n ON a.notebook_id = n.id
        WHERE a.user_id = $1
+         AND ($2::text IS NULL OR a.id = $2)
        ORDER BY a.last_activity DESC`,
-      [userId]
+      [userId, boundSessionId]
     );
 
     const memoryResult = await pool.query(
       `SELECT agent_session_id, namespace, memory, version, updated_at
        FROM agent_memory_entries
-       WHERE user_id = $1`,
-      [userId]
+       WHERE user_id = $1
+         AND ($2::text IS NULL OR agent_session_id = $2)`,
+      [userId, boundSessionId]
     );
 
     const tableMemoryBySession = new Map<string, {
@@ -2580,6 +3094,9 @@ router.get('/memory/sessions', authenticateToken, async (req: Request, res: Resp
           status: row.status,
           createdAt: row.created_at,
           lastActivity: row.last_activity,
+          websocketConnected: agentWebSocketService.isAgentConnected(row.id),
+          websocketConnectionCount:
+            agentWebSocketService.getConnectionCount(row.id),
         },
         notebook: {
           id: row.notebook_id,
@@ -2611,9 +3128,619 @@ router.get('/memory/sessions', authenticateToken, async (req: Request, res: Resp
   }
 });
 
+router.get('/memory/topic-access', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const userId = (req as AuthRequest).userId as string;
+    if (!requireAccountOwnerAuth(req, res)) return;
+    if (!(await requirePlanFeatureAccess(userId, res, 'memory_bank', false))) {
+      return;
+    }
+
+    const matrix = await listAgentTopicAccessMatrix(userId);
+    res.json({ success: true, ...matrix });
+  } catch (error: any) {
+    console.error('Get agent topic access error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to load topic access.',
+    });
+  }
+});
+
+router.put(
+  '/memory/sessions/:sessionId/topics',
+  authenticateToken,
+  async (req: Request, res: Response) => {
+    try {
+      const userId = (req as AuthRequest).userId as string;
+      if (!requireAccountOwnerAuth(req, res)) return;
+      if (!(await requirePlanFeatureAccess(userId, res, 'memory_bank', false))) {
+        return;
+      }
+      if (!Array.isArray(req.body?.notebookIds)) {
+        return res.status(400).json({
+          success: false,
+          error: 'notebookIds must be an array.',
+        });
+      }
+
+      const topics = await replaceAgentTopicGrants(
+        userId,
+        req.params.sessionId,
+        req.body.notebookIds,
+      );
+      res.json({
+        success: true,
+        agentSessionId: req.params.sessionId,
+        topics,
+      });
+    } catch (error: any) {
+      const notFound = error.message === 'Agent session not found';
+      res.status(notFound ? 404 : 400).json({
+        success: false,
+        error: error.message || 'Failed to update topic access.',
+      });
+    }
+  },
+);
+
+router.get('/memory/topics', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const userId = (req as AuthRequest).userId as string;
+    if (!(await requirePlanFeatureAccess(userId, res, 'memory_bank', false))) {
+      return;
+    }
+    const requestedSessionId =
+      typeof req.query.agentSessionId === 'string'
+        ? req.query.agentSessionId.trim()
+        : '';
+    const agentSessionId = requestedSessionId || getBoundTokenSessionId(req);
+    if (!agentSessionId) {
+      return res.status(400).json({
+        success: false,
+        error: 'agentSessionId is required.',
+      });
+    }
+    const session = await agentSessionService.getSession(agentSessionId);
+    if (!session || session.userId !== userId) {
+      return res.status(404).json({
+        success: false,
+        error: 'Agent session not found.',
+      });
+    }
+    if (!requireTokenSessionAccess(req, res, agentSessionId)) return;
+
+    const topics = await listGrantedAgentTopics(userId, agentSessionId);
+    res.json({ success: true, agentSessionId, topics, count: topics.length });
+  } catch (error: any) {
+    console.error('List agent topics error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to list topics.',
+    });
+  }
+});
+
+router.get(
+  '/memory/topics/:notebookId/context',
+  authenticateToken,
+  async (req: Request, res: Response) => {
+    try {
+      const userId = (req as AuthRequest).userId as string;
+      if (!(await requirePlanFeatureAccess(userId, res, 'memory_bank', false))) {
+        return;
+      }
+      const requestedSessionId =
+        typeof req.query.agentSessionId === 'string'
+          ? req.query.agentSessionId.trim()
+          : '';
+      const agentSessionId = requestedSessionId || getBoundTokenSessionId(req);
+      if (!agentSessionId) {
+        return res.status(400).json({
+          success: false,
+          error: 'agentSessionId is required.',
+        });
+      }
+      if (!requireTokenSessionAccess(req, res, agentSessionId)) return;
+
+      const context = await getGrantedTopicContext(
+        userId,
+        agentSessionId,
+        req.params.notebookId,
+      );
+      if (!context) {
+        return res.status(403).json({
+          success: false,
+          code: 'TOPIC_NOT_GRANTED',
+          error: 'This agent does not have access to the selected topic.',
+        });
+      }
+      res.json({ success: true, agentSessionId, ...context });
+    } catch (error: any) {
+      console.error('Get agent topic context error:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message || 'Failed to load topic context.',
+      });
+    }
+  },
+);
+
+router.get('/memory/notebooks', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).userId;
+    if (!(await requirePlanFeatureAccess(userId, res, 'memory_bank', false))) {
+      return;
+    }
+    const sessions = await agentSessionService.getSessionsByUser(userId);
+    const notebooks: any[] = await Promise.all(
+      sessions.map(async (session) => {
+        const notebook = await agentNotebookService.createOrGetMemoryNotebook(
+          userId,
+          session,
+        );
+        const sourceCountResult = await pool.query(
+          `SELECT COUNT(*)::int AS source_count, MAX(updated_at) AS memory_updated_at
+           FROM agent_memory_entries
+           WHERE user_id = $1 AND agent_session_id = $2`,
+          [userId, session.id],
+        );
+        const sourceCount = Number(
+          sourceCountResult.rows[0]?.source_count ?? 0,
+        );
+        const memoryUpdatedAt =
+          sourceCountResult.rows[0]?.memory_updated_at || null;
+
+        return {
+          id: notebook.id,
+          userId: notebook.userId,
+          title: notebook.title,
+          description: notebook.description,
+          coverImage: notebook.coverImage,
+          category: 'Agent memory',
+          isAgentNotebook: true,
+          sourceCount,
+          createdAt: notebook.createdAt,
+          updatedAt: memoryUpdatedAt || notebook.updatedAt,
+          session: {
+            id: session.id,
+            agentName: session.agentName,
+            agentIdentifier: session.agentIdentifier,
+            status: session.status,
+            websocketConnected:
+              agentWebSocketService.isAgentConnected(session.id),
+            websocketConnectionCount:
+              agentWebSocketService.getConnectionCount(session.id),
+          },
+        };
+      }),
+    );
+
+    const existingNotebookIds = notebooks.map((notebook) => notebook.id);
+    const topicRows = await pool.query(
+      `SELECT
+         n.id,
+         n.user_id,
+         n.title,
+         n.description,
+         n.cover_image,
+         n.category,
+         n.is_agent_notebook,
+         n.created_at,
+         n.updated_at,
+         COUNT(s.id)::int AS source_count
+       FROM notebooks n
+       LEFT JOIN sources s ON s.notebook_id = n.id
+       WHERE n.user_id = $1
+         AND NOT (n.id::text = ANY($2::text[]))
+       GROUP BY n.id
+       ORDER BY n.updated_at DESC`,
+      [userId, existingNotebookIds],
+    );
+    notebooks.push(
+      ...topicRows.rows.map((row) => ({
+        id: row.id,
+        userId: row.user_id,
+        title: row.title,
+        description: row.description,
+        coverImage: row.cover_image,
+        category: row.category || 'Topic',
+        isAgentNotebook: row.is_agent_notebook === true,
+        sourceCount: Number(row.source_count || 0),
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+        session: null,
+      })),
+    );
+
+    notebooks.sort(
+      (left, right) =>
+        new Date(String(right.updatedAt)).getTime() -
+        new Date(String(left.updatedAt)).getTime(),
+    );
+
+    let visibleNotebooks = notebooks;
+    if ((req as AuthRequest).authMethod === 'api_token') {
+      const boundSessionId = getBoundTokenSessionId(req);
+      if (!boundSessionId) {
+        return res.status(403).json({
+          success: false,
+          code: 'TOKEN_NOT_BOUND',
+          error: 'Call memory_session_open before listing topics.',
+        });
+      }
+      const grantedTopics = await listGrantedAgentTopics(
+        userId,
+        boundSessionId,
+      );
+      const grantedIds = new Set(
+        grantedTopics.map((topic) => topic.notebookId),
+      );
+      visibleNotebooks = notebooks.filter((notebook) =>
+        grantedIds.has(String(notebook.id)),
+      );
+    }
+
+    res.json({
+      success: true,
+      notebooks: visibleNotebooks,
+      count: visibleNotebooks.length,
+    });
+  } catch (error: any) {
+    console.error('List memory notebooks error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.get(
+  '/memory/notebooks/:notebookId',
+  authenticateToken,
+  async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId;
+      if (!(await requirePlanFeatureAccess(userId, res, 'memory_bank', false))) {
+        return;
+      }
+      const { notebookId } = req.params;
+      const notebookResult = await pool.query(
+        `SELECT
+           n.*,
+           a.id AS session_id,
+           a.agent_name,
+           a.agent_identifier,
+           a.status AS session_status,
+           a.last_activity,
+           a.metadata AS session_metadata
+         FROM notebooks n
+         LEFT JOIN agent_sessions a ON a.id = n.agent_session_id
+         WHERE n.id::text = $1 AND n.user_id = $2`,
+        [notebookId, userId],
+      );
+
+      if (notebookResult.rows.length === 0) {
+        return res.status(404).json({ error: 'Memory notebook not found' });
+      }
+
+      const row = notebookResult.rows[0];
+      if ((req as AuthRequest).authMethod === 'api_token') {
+        const boundSessionId = getBoundTokenSessionId(req);
+        if (!boundSessionId) {
+          return res.status(403).json({
+            success: false,
+            code: 'TOKEN_NOT_BOUND',
+            error: 'Call memory_session_open before reading a topic.',
+          });
+        }
+        if (!(await agentCanReadTopic(userId, boundSessionId, row.id))) {
+          return res.status(403).json({
+            success: false,
+            code: 'TOPIC_NOT_GRANTED',
+            error: 'This agent does not have access to the selected topic.',
+          });
+        }
+      }
+      const memoryResult = row.session_id
+        ? await pool.query(
+            `SELECT id, namespace, memory, version, created_at, updated_at
+             FROM agent_memory_entries
+             WHERE user_id = $1 AND agent_session_id = $2
+             ORDER BY updated_at DESC, namespace ASC`,
+            [userId, row.session_id],
+          )
+        : { rows: [] as any[] };
+      let sources: any[] = memoryResult.rows.map((memoryRow) =>
+        buildMemorySourceProjection(memoryRow, row.id),
+      );
+
+      if (sources.length === 0 && row.session_id) {
+        const metadata =
+          typeof row.session_metadata === 'string'
+            ? JSON.parse(row.session_metadata)
+            : row.session_metadata || {};
+        const metadataBank = getMetadataMemoryBank(metadata);
+        sources = Object.entries(metadataBank).map(([namespace, memory]) =>
+          buildMemorySourceProjection(
+            {
+              namespace,
+              memory,
+              version: 0,
+              created_at: row.created_at,
+              updated_at: metadata.memoryUpdatedAt || row.updated_at,
+            },
+            row.id,
+          ),
+        );
+      }
+      const notebookSourcesResult = await pool.query(
+        `SELECT id, notebook_id, type, title, content, url, image_url,
+                metadata, created_at, updated_at
+         FROM sources
+         WHERE notebook_id = $1
+         ORDER BY updated_at DESC`,
+        [row.id],
+      );
+      sources.push(
+        ...notebookSourcesResult.rows.map((sourceRow) => ({
+          id: sourceRow.id,
+          notebookId: sourceRow.notebook_id,
+          type: sourceRow.type,
+          title: sourceRow.title,
+          content: sourceRow.content,
+          url: sourceRow.url,
+          imageUrl: sourceRow.image_url,
+          metadata:
+            typeof sourceRow.metadata === 'string'
+              ? JSON.parse(sourceRow.metadata)
+              : sourceRow.metadata || {},
+          createdAt: sourceRow.created_at,
+          updatedAt: sourceRow.updated_at,
+          isMemorySource: false,
+          readOnly: false,
+        })),
+      );
+
+      return res.json({
+        success: true,
+        notebook: {
+          id: row.id,
+          userId: row.user_id,
+          title: row.title,
+          description: row.description,
+          coverImage: row.cover_image,
+          category: row.category || (row.session_id ? 'Agent memory' : 'Topic'),
+          isAgentNotebook: row.is_agent_notebook === true,
+          sourceCount: sources.length,
+          createdAt: row.created_at,
+          updatedAt: row.updated_at,
+          session: row.session_id
+            ? {
+                id: row.session_id,
+                agentName: row.agent_name,
+                agentIdentifier: row.agent_identifier,
+                status: row.session_status,
+                lastActivity: row.last_activity,
+                websocketConnected:
+                  agentWebSocketService.isAgentConnected(row.session_id),
+                websocketConnectionCount:
+                  agentWebSocketService.getConnectionCount(row.session_id),
+              }
+            : null,
+        },
+        sources,
+      });
+    } catch (error: any) {
+      console.error('Get memory notebook error:', error);
+      res.status(500).json({ error: error.message });
+    }
+  },
+);
+
+router.post(
+  '/memory/notebooks/:notebookId/chat',
+  authenticateToken,
+  async (req: Request, res: Response) => {
+    let userId = '';
+    let creditCharge: FeatureCreditCharge | null = null;
+    try {
+      userId = (req as any).userId;
+      if (!(await requirePlanFeatureAccess(userId, res, 'notebook_chat'))) {
+        return;
+      }
+      const { notebookId } = req.params;
+      const message =
+        typeof req.body?.message === 'string' ? req.body.message.trim() : '';
+      const requestedProvider =
+        typeof req.body?.provider === 'string'
+          ? req.body.provider.toLowerCase()
+          : 'gemini';
+      const requestedModel =
+        typeof req.body?.model === 'string' && req.body.model.trim()
+          ? req.body.model.trim()
+          : undefined;
+      const userApiKey = (req.get('x-user-api-key') || '').trim() || undefined;
+
+      if (!message) {
+        return res.status(400).json({ error: 'message is required' });
+      }
+
+      const authReq = req as AuthRequest;
+      let agentSessionId = getBoundTokenSessionId(req);
+      const requestedAgentSessionId =
+        typeof req.body?.agentSessionId === 'string'
+          ? req.body.agentSessionId.trim()
+          : '';
+      if (authReq.authMethod === 'api_token') {
+        if (!agentSessionId) {
+          return res.status(403).json({
+            success: false,
+            code: 'TOKEN_NOT_BOUND',
+            error:
+              'This MCP token has not opened an agent session. Call memory_session_open first.',
+          });
+        }
+        if (
+          requestedAgentSessionId &&
+          requestedAgentSessionId !== agentSessionId
+        ) {
+          return res.status(403).json({
+            success: false,
+            code: 'TOKEN_SESSION_MISMATCH',
+            error: 'This MCP token belongs to another agent session.',
+          });
+        }
+      } else if (requestedAgentSessionId) {
+        agentSessionId = requestedAgentSessionId;
+      }
+
+      const topicContext =
+        authReq.authMethod === 'api_token'
+          ? await getGrantedTopicContext(
+              userId,
+              agentSessionId as string,
+              notebookId,
+            )
+          : await getOwnedTopicContext(userId, notebookId);
+
+      if (!topicContext) {
+        return res.status(authReq.authMethod === 'api_token' ? 403 : 404).json({
+          success: false,
+          code:
+            authReq.authMethod === 'api_token'
+              ? 'TOPIC_NOT_GRANTED'
+              : 'TOPIC_NOT_FOUND',
+          error:
+            authReq.authMethod === 'api_token'
+              ? 'This agent does not have access to the selected topic.'
+              : 'Topic not found.',
+        });
+      }
+
+      const notebook = topicContext.topic;
+      const contextPayload = {
+        topic: notebook,
+        sources: topicContext.sources,
+        memories: topicContext.memories,
+      };
+      const serializedSources = JSON.stringify(contextPayload, null, 2);
+      const context =
+        serializedSources.length > 80_000
+          ? `${serializedSources.slice(0, 80_000)}\n[Topic context truncated]`
+          : serializedSources;
+
+      const history = Array.isArray(req.body?.history)
+        ? req.body.history
+            .slice(-12)
+            .map((item: unknown) => {
+              if (!item || typeof item !== 'object') return null;
+              const row = item as Record<string, unknown>;
+              const role =
+                row.role === 'assistant' || row.role === 'model'
+                  ? 'assistant'
+                  : 'user';
+              const content =
+                typeof row.content === 'string'
+                  ? row.content.trim().slice(0, 8_000)
+                  : '';
+              return content ? ({ role, content } as ChatMessage) : null;
+            })
+            .filter((item: ChatMessage | null): item is ChatMessage => item !== null)
+        : [];
+
+      const systemPrompt = [
+        'You are the NoteClaw memory assistant.',
+        `The selected topic notebook is "${notebook.title}".`,
+        'Answer only from the supplied topic memories and notebook sources.',
+        'If the topic does not contain the answer, say that clearly.',
+        'Mention source titles or memory namespace names when that helps the user verify an answer.',
+        'Keep answers concise, practical, and faithful to stored values.',
+        '',
+        `TOPIC CONTEXT:\n${context || '{}'}`,
+      ].join('\n');
+
+      const messages: ChatMessage[] = [
+        { role: 'user', content: systemPrompt },
+        { role: 'assistant', content: 'I will answer from this topic only.' },
+        ...history,
+        { role: 'user', content: message },
+      ];
+
+      creditCharge = await chargeFeatureCredits(
+        userId,
+        res,
+        'notebook_chat',
+        {
+          skip: Boolean(userApiKey),
+          metadata: {
+            notebookId: notebook.id,
+            provider: requestedProvider,
+            model: requestedModel || null,
+            sourceCount:
+              topicContext.sources.length + topicContext.memories.length,
+            route: 'memory_notebook_chat',
+            byok: Boolean(userApiKey),
+          },
+        },
+      );
+      if (!creditCharge) return;
+
+      const answer =
+        requestedProvider === 'openrouter'
+          ? await generateWithOpenRouter(
+              messages,
+              requestedModel,
+              4096,
+              userApiKey,
+            )
+          : await generateWithGemini(messages, requestedModel, userApiKey);
+
+      return res.json({
+        success: true,
+        answer,
+        notebookId: notebook.id,
+        topic: notebook,
+        sourceCount:
+          topicContext.sources.length + topicContext.memories.length,
+        creditsCharged: creditCharge.amount,
+        creditBalance: creditCharge.newBalance,
+        billingMode: creditCharge.charged ? 'noteclaw_credits' : 'byok',
+        sources: topicContext.sources.map((source) => ({
+          id: source.id,
+          title: source.title,
+          type: source.type,
+          url: source.url,
+          updatedAt: source.updatedAt,
+        })),
+        memories: topicContext.memories.map((memory) => ({
+          namespace: memory.namespace,
+          version: memory.version,
+          updatedAt: memory.updatedAt,
+        })),
+      });
+    } catch (error: any) {
+      if (userId && creditCharge?.charged) {
+        try {
+          await refundFeatureCharge(userId, creditCharge, {
+            reason: error?.message || 'Memory notebook chat failed',
+            route: 'memory_notebook_chat',
+          });
+        } catch (refundError) {
+          console.error('Memory notebook chat refund error:', refundError);
+        }
+      }
+      console.error('Memory notebook chat error:', error);
+      return res.status(500).json({
+        error: error.message || 'Failed to chat with memory notebook',
+      });
+    }
+  },
+);
+
 router.get('/memory', authenticateToken, async (req: Request, res: Response) => {
   try {
     const userId = (req as any).userId;
+    if (!(await requirePlanFeatureAccess(userId, res, 'memory_bank', false))) {
+      return;
+    }
     const { agentSessionId, agentIdentifier, namespace = 'default' } = req.query as {
       agentSessionId?: string;
       agentIdentifier?: string;
@@ -2639,6 +3766,7 @@ router.get('/memory', authenticateToken, async (req: Request, res: Response) => 
     if (session.userId !== userId) {
       return res.status(403).json({ error: 'Access denied' });
     }
+    if (!requireTokenSessionAccess(req, res, session.id)) return;
 
     const memoryEntriesResult = await pool.query(
       `SELECT namespace, memory, version, updated_at
@@ -2714,6 +3842,9 @@ router.get('/memory', authenticateToken, async (req: Request, res: Response) => 
 router.put('/memory', authenticateToken, async (req: Request, res: Response) => {
   try {
     const userId = (req as any).userId;
+    if (!(await requirePlanFeatureAccess(userId, res, 'memory_bank', false))) {
+      return;
+    }
     const {
       agentSessionId,
       agentIdentifier,
@@ -2728,9 +3859,15 @@ router.put('/memory', authenticateToken, async (req: Request, res: Response) => 
       summaryMaxItems = 50,
       compactToNamespace,
       dedupeKey,
+      expectedVersion,
+      actorIdentifier,
     } = req.body;
     const normalizedNamespace = normalizeNamespace(namespace);
     const normalizedHistoryField = normalizeNamespace(historyField, 'history');
+    const normalizedActorIdentifier =
+      typeof actorIdentifier === 'string' && actorIdentifier.trim()
+        ? actorIdentifier.trim()
+        : null;
     const hasMemoryObject =
       memory != null && typeof memory === 'object' && !Array.isArray(memory);
 
@@ -2783,6 +3920,24 @@ router.put('/memory', authenticateToken, async (req: Request, res: Response) => 
       });
     }
 
+    if (
+      expectedVersion !== undefined &&
+      (!Number.isInteger(expectedVersion) || expectedVersion < 0)
+    ) {
+      return res.status(400).json({
+        error: 'Invalid expectedVersion. Must be an integer >= 0',
+      });
+    }
+
+    if (
+      compactToNamespace &&
+      normalizeNamespace(compactToNamespace) === normalizedNamespace
+    ) {
+      return res.status(400).json({
+        error: 'compactToNamespace must differ from namespace',
+      });
+    }
+
     await mcpLimitsService.incrementApiCallCount(userId);
 
     const session = agentSessionId
@@ -2796,117 +3951,195 @@ router.put('/memory', authenticateToken, async (req: Request, res: Response) => 
     if (session.userId !== userId) {
       return res.status(403).json({ error: 'Access denied' });
     }
+    if (!requireTokenSessionAccess(req, res, session.id)) return;
 
-    const existingRowResult = await pool.query(
-      `SELECT memory
-       FROM agent_memory_entries
-       WHERE user_id = $1 AND agent_session_id = $2 AND namespace = $3`,
-      [userId, session.id, normalizedNamespace]
-    );
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await lockMemorySession(client, userId, session.id);
 
-    const existingTableMemory = existingRowResult.rows.length > 0
-      ? parseStoredMemory(existingRowResult.rows[0].memory)
-      : null;
-    const existingNamespaceMemory =
-      existingTableMemory ?? getMetadataNamespaceMemory(session.metadata, normalizedNamespace);
-    const providedMemory = hasMemoryObject ? toMemoryObject(memory) : {};
-    const nowIso = new Date().toISOString();
-
-    let nextNamespaceMemory: Record<string, any>;
-    let compactedToNamespace: string | null = null;
-    let autoCompaction: MemoryCompactionResult | null = null;
-    const metadataUpdates: Record<string, Record<string, any>> = {};
-
-    if (mode === 'replace') {
-      nextNamespaceMemory = providedMemory;
-    } else if (mode === 'merge') {
-      nextNamespaceMemory = {
-        ...existingNamespaceMemory,
-        ...providedMemory,
-      };
-    } else {
-      const appendItems = Array.isArray(items)
-        ? items
-        : item !== undefined
-            ? [item]
-            : [];
-      const normalizedItems = normalizeHistoryItems(appendItems, nowIso);
-      const baseMemory = {
-        ...existingNamespaceMemory,
-        ...providedMemory,
-      };
-      const existingHistory = Array.isArray(baseMemory[normalizedHistoryField])
-        ? baseMemory[normalizedHistoryField]
-        : [];
-      const nextHistory = dedupeHistoryItems(
-        [...existingHistory, ...normalizedItems],
-        typeof dedupeKey === 'string' ? dedupeKey : undefined,
+      const existingRowResult = await client.query(
+        `SELECT memory, version
+         FROM agent_memory_entries
+         WHERE user_id = $1 AND agent_session_id = $2 AND namespace = $3`,
+        [userId, session.id, normalizedNamespace]
       );
 
-      nextNamespaceMemory = {
-        ...baseMemory,
-        [normalizedHistoryField]: nextHistory,
-        lastAppendedAt: nowIso,
-      };
+      const currentVersion = existingRowResult.rows.length > 0
+        ? Number(existingRowResult.rows[0].version)
+        : 0;
+      const existingTableMemory = existingRowResult.rows.length > 0
+        ? parseStoredMemory(existingRowResult.rows[0].memory)
+        : null;
+      const existingNamespaceMemory =
+        existingTableMemory ??
+        getMetadataNamespaceMemory(session.metadata, normalizedNamespace);
 
-      if (maxHistoryItems > 0 && nextHistory.length > maxHistoryItems) {
-        compactedToNamespace = normalizeNamespace(
-          compactToNamespace,
-          `${normalizedNamespace}:long_term`,
-        );
-        const targetRowResult = await pool.query(
-          `SELECT memory
-           FROM agent_memory_entries
-           WHERE user_id = $1 AND agent_session_id = $2 AND namespace = $3`,
-          [userId, session.id, compactedToNamespace],
-        );
-        const targetMemory = targetRowResult.rows.length > 0
-          ? parseStoredMemory(targetRowResult.rows[0].memory)
-          : getMetadataNamespaceMemory(session.metadata, compactedToNamespace);
-
-        autoCompaction = compactMemoryHistory({
-          sourceNamespace: normalizedNamespace,
-          sourceMemory: nextNamespaceMemory,
-          targetMemory,
-          historyField: normalizedHistoryField,
-          keepRecent,
-          summaryMaxItems,
-          compactedAt: nowIso,
+      if (
+        expectedVersion !== undefined &&
+        expectedVersion !== currentVersion
+      ) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({
+          success: false,
+          code: 'memory_version_conflict',
+          error:
+            'Memory changed after it was read. Read the namespace again and retry with the latest version.',
+          namespace: normalizedNamespace,
+          expectedVersion,
+          currentVersion,
+          currentMemory: existingNamespaceMemory,
         });
+      }
 
-        if (autoCompaction) {
-          nextNamespaceMemory = autoCompaction.nextSourceMemory;
-          metadataUpdates[compactedToNamespace] = autoCompaction.nextTargetMemory;
-          await upsertMemoryEntry(
-            userId,
-            session.id,
-            compactedToNamespace,
-            autoCompaction.nextTargetMemory,
+      const providedMemory = hasMemoryObject ? toMemoryObject(memory) : {};
+      const nowIso = new Date().toISOString();
+
+      let nextNamespaceMemory: Record<string, any>;
+      let compactedToNamespace: string | null = null;
+      let autoCompaction: MemoryCompactionResult | null = null;
+      let compactedNamespaceVersion: number | null = null;
+      const metadataUpdates: Record<string, Record<string, any>> = {};
+
+      if (mode === 'replace') {
+        nextNamespaceMemory = providedMemory;
+      } else if (mode === 'merge') {
+        nextNamespaceMemory = {
+          ...existingNamespaceMemory,
+          ...providedMemory,
+        };
+      } else {
+        const appendItems = Array.isArray(items)
+          ? items
+          : item !== undefined
+              ? [item]
+              : [];
+        const normalizedItems = normalizeHistoryItems(appendItems, nowIso);
+        const baseMemory = {
+          ...existingNamespaceMemory,
+          ...providedMemory,
+        };
+        const existingHistory = Array.isArray(baseMemory[normalizedHistoryField])
+          ? baseMemory[normalizedHistoryField]
+          : [];
+        const nextHistory = dedupeHistoryItems(
+          [...existingHistory, ...normalizedItems],
+          typeof dedupeKey === 'string' ? dedupeKey : undefined,
+        );
+
+        nextNamespaceMemory = {
+          ...baseMemory,
+          [normalizedHistoryField]: nextHistory,
+          lastAppendedAt: nowIso,
+        };
+
+        if (maxHistoryItems > 0 && nextHistory.length > maxHistoryItems) {
+          compactedToNamespace = normalizeNamespace(
+            compactToNamespace,
+            `${normalizedNamespace}:long_term`,
           );
+          const targetRowResult = await client.query(
+            `SELECT memory
+             FROM agent_memory_entries
+             WHERE user_id = $1 AND agent_session_id = $2 AND namespace = $3`,
+            [userId, session.id, compactedToNamespace],
+          );
+          const targetMemory = targetRowResult.rows.length > 0
+            ? parseStoredMemory(targetRowResult.rows[0].memory)
+            : getMetadataNamespaceMemory(
+                session.metadata,
+                compactedToNamespace,
+              );
+
+          autoCompaction = compactMemoryHistory({
+            sourceNamespace: normalizedNamespace,
+            sourceMemory: nextNamespaceMemory,
+            targetMemory,
+            historyField: normalizedHistoryField,
+            keepRecent,
+            summaryMaxItems,
+            compactedAt: nowIso,
+          });
+
+          if (autoCompaction) {
+            nextNamespaceMemory = autoCompaction.nextSourceMemory;
+            metadataUpdates[compactedToNamespace] =
+              autoCompaction.nextTargetMemory;
+            const compactedWrite = await upsertMemoryEntry(
+              client,
+              userId,
+              session.id,
+              compactedToNamespace,
+              autoCompaction.nextTargetMemory,
+            );
+            compactedNamespaceVersion = compactedWrite.version;
+          }
         }
       }
+
+      metadataUpdates[normalizedNamespace] = nextNamespaceMemory;
+      const memoryWrite = await upsertMemoryEntry(
+        client,
+        userId,
+        session.id,
+        normalizedNamespace,
+        nextNamespaceMemory,
+      );
+      await updateSessionMetadataMemory(
+        client,
+        userId,
+        session.id,
+        metadataUpdates,
+        nowIso,
+      );
+      await touchMemoryNotebook(client, userId, session.id);
+      await client.query('COMMIT');
+
+      const updatedMemoryStats = buildMemoryStats(
+        normalizedNamespace,
+        nextNamespaceMemory,
+        memoryWrite.version,
+      );
+
+      agentWebSocketService.notifyMemoryChanged(session.id, {
+        namespace: normalizedNamespace,
+        mode,
+        actorIdentifier: normalizedActorIdentifier,
+        previousVersion: currentVersion,
+        version: memoryWrite.version,
+        memoryStats: updatedMemoryStats,
+        autoCompacted: autoCompaction !== null,
+        compactedToNamespace,
+        compactedNamespaceVersion,
+        memoryUpdatedAt: nowIso,
+      });
+
+      return res.json({
+        success: true,
+        session: {
+          id: session.id,
+          agentName: session.agentName,
+          agentIdentifier: session.agentIdentifier,
+        },
+        namespace: normalizedNamespace,
+        mode,
+        actorIdentifier: normalizedActorIdentifier,
+        previousVersion: currentVersion,
+        version: memoryWrite.version,
+        memory: nextNamespaceMemory,
+        memoryStats: updatedMemoryStats,
+        autoCompacted: autoCompaction !== null,
+        compactedToNamespace,
+        compactedNamespaceVersion,
+        checkpoint: autoCompaction?.checkpoint || null,
+        memoryUpdatedAt: nowIso,
+      });
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
     }
-
-    metadataUpdates[normalizedNamespace] = nextNamespaceMemory;
-    await upsertMemoryEntry(userId, session.id, normalizedNamespace, nextNamespaceMemory);
-    await updateSessionMetadataMemory(userId, session, metadataUpdates, nowIso);
-
-    res.json({
-      success: true,
-      session: {
-        id: session.id,
-        agentName: session.agentName,
-        agentIdentifier: session.agentIdentifier,
-      },
-      namespace: normalizedNamespace,
-      mode,
-      memory: nextNamespaceMemory,
-      memoryStats: buildMemoryStats(normalizedNamespace, nextNamespaceMemory),
-      autoCompacted: autoCompaction !== null,
-      compactedToNamespace,
-      checkpoint: autoCompaction?.checkpoint || null,
-      memoryUpdatedAt: nowIso,
-    });
   } catch (error: any) {
     console.error('Update agent memory error:', error);
     res.status(500).json({ error: error.message });
@@ -2916,6 +4149,9 @@ router.put('/memory', authenticateToken, async (req: Request, res: Response) => 
 router.post('/memory/compact', authenticateToken, async (req: Request, res: Response) => {
   try {
     const userId = (req as any).userId;
+    if (!(await requirePlanFeatureAccess(userId, res, 'memory_bank', false))) {
+      return;
+    }
     const {
       agentSessionId,
       agentIdentifier,
@@ -2924,9 +4160,19 @@ router.post('/memory/compact', authenticateToken, async (req: Request, res: Resp
       historyField = 'history',
       keepRecent = 20,
       summaryMaxItems = 50,
+      expectedVersion,
+      actorIdentifier,
     } = req.body;
     const normalizedNamespace = normalizeNamespace(namespace);
     const normalizedHistoryField = normalizeNamespace(historyField, 'history');
+    const normalizedActorIdentifier =
+      typeof actorIdentifier === 'string' && actorIdentifier.trim()
+        ? actorIdentifier.trim()
+        : null;
+    const compactNamespace = normalizeNamespace(
+      targetNamespace,
+      `${normalizedNamespace}:compact`,
+    );
 
     if (!agentSessionId && !agentIdentifier) {
       return res.status(400).json({
@@ -2946,6 +4192,21 @@ router.post('/memory/compact', authenticateToken, async (req: Request, res: Resp
       });
     }
 
+    if (
+      expectedVersion !== undefined &&
+      (!Number.isInteger(expectedVersion) || expectedVersion < 0)
+    ) {
+      return res.status(400).json({
+        error: 'Invalid expectedVersion. Must be an integer >= 0',
+      });
+    }
+
+    if (compactNamespace === normalizedNamespace) {
+      return res.status(400).json({
+        error: 'targetNamespace must differ from namespace',
+      });
+    }
+
     await mcpLimitsService.incrementApiCallCount(userId);
 
     const session = agentSessionId
@@ -2959,98 +4220,176 @@ router.post('/memory/compact', authenticateToken, async (req: Request, res: Resp
     if (session.userId !== userId) {
       return res.status(403).json({ error: 'Access denied' });
     }
+    if (!requireTokenSessionAccess(req, res, session.id)) return;
 
-    const sourceMemoryResult = await pool.query(
-      `SELECT memory
-       FROM agent_memory_entries
-       WHERE user_id = $1 AND agent_session_id = $2 AND namespace = $3`,
-      [userId, session.id, normalizedNamespace]
-    );
-    const sourceMemory = sourceMemoryResult.rows.length > 0
-      ? parseStoredMemory(sourceMemoryResult.rows[0].memory)
-      : getMetadataNamespaceMemory(session.metadata, normalizedNamespace);
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await lockMemorySession(client, userId, session.id);
 
-    const history = Array.isArray(sourceMemory[normalizedHistoryField])
-      ? sourceMemory[normalizedHistoryField]
-      : [];
+      const sourceMemoryResult = await client.query(
+        `SELECT memory, version
+         FROM agent_memory_entries
+         WHERE user_id = $1 AND agent_session_id = $2 AND namespace = $3`,
+        [userId, session.id, normalizedNamespace]
+      );
+      const currentVersion = sourceMemoryResult.rows.length > 0
+        ? Number(sourceMemoryResult.rows[0].version)
+        : 0;
+      const sourceMemory = sourceMemoryResult.rows.length > 0
+        ? parseStoredMemory(sourceMemoryResult.rows[0].memory)
+        : getMetadataNamespaceMemory(session.metadata, normalizedNamespace);
 
-    if (history.length <= keepRecent) {
+      if (
+        expectedVersion !== undefined &&
+        expectedVersion !== currentVersion
+      ) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({
+          success: false,
+          code: 'memory_version_conflict',
+          error:
+            'Memory changed after it was read. Read the namespace again and retry with the latest version.',
+          namespace: normalizedNamespace,
+          expectedVersion,
+          currentVersion,
+          currentMemory: sourceMemory,
+        });
+      }
+
+      const history = Array.isArray(sourceMemory[normalizedHistoryField])
+        ? sourceMemory[normalizedHistoryField]
+        : [];
+
+      if (history.length <= keepRecent) {
+        await client.query('COMMIT');
+        return res.json({
+          success: true,
+          compacted: false,
+          reason: 'Nothing to compact',
+          namespace: normalizedNamespace,
+          version: currentVersion,
+          historyField: normalizedHistoryField,
+          totalItems: history.length,
+          keepRecent,
+        });
+      }
+
+      const compactMemoryResult = await client.query(
+        `SELECT memory
+         FROM agent_memory_entries
+         WHERE user_id = $1 AND agent_session_id = $2 AND namespace = $3`,
+        [userId, session.id, compactNamespace]
+      );
+      const compactMemory = compactMemoryResult.rows.length > 0
+        ? parseStoredMemory(compactMemoryResult.rows[0].memory)
+        : getMetadataNamespaceMemory(session.metadata, compactNamespace);
+
+      const compactedAt = new Date().toISOString();
+      const compaction = compactMemoryHistory({
+        sourceNamespace: normalizedNamespace,
+        sourceMemory,
+        targetMemory: compactMemory,
+        historyField: normalizedHistoryField,
+        keepRecent,
+        summaryMaxItems,
+        compactedAt,
+      });
+
+      if (!compaction) {
+        await client.query('COMMIT');
+        return res.json({
+          success: true,
+          compacted: false,
+          reason: 'Nothing to compact',
+          namespace: normalizedNamespace,
+          version: currentVersion,
+          historyField: normalizedHistoryField,
+          totalItems: history.length,
+          keepRecent,
+        });
+      }
+
+      const sourceWrite = await upsertMemoryEntry(
+        client,
+        userId,
+        session.id,
+        normalizedNamespace,
+        compaction.nextSourceMemory,
+      );
+      const compactWrite = await upsertMemoryEntry(
+        client,
+        userId,
+        session.id,
+        compactNamespace,
+        compaction.nextTargetMemory,
+      );
+      await updateSessionMetadataMemory(
+        client,
+        userId,
+        session.id,
+        {
+          [normalizedNamespace]: compaction.nextSourceMemory,
+          [compactNamespace]: compaction.nextTargetMemory,
+        },
+        compactedAt
+      );
+      await touchMemoryNotebook(client, userId, session.id);
+      await client.query('COMMIT');
+
+      const sourceMemoryStats = buildMemoryStats(
+        normalizedNamespace,
+        compaction.nextSourceMemory,
+        sourceWrite.version,
+      );
+      const compactMemoryStats = buildMemoryStats(
+        compactNamespace,
+        compaction.nextTargetMemory,
+        compactWrite.version,
+      );
+
+      agentWebSocketService.notifyMemoryCompacted(session.id, {
+        sourceNamespace: normalizedNamespace,
+        targetNamespace: compactNamespace,
+        actorIdentifier: normalizedActorIdentifier,
+        previousVersion: currentVersion,
+        sourceVersion: sourceWrite.version,
+        targetVersion: compactWrite.version,
+        removedCount: compaction.removedCount,
+        keptCount: compaction.keptCount,
+        sourceMemoryStats,
+        compactMemoryStats,
+        memoryUpdatedAt: compactedAt,
+      });
+
       return res.json({
         success: true,
-        compacted: false,
-        reason: 'Nothing to compact',
-        namespace: normalizedNamespace,
+        compacted: true,
+        session: {
+          id: session.id,
+          agentName: session.agentName,
+          agentIdentifier: session.agentIdentifier,
+        },
+        sourceNamespace: normalizedNamespace,
+        targetNamespace: compactNamespace,
+        actorIdentifier: normalizedActorIdentifier,
+        previousVersion: currentVersion,
+        sourceVersion: sourceWrite.version,
+        targetVersion: compactWrite.version,
         historyField: normalizedHistoryField,
-        totalItems: history.length,
-        keepRecent,
+        removedCount: compaction.removedCount,
+        keptCount: compaction.keptCount,
+        checkpoint: compaction.checkpoint,
+        sourceMemoryStats,
+        compactMemoryStats,
+        memoryUpdatedAt: compactedAt,
       });
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
     }
-
-    const compactNamespace = normalizeNamespace(targetNamespace, `${normalizedNamespace}:compact`);
-
-    const compactMemoryResult = await pool.query(
-      `SELECT memory
-       FROM agent_memory_entries
-       WHERE user_id = $1 AND agent_session_id = $2 AND namespace = $3`,
-      [userId, session.id, compactNamespace]
-    );
-    const compactMemory = compactMemoryResult.rows.length > 0
-      ? parseStoredMemory(compactMemoryResult.rows[0].memory)
-      : getMetadataNamespaceMemory(session.metadata, compactNamespace);
-
-    const compactedAt = new Date().toISOString();
-    const compaction = compactMemoryHistory({
-      sourceNamespace: normalizedNamespace,
-      sourceMemory,
-      targetMemory: compactMemory,
-      historyField: normalizedHistoryField,
-      keepRecent,
-      summaryMaxItems,
-      compactedAt,
-    });
-
-    if (!compaction) {
-      return res.json({
-        success: true,
-        compacted: false,
-        reason: 'Nothing to compact',
-        namespace: normalizedNamespace,
-        historyField: normalizedHistoryField,
-        totalItems: history.length,
-        keepRecent,
-      });
-    }
-
-    await upsertMemoryEntry(userId, session.id, normalizedNamespace, compaction.nextSourceMemory);
-    await upsertMemoryEntry(userId, session.id, compactNamespace, compaction.nextTargetMemory);
-    await updateSessionMetadataMemory(
-      userId,
-      session,
-      {
-        [normalizedNamespace]: compaction.nextSourceMemory,
-        [compactNamespace]: compaction.nextTargetMemory,
-      },
-      compactedAt
-    );
-
-    res.json({
-      success: true,
-      compacted: true,
-      session: {
-        id: session.id,
-        agentName: session.agentName,
-        agentIdentifier: session.agentIdentifier,
-      },
-      sourceNamespace: normalizedNamespace,
-      targetNamespace: compactNamespace,
-      historyField: normalizedHistoryField,
-      removedCount: compaction.removedCount,
-      keptCount: compaction.keptCount,
-      checkpoint: compaction.checkpoint,
-      sourceMemoryStats: buildMemoryStats(normalizedNamespace, compaction.nextSourceMemory),
-      compactMemoryStats: buildMemoryStats(compactNamespace, compaction.nextTargetMemory),
-      memoryUpdatedAt: compactedAt,
-    });
   } catch (error: any) {
     console.error('Compact agent memory error:', error);
     res.status(500).json({ error: error.message });
@@ -3140,8 +4479,13 @@ router.get('/models', authenticateToken, async (req: Request, res: Response) => 
  * Supports context-aware reviews using GitHub repository files
  */
 router.post('/review', authenticateToken, async (req: Request, res: Response) => {
+  let userId = '';
+  let creditCharge: FeatureCreditCharge | null = null;
   try {
-    const userId = (req as any).userId;
+    userId = (req as any).userId;
+    if (!(await requirePlanFeatureAccess(userId, res, 'code_review', false))) {
+      return;
+    }
     const { code, language, reviewType, context, saveReview, githubContext } = req.body;
 
     if (!code || !language) {
@@ -3166,6 +4510,16 @@ router.post('/review', authenticateToken, async (req: Request, res: Response) =>
       console.log(`[Code Review] Context-aware review using ${githubContext.owner}/${githubContext.repo}`);
     }
 
+    creditCharge = await chargeFeatureCredits(userId, res, 'code_review', {
+      metadata: {
+        language,
+        reviewType: reviewType || 'comprehensive',
+        contextAware: Boolean(parsedGithubContext),
+        route: 'coding_agent_review',
+      },
+    });
+    if (!creditCharge) return;
+
     const review = await codeReviewService.reviewCode(
       userId,
       code,
@@ -3180,6 +4534,8 @@ router.post('/review', authenticateToken, async (req: Request, res: Response) =>
 
     res.json({
       success: true,
+      creditsCharged: creditCharge.amount,
+      creditBalance: creditCharge.newBalance,
       review: {
         id: review.id,
         code: review.code,
@@ -3197,6 +4553,16 @@ router.post('/review', authenticateToken, async (req: Request, res: Response) =>
       },
     });
   } catch (error: any) {
+    if (userId && creditCharge?.charged) {
+      try {
+        await refundFeatureCharge(userId, creditCharge, {
+          reason: error?.message || 'Code review failed',
+          route: 'coding_agent_review',
+        });
+      } catch (refundError) {
+        console.error('Code review refund error:', refundError);
+      }
+    }
     console.error('Code review error:', error);
     res.status(500).json({ error: error.message });
   }
@@ -3282,8 +4648,13 @@ router.get('/reviews/:id', authenticateToken, async (req: Request, res: Response
  * Compare two versions of code
  */
 router.post('/review/compare', authenticateToken, async (req: Request, res: Response) => {
+  let userId = '';
+  let creditCharge: FeatureCreditCharge | null = null;
   try {
-    const userId = (req as any).userId;
+    userId = (req as any).userId;
+    if (!(await requirePlanFeatureAccess(userId, res, 'code_review', false))) {
+      return;
+    }
     const { originalCode, updatedCode, language, context } = req.body;
 
     if (!originalCode || !updatedCode || !language) {
@@ -3294,6 +4665,14 @@ router.post('/review/compare', authenticateToken, async (req: Request, res: Resp
 
     // Track API call
     await mcpLimitsService.incrementApiCallCount(userId);
+
+    creditCharge = await chargeFeatureCredits(userId, res, 'code_review', {
+      metadata: {
+        language,
+        route: 'coding_agent_review_compare',
+      },
+    });
+    if (!creditCharge) return;
 
     const comparison = await codeReviewService.compareCodeVersions(
       userId,
@@ -3307,12 +4686,512 @@ router.post('/review/compare', authenticateToken, async (req: Request, res: Resp
 
     res.json({
       success: true,
+      creditsCharged: creditCharge.amount,
+      creditBalance: creditCharge.newBalance,
       comparison,
     });
   } catch (error: any) {
+    if (userId && creditCharge?.charged) {
+      try {
+        await refundFeatureCharge(userId, creditCharge, {
+          reason: error?.message || 'Code comparison failed',
+          route: 'coding_agent_review_compare',
+        });
+      } catch (refundError) {
+        console.error('Code comparison refund error:', refundError);
+      }
+    }
     console.error('Compare code versions error:', error);
     res.status(500).json({ error: error.message });
   }
 });
+
+/**
+ * POST /api/coding-agent/research/search
+ * Run a focused web search for an authenticated paid MCP user.
+ */
+router.post('/research/search', authenticateToken, async (req: Request, res: Response) => {
+  let userId = '';
+  let creditCharge: FeatureCreditCharge | null = null;
+  try {
+    userId = (req as any).userId as string;
+    const query = typeof req.body?.query === 'string' ? req.body.query.trim() : '';
+    const requestedLimit = Number(req.body?.maxResults ?? 5);
+    const maxResults = Math.min(10, Math.max(1, Number.isFinite(requestedLimit) ? Math.trunc(requestedLimit) : 5));
+    const allowedDomains = Array.isArray(req.body?.allowedDomains)
+      ? req.body.allowedDomains.map(normalizeDomain).filter((value: string | null): value is string => Boolean(value)).slice(0, 10)
+      : [];
+    const blockedDomains = Array.isArray(req.body?.blockedDomains)
+      ? req.body.blockedDomains.map(normalizeDomain).filter((value: string | null): value is string => Boolean(value)).slice(0, 20)
+      : [];
+
+    if (!query) {
+      return res.status(400).json({ success: false, error: 'Query is required.' });
+    }
+    if (!(await requirePlanFeatureAccess(userId, res, 'web_search'))) return;
+
+    creditCharge = await chargeFeatureCredits(userId, res, 'web_search', {
+      metadata: {
+        query,
+        maxResults,
+        allowedDomains,
+        blockedDomains,
+        route: 'coding_agent_web_search',
+      },
+    });
+    if (!creditCharge) return;
+
+    const domainQuery = allowedDomains.length > 0
+      ? `${query} (${allowedDomains.map((domain) => `site:${domain}`).join(' OR ')})`
+      : query;
+    const rawResults = await searchWeb(
+      domainQuery,
+      allowedDomains.length > 0 || blockedDomains.length > 0
+        ? Math.min(20, maxResults * 2)
+        : maxResults,
+    );
+    const results = rawResults
+      .filter((result) => {
+        if (blockedDomains.length > 0 && hasDomain(result?.link, blockedDomains)) {
+          return false;
+        }
+        return allowedDomains.length === 0 || hasDomain(result?.link, allowedDomains);
+      })
+      .slice(0, maxResults)
+      .map((result, index) => ({
+        position: index + 1,
+        title: result.title || 'Untitled',
+        url: result.link,
+        snippet: result.snippet || '',
+        date: result.date || null,
+      }));
+
+    res.json({
+      success: true,
+      query,
+      results,
+      resultCount: results.length,
+      creditsCharged: creditCharge.amount,
+      creditBalance: creditCharge.newBalance,
+      citationGuidance:
+        'Cite factual claims with the returned source URLs. Search snippets can be incomplete; verify important claims against the source page.',
+    });
+  } catch (error: any) {
+    if (userId && creditCharge?.charged) {
+      try {
+        await refundFeatureCharge(userId, creditCharge, {
+          reason: error?.message || 'Web search failed',
+          route: 'coding_agent_web_search',
+        });
+      } catch (refundError) {
+        console.error('MCP web search refund error:', refundError);
+      }
+    }
+    console.error('MCP web search error:', error);
+    res.status(500).json({ success: false, error: error.message || 'Web search failed.' });
+  }
+});
+
+/**
+ * POST /api/coding-agent/research/jobs
+ * Start a durable background deep-research job.
+ */
+router.post('/research/jobs', authenticateToken, async (req: Request, res: Response) => {
+  let userId = '';
+  let creditCharge: FeatureCreditCharge | null = null;
+  let backgroundStarted = false;
+  try {
+    userId = (req as any).userId as string;
+    const query = typeof req.body?.query === 'string' ? req.body.query.trim() : '';
+    const depth = researchDepths.has(req.body?.depth)
+      ? req.body.depth as ResearchDepth
+      : 'standard';
+    const template = researchTemplates.has(req.body?.template)
+      ? req.body.template as ResearchTemplate
+      : 'general';
+    const notebookId = typeof req.body?.notebookId === 'string' && req.body.notebookId.trim()
+      ? req.body.notebookId.trim()
+      : undefined;
+
+    if (!query) {
+      return res.status(400).json({ success: false, error: 'Query is required.' });
+    }
+    if (!(await requirePlanFeatureAccess(userId, res, 'deep_research'))) return;
+    if (notebookId && !(await verifyOwnedNotebook(userId, notebookId))) {
+      return res.status(404).json({ success: false, error: 'Notebook not found.' });
+    }
+    if (notebookId && (req as AuthRequest).authMethod === 'api_token') {
+      const boundSessionId = getBoundTokenSessionId(req);
+      if (!boundSessionId) {
+        return res.status(403).json({
+          success: false,
+          code: 'TOKEN_NOT_BOUND',
+          error: 'Call memory_session_open before using a topic.',
+        });
+      }
+      if (!(await agentCanReadTopic(userId, boundSessionId, notebookId))) {
+        return res.status(403).json({
+          success: false,
+          code: 'TOPIC_NOT_GRANTED',
+          error: 'This agent does not have access to the selected topic.',
+        });
+      }
+    }
+
+    const config: ResearchConfig = {
+      depth,
+      template,
+      notebookId,
+      useNotebookContext: req.body?.useNotebookContext === true && Boolean(notebookId),
+      provider: req.body?.provider === 'openrouter' ? 'openrouter' : 'gemini',
+      model: typeof req.body?.model === 'string' && req.body.model.trim()
+        ? req.body.model.trim()
+        : undefined,
+    };
+
+    creditCharge = await chargeFeatureCredits(userId, res, 'deep_research', {
+      depth,
+      metadata: {
+        query,
+        depth,
+        template,
+        notebookId: notebookId || null,
+        provider: config.provider,
+        model: config.model || null,
+        route: 'coding_agent_deep_research',
+      },
+    });
+    if (!creditCharge) return;
+
+    const jobId = await startBackgroundResearch(userId, query, config, {
+      onFailed: async (error) => {
+        try {
+          await refundFeatureCharge(userId, creditCharge, {
+            reason: error?.message || 'Background deep research failed',
+            query,
+            depth,
+            template,
+            route: 'coding_agent_deep_research',
+          });
+        } catch (refundError) {
+          console.error('MCP deep research refund error:', refundError);
+        }
+      },
+    });
+    backgroundStarted = true;
+
+    res.status(202).json({
+      success: true,
+      jobId,
+      status: 'pending',
+      query,
+      depth,
+      template,
+      creditsCharged: creditCharge.amount,
+      creditBalance: creditCharge.newBalance,
+      next:
+        'Call deep_research_status with this jobId. When status is completed, call deep_research_result.',
+    });
+  } catch (error: any) {
+    if (userId && creditCharge?.charged && !backgroundStarted) {
+      try {
+        await refundFeatureCharge(userId, creditCharge, {
+          reason: error?.message || 'Failed to start deep research',
+          route: 'coding_agent_deep_research',
+        });
+      } catch (refundError) {
+        console.error('MCP deep research start refund error:', refundError);
+      }
+    }
+    console.error('MCP deep research start error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to start deep research.',
+    });
+  }
+});
+
+/**
+ * GET /api/coding-agent/research/jobs/:jobId
+ * Get progress for a deep-research job owned by the authenticated user.
+ */
+router.get('/research/jobs/:jobId', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).userId as string;
+    if (!(await requirePlanFeatureAccess(userId, res, 'deep_research'))) return;
+
+    const job = await getResearchJobStatus(req.params.jobId, userId);
+    if (!job) {
+      return res.status(404).json({ success: false, error: 'Research job not found.' });
+    }
+
+    res.json({
+      success: true,
+      job: {
+        id: job.id,
+        query: job.query,
+        status: job.status,
+        statusMessage: job.status_message,
+        progress: Number(job.progress || 0),
+        sessionId: job.session_id || null,
+        error: job.error || null,
+        createdAt: job.created_at,
+        completedAt: job.completed_at,
+      },
+      next: job.status === 'completed'
+        ? 'Call deep_research_result with the returned sessionId or this jobId.'
+        : job.status === 'failed'
+          ? 'Inspect job.error, adjust the request or provider configuration, and start a new job.'
+          : 'Call deep_research_status again later.',
+    });
+  } catch (error: any) {
+    console.error('MCP deep research status error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to get research status.',
+    });
+  }
+});
+
+/**
+ * GET /api/coding-agent/research/result
+ * Return a completed cited report by sessionId or jobId.
+ */
+router.get('/research/result', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).userId as string;
+    if (!(await requirePlanFeatureAccess(userId, res, 'deep_research'))) return;
+
+    let sessionId =
+      typeof req.query.sessionId === 'string' && req.query.sessionId.trim()
+        ? req.query.sessionId.trim()
+        : '';
+    const jobId =
+      typeof req.query.jobId === 'string' && req.query.jobId.trim()
+        ? req.query.jobId.trim()
+        : '';
+
+    if (!sessionId && !jobId) {
+      return res.status(400).json({
+        success: false,
+        error: 'sessionId or jobId is required.',
+      });
+    }
+
+    if (!sessionId && jobId) {
+      const job = await getResearchJobStatus(jobId, userId);
+      if (!job) {
+        return res.status(404).json({ success: false, error: 'Research job not found.' });
+      }
+      if (job.status !== 'completed' || !job.session_id) {
+        return res.status(409).json({
+          success: false,
+          error: `Research is ${job.status}.`,
+          job: {
+            id: job.id,
+            status: job.status,
+            statusMessage: job.status_message,
+            progress: Number(job.progress || 0),
+            error: job.error || null,
+          },
+        });
+      }
+      sessionId = job.session_id;
+    }
+
+    const sessionResult = await pool.query(
+      `SELECT id, notebook_id, query, report, depth, template, status, created_at, completed_at
+       FROM research_sessions
+       WHERE id = $1 AND user_id = $2`,
+      [sessionId, userId],
+    );
+    if (sessionResult.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Research result not found.' });
+    }
+
+    const sourcesResult = await pool.query(
+      `SELECT title, url, snippet, credibility, credibility_score
+       FROM research_sources
+       WHERE session_id = $1
+       ORDER BY credibility_score DESC, created_at ASC`,
+      [sessionId],
+    );
+    const session = sessionResult.rows[0];
+
+    res.json({
+      success: true,
+      session: {
+        id: session.id,
+        notebookId: session.notebook_id,
+        query: session.query,
+        depth: session.depth,
+        template: session.template,
+        status: session.status,
+        createdAt: session.created_at,
+        completedAt: session.completed_at,
+      },
+      report: session.report,
+      sources: sourcesResult.rows.map((source) => ({
+        title: source.title,
+        url: source.url,
+        snippet: source.snippet || '',
+        credibility: source.credibility,
+        credibilityScore: source.credibility_score,
+      })),
+      sourceCount: sourcesResult.rows.length,
+    });
+  } catch (error: any) {
+    console.error('MCP deep research result error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to get research result.',
+    });
+  }
+});
+
+/**
+ * POST /api/coding-agent/research/sessions/:sessionId/save-to-notebook
+ * Save a cited research report as a readable notebook source.
+ */
+router.post(
+  '/research/sessions/:sessionId/save-to-notebook',
+  authenticateToken,
+  async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).userId as string;
+      if (!(await requirePlanFeatureAccess(
+        userId,
+        res,
+        'research_save_to_notebook',
+      ))) return;
+
+      const sessionResult = await pool.query(
+        `SELECT id, notebook_id, query, report, depth, template
+         FROM research_sessions
+         WHERE id = $1 AND user_id = $2`,
+        [req.params.sessionId, userId],
+      );
+      if (sessionResult.rows.length === 0) {
+        return res.status(404).json({ success: false, error: 'Research result not found.' });
+      }
+
+      const session = sessionResult.rows[0];
+      const notebookId =
+        typeof req.body?.notebookId === 'string' && req.body.notebookId.trim()
+          ? req.body.notebookId.trim()
+          : session.notebook_id;
+      if (!notebookId) {
+        return res.status(400).json({
+          success: false,
+          error: 'notebookId is required because this research was not started from a notebook.',
+        });
+      }
+      if (!(await verifyOwnedNotebook(userId, notebookId))) {
+        return res.status(404).json({ success: false, error: 'Notebook not found.' });
+      }
+      if ((req as AuthRequest).authMethod === 'api_token') {
+        const boundSessionId = getBoundTokenSessionId(req);
+        if (!boundSessionId) {
+          return res.status(403).json({
+            success: false,
+            code: 'TOKEN_NOT_BOUND',
+            error: 'Call memory_session_open before saving to a topic.',
+          });
+        }
+        if (!(await agentCanReadTopic(userId, boundSessionId, notebookId))) {
+          return res.status(403).json({
+            success: false,
+            code: 'TOPIC_NOT_GRANTED',
+            error: 'This agent does not have access to the selected topic.',
+          });
+        }
+      }
+
+      const existing = await pool.query(
+        `SELECT id, title
+         FROM sources
+         WHERE notebook_id = $1
+           AND metadata->>'researchSessionId' = $2
+         LIMIT 1`,
+        [notebookId, session.id],
+      );
+      if (existing.rows.length > 0) {
+        return res.json({
+          success: true,
+          alreadySaved: true,
+          notebookId,
+          source: existing.rows[0],
+        });
+      }
+
+      const sourceAllowance = await mcpLimitsService.canCreateSource(userId);
+      if (!sourceAllowance.allowed) {
+        return res.status(429).json({
+          success: false,
+          error: sourceAllowance.reason || 'Source limit reached.',
+          code: 'MCP_SOURCE_LIMIT_REACHED',
+        });
+      }
+
+      const sourcesResult = await pool.query(
+        `SELECT title, url, snippet, credibility, credibility_score
+         FROM research_sources
+         WHERE session_id = $1
+         ORDER BY credibility_score DESC, created_at ASC`,
+        [session.id],
+      );
+      const bibliography = sourcesResult.rows
+        .map(
+          (source, index) =>
+            `${index + 1}. [${source.title || 'Untitled'}](${source.url})`
+            + ` — ${source.credibility || 'unknown'} (${source.credibility_score || 60}%)`
+            + `${source.snippet ? `\n   ${source.snippet}` : ''}`,
+        )
+        .join('\n');
+      const content = `${session.report || ''}\n\n## Collected sources\n\n${bibliography}`.trim();
+      const requestedTitle =
+        typeof req.body?.title === 'string' ? req.body.title.trim() : '';
+      const title = (requestedTitle || `Research: ${session.query}`).slice(0, 180);
+      const sourceId = uuidv4();
+      const metadata = {
+        source: 'mcp-research',
+        researchSessionId: session.id,
+        query: session.query,
+        depth: session.depth,
+        template: session.template,
+        sourceCount: sourcesResult.rows.length,
+        savedBy: 'research_save_to_notebook',
+      };
+
+      const inserted = await pool.query(
+        `INSERT INTO sources
+           (id, notebook_id, user_id, type, title, content, metadata, created_at, updated_at)
+         VALUES ($1, $2, $3, 'research', $4, $5, $6::jsonb, NOW(), NOW())
+         RETURNING id, notebook_id, type, title, created_at`,
+        [sourceId, notebookId, userId, title, content, JSON.stringify(metadata)],
+      );
+      await pool.query(
+        'UPDATE notebooks SET updated_at = NOW() WHERE id = $1',
+        [notebookId],
+      );
+      await mcpLimitsService.incrementSourceCount(userId);
+
+      res.status(201).json({
+        success: true,
+        alreadySaved: false,
+        notebookId,
+        source: inserted.rows[0],
+        sourceCount: sourcesResult.rows.length,
+        message: 'Research report and its cited source list were saved to the notebook.',
+      });
+    } catch (error: any) {
+      console.error('MCP save research to notebook error:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message || 'Failed to save research to notebook.',
+      });
+    }
+  },
+);
 
 export default router;

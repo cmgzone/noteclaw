@@ -9,6 +9,7 @@ import '../services/google_play_billing_service.dart';
 import '../services/subscription_service.dart';
 import '../services/paypal_service.dart';
 import '../services/stripe_service.dart';
+import '../services/credit_manager.dart';
 import '../models/credit_package_model.dart';
 
 // PayPal Service Provider
@@ -125,6 +126,11 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
                     currentCredits: subscriptionData.currentCredits,
                     creditsPerMonth: subscriptionData.creditsPerMonth,
                     nextRenewalDate: subscriptionData.nextRenewalDate,
+                  ),
+
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(16, 16, 16, 0),
+                    child: _CreditUsageCard(),
                   ),
 
                   const SizedBox(height: 24),
@@ -621,6 +627,73 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
 
   String _formatDate(DateTime date) {
     return '${date.day}/${date.month}/${date.year} ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
+  }
+}
+
+class _CreditUsageCard extends StatelessWidget {
+  const _CreditUsageCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    const costs = <(String, String)>[
+      ('Notebook chat', '${CreditCosts.notebookChat} cr'),
+      ('Web search', '${CreditCosts.webSearch} cr'),
+      ('Code review', '${CreditCosts.codeReview} cr'),
+      ('Deep research', '${CreditCosts.deepResearch} cr'),
+      ('Deep depth', '${CreditCosts.deepResearch * 2} cr'),
+    ];
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: colorScheme.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'How credits are used',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Only model-powered work consumes credits. Memory storage, retrieval, live collaboration, and saving research are free. Failed operations are refunded.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                  height: 1.4,
+                ),
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: costs
+                .map(
+                  (item) => Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: colorScheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      '${item.$1} · ${item.$2}',
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                    ),
+                  ),
+                )
+                .toList(),
+          ),
+        ],
+      ),
+    );
   }
 }
 

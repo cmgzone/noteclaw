@@ -5,74 +5,30 @@ import dotenv from 'dotenv';
 import { createServer } from 'http';
 import { parse } from 'url';
 
-// Import all routes
+// Memory-bank surface
 import authRoutes from './routes/auth.js';
 import notebooksRoutes from './routes/notebooks.js';
 import sourcesRoutes from './routes/sources.js';
-import chunksRoutes from './routes/chunks.js';
-import tagsRoutes from './routes/tags.js';
 import aiRoutes from './routes/ai.js';
-import subscriptionsRoutes from './routes/subscriptions.js';
 import adminRoutes from './routes/admin.js';
-import analyticsRoutes from './routes/analytics.js';
-import mediaRoutes from './routes/media.js';
-import sharingRoutes from './routes/sharing.js';
-import recommendationsRoutes from './routes/recommendations.js';
-import gamificationRoutes from './routes/gamification.js';
-import studyRoutes from './routes/study.js';
-import ebookRoutes from './routes/ebooks.js';
-import researchRoutes from './routes/research.js';
-import searchRoutes from './routes/search.js';
-import featuresRoutes from './routes/features.js';
-import voiceRoutes from './routes/voice.js';
-import sportsRoutes from './routes/sports.js';
 import codingAgentRoutes from './routes/codingAgent.js';
 import mcpDownloadRoutes from './routes/mcpDownload.js';
-import githubRoutes from './routes/github.js';
-import planningRoutes from './routes/planning.js';
-import socialRoutes from './routes/social.js';
-import socialSharingRoutes from './routes/socialSharing.js';
-import messagingRoutes from './routes/messaging.js';
-import notificationsRoutes from './routes/notifications.js';
-import googleDriveRoutes from './routes/googleDrive.js';
-import contentRoutes from './routes/content.js';
-import deepResearchRoutes from './routes/deepResearch.js';
-import ragRoutes from './routes/rag.js';
-import agentSkillsRoutes from './routes/agentSkills.js';
-import publicPagesRoutes from './routes/publicPages.js';
+import subscriptionRoutes from './routes/subscriptions.js';
 
-// Import services
-import bunnyService from './services/bunnyService.js';
-import codeVerificationService from './services/codeVerificationService.js';
-import codeAnalysisService from './services/codeAnalysisService.js';
 import { agentWebSocketService } from './services/agentWebSocketService.js';
-import { planningWebSocketService } from './services/planningWebSocketService.js';
-import { sourceConversationWebSocketService } from './services/sourceConversationWebSocketService.js';
-import { connectRedis, disconnectRedis } from './config/redis.js';
+import { initializeDatabase } from './config/database.js';
 
 // Load environment variables
 dotenv.config();
 
-// Initialize Redis
-connectRedis().catch(err => {
-    console.error('Redis initialization failed:', err);
-    console.log('⚠️  Continuing without Redis caching');
-});
-
-// Initialize services
-bunnyService.initialize();
-codeVerificationService.initialize();
-codeAnalysisService.initialize();
 // Graceful shutdown
-process.on('SIGTERM', async () => {
+process.on('SIGTERM', () => {
     console.log('SIGTERM received, shutting down gracefully...');
-    await disconnectRedis();
     process.exit(0);
 });
 
-process.on('SIGINT', async () => {
+process.on('SIGINT', () => {
     console.log('SIGINT received, shutting down gracefully...');
-    await disconnectRedis();
     process.exit(0);
 });
 
@@ -97,7 +53,18 @@ app.use(cors({
 // Handle preflight requests explicitly
 app.options('*', cors());
 
-app.use(express.json({ limit: '100mb' }));
+app.use(express.json({
+    limit: '100mb',
+    verify: (req, _res, buffer) => {
+        if (
+            (req as express.Request).originalUrl
+            === '/api/subscriptions/webhook/stripe'
+        ) {
+            (req as express.Request & { rawBody?: Buffer }).rawBody =
+                Buffer.from(buffer);
+        }
+    },
+}));
 app.use(express.urlencoded({ extended: true, limit: '100mb' }));
 
 
@@ -121,41 +88,15 @@ const healthHandler = (req: express.Request, res: express.Response) => {
 app.get('/health', healthHandler);
 app.get('/api/health', healthHandler);
 
-// API Routes
+// Memory-bank, account, subscription, and administration surfaces.
 app.use('/api/auth', authRoutes);
 app.use('/api/notebooks', notebooksRoutes);
 app.use('/api/sources', sourcesRoutes);
-app.use('/api/chunks', chunksRoutes);
-app.use('/api/tags', tagsRoutes);
 app.use('/api/ai', aiRoutes);
-app.use('/api/subscriptions', subscriptionsRoutes);
-app.use('/api/rag', ragRoutes); // Moved up and given specific prefix
-app.use('/api/agent-skills', agentSkillsRoutes); // Moved up
 app.use('/api/admin', adminRoutes);
-app.use('/api/analytics', analyticsRoutes);
-app.use('/api/media', mediaRoutes);
-app.use('/api/sharing', sharingRoutes);
-app.use('/api/recommendations', recommendationsRoutes);
-app.use('/api/gamification', gamificationRoutes);
-app.use('/api/study', studyRoutes);
-app.use('/api/ebooks', ebookRoutes);
-app.use('/api/research/deep', deepResearchRoutes); // Specific subpath
-app.use('/api/research', researchRoutes);
-app.use('/api/search', searchRoutes);
-app.use('/api/features', featuresRoutes);
-app.use('/api/voice', voiceRoutes);
-app.use('/api/sports', sportsRoutes);
 app.use('/api/coding-agent', codingAgentRoutes);
 app.use('/api/mcp', mcpDownloadRoutes);
-app.use('/api/github', githubRoutes);
-app.use('/api/planning', planningRoutes);
-app.use('/api/social', socialRoutes);
-app.use('/api/social-sharing', socialSharingRoutes);
-app.use('/api/messaging', messagingRoutes);
-app.use('/api/notifications', notificationsRoutes);
-app.use('/api/google-drive', googleDriveRoutes);
-app.use('/api/content', contentRoutes);
-app.use('/', publicPagesRoutes);
+app.use('/api/subscriptions', subscriptionRoutes);
 // 404 handler
 app.use((req, res) => {
     console.log(`[404] Route not found: ${req.method} ${req.path}`);
@@ -176,12 +117,6 @@ const server = createServer(app);
 
 // Initialize WebSocket service for real-time agent communication
 agentWebSocketService.initialize(server);
-
-// Initialize WebSocket service for real-time planning updates
-planningWebSocketService.initialize(server);
-
-// Initialize WebSocket service for live source conversation updates
-sourceConversationWebSocketService.initialize(server);
 
 let activePort = requestedPort;
 let portAttempts = 0;
@@ -212,7 +147,6 @@ const startListening = () => {
         isStartingServer = false;
         console.log(`🚀 Server is running on http://localhost:${activePort}`);
         console.log(`🔌 WebSocket available at ws://localhost:${activePort}/ws/agent`);
-        console.log(`📋 Planning WebSocket available at ws://localhost:${activePort}/ws/planning`);
         console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
         console.log(`📅 Started at: ${new Date().toISOString()}`);
     });
@@ -233,6 +167,16 @@ server.on('error', (err: any) => {
     process.exit(1);
 });
 
-startListening();
+async function bootstrap() {
+    await initializeDatabase();
+    startListening();
+}
+
+if (process.env.NODE_ENV !== 'test') {
+    bootstrap().catch((error) => {
+        console.error('Application bootstrap failed:', error);
+        process.exit(1);
+    });
+}
 
 export default app;

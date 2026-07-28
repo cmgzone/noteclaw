@@ -2,13 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons/lucide_icons.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/auth/custom_auth_service.dart';
 import '../../ui/components/glass_container.dart';
 import '../../ui/components/premium_button.dart';
 import '../../ui/components/premium_input.dart';
-import '../../theme/app_theme.dart';
 
 class CustomLoginScreen extends ConsumerStatefulWidget {
   const CustomLoginScreen({super.key});
@@ -38,12 +36,8 @@ class _CustomLoginScreenState extends ConsumerState<CustomLoginScreen>
   bool _showForgotPassword = false;
   PasswordStrength? _passwordStrength;
 
-  static const String _hasSelectedPackagePref = 'has_selected_package';
-
   Future<String> _getPostAuthRoute() async {
-    final prefs = await SharedPreferences.getInstance();
-    final hasSelected = prefs.getBool(_hasSelectedPackagePref) ?? false;
-    return hasSelected ? '/home' : '/plan-selection';
+    return '/home';
   }
 
   @override
@@ -101,7 +95,7 @@ class _CustomLoginScreenState extends ConsumerState<CustomLoginScreen>
           password: _passwordController.text,
           displayName: _nameController.text.trim(),
         );
-        if (mounted) context.go('/plan-selection');
+        if (mounted) context.go('/home');
       } else {
         await authNotifier.signIn(
           email: _emailController.text.trim(),
@@ -224,21 +218,26 @@ class _CustomLoginScreenState extends ConsumerState<CustomLoginScreen>
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
 
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(
-          gradient: AppTheme.premiumGradient,
-        ),
-        child: SafeArea(
-          child: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
-              child: FadeTransition(
-                opacity: _fadeAnimation,
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 420),
-                  child: _buildContent(theme),
+        color: scheme.surfaceContainerLowest,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: scheme.primary.withValues(alpha: 0.035),
+            backgroundBlendMode: BlendMode.srcOver,
+          ),
+          child: SafeArea(
+            child: Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(24),
+                child: FadeTransition(
+                  opacity: _fadeAnimation,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 460),
+                    child: _buildContent(theme),
+                  ),
                 ),
               ),
             ),
@@ -257,6 +256,9 @@ class _CustomLoginScreenState extends ConsumerState<CustomLoginScreen>
   Widget _buildMainCard(ThemeData theme) {
     return GlassContainer(
       padding: const EdgeInsets.all(32),
+      color: theme.colorScheme.surface,
+      opacity: 0.98,
+      border: Border.all(color: theme.colorScheme.outlineVariant),
       child: Form(
         key: _formKey,
         child: Column(
@@ -290,25 +292,25 @@ class _CustomLoginScreenState extends ConsumerState<CustomLoginScreen>
     return Column(
       children: [
         Container(
-          padding: const EdgeInsets.all(16),
+          width: 52,
+          height: 52,
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.1),
-            shape: BoxShape.circle,
-            border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+            color: theme.colorScheme.primary,
+            borderRadius: BorderRadius.circular(14),
           ),
-          child: const Icon(
-            LucideIcons.bookOpenCheck, // Using lucide for modern feel
-            size: 48,
-            color: Colors.white,
+          child: Icon(
+            LucideIcons.brainCircuit,
+            size: 25,
+            color: theme.colorScheme.onPrimary,
           ),
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 20),
         Text(
-          'NoteClaw',
+          'NoteClaw Memory',
           style: theme.textTheme.headlineMedium?.copyWith(
-            fontWeight: FontWeight.bold,
-            letterSpacing: -0.5,
-            color: Colors.white,
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.7,
+            color: theme.colorScheme.onSurface,
           ),
           textAlign: TextAlign.center,
         ),
@@ -316,7 +318,7 @@ class _CustomLoginScreenState extends ConsumerState<CustomLoginScreen>
         Text(
           _isSignUp ? 'Create your account' : 'Welcome back',
           style: theme.textTheme.bodyLarge?.copyWith(
-            color: Colors.white.withValues(alpha: 0.8),
+            color: theme.colorScheme.onSurfaceVariant,
           ),
           textAlign: TextAlign.center,
         ),
@@ -513,7 +515,7 @@ class _CustomLoginScreenState extends ConsumerState<CustomLoginScreen>
             ? 'Already have an account? Sign In'
             : "Don't have an account? Sign Up",
         style: TextStyle(
-          color: Colors.white.withValues(alpha: 0.9),
+          color: theme.colorScheme.primary,
           fontWeight: FontWeight.w600,
         ),
       ),
@@ -529,7 +531,7 @@ class _CustomLoginScreenState extends ConsumerState<CustomLoginScreen>
         Text(
           'By continuing, you agree to our',
           style: theme.textTheme.bodySmall?.copyWith(
-            color: Colors.white.withValues(alpha: 0.6),
+            color: theme.colorScheme.onSurfaceVariant,
             fontSize: 11,
           ),
         ),
@@ -538,7 +540,7 @@ class _CustomLoginScreenState extends ConsumerState<CustomLoginScreen>
           child: Text(
             'Privacy Policy',
             style: theme.textTheme.bodySmall?.copyWith(
-              color: Colors.white,
+              color: theme.colorScheme.onSurface,
               fontSize: 11,
               decoration: TextDecoration.underline,
               fontWeight: FontWeight.bold,
@@ -548,7 +550,7 @@ class _CustomLoginScreenState extends ConsumerState<CustomLoginScreen>
         Text(
           'and',
           style: theme.textTheme.bodySmall?.copyWith(
-            color: Colors.white.withValues(alpha: 0.6),
+            color: theme.colorScheme.onSurfaceVariant,
             fontSize: 11,
           ),
         ),
@@ -557,7 +559,7 @@ class _CustomLoginScreenState extends ConsumerState<CustomLoginScreen>
           child: Text(
             'Terms & Conditions',
             style: theme.textTheme.bodySmall?.copyWith(
-              color: Colors.white,
+              color: theme.colorScheme.onSurface,
               fontSize: 11,
               decoration: TextDecoration.underline,
               fontWeight: FontWeight.bold,
@@ -571,6 +573,9 @@ class _CustomLoginScreenState extends ConsumerState<CustomLoginScreen>
   Widget _buildTwoFactorCard(ThemeData theme) {
     return GlassContainer(
       padding: const EdgeInsets.all(32),
+      color: theme.colorScheme.surface,
+      opacity: 0.98,
+      border: Border.all(color: theme.colorScheme.outlineVariant),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -637,6 +642,9 @@ class _CustomLoginScreenState extends ConsumerState<CustomLoginScreen>
   Widget _buildForgotPasswordCard(ThemeData theme) {
     return GlassContainer(
       padding: const EdgeInsets.all(32),
+      color: theme.colorScheme.surface,
+      opacity: 0.98,
+      border: Border.all(color: theme.colorScheme.outlineVariant),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [

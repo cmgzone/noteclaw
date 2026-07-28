@@ -812,7 +812,10 @@ export async function performCloudResearch(
 export async function startBackgroundResearch(
     userId: string,
     query: string,
-    config: ResearchConfig
+    config: ResearchConfig,
+    hooks: {
+        onFailed?: (error: Error) => Promise<void> | void;
+    } = {}
 ): Promise<string> {
     const jobId = uuidv4();
 
@@ -844,6 +847,15 @@ export async function startBackgroundResearch(
                 `UPDATE research_jobs SET status = 'failed', error = $1 WHERE id = $2`,
                 [error.message, jobId]
             );
+            if (hooks.onFailed) {
+                try {
+                    await hooks.onFailed(
+                        error instanceof Error ? error : new Error(String(error))
+                    );
+                } catch (hookError) {
+                    console.error('Background research failure hook error:', hookError);
+                }
+            }
         }
     });
 

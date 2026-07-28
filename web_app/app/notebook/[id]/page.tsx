@@ -1,470 +1,473 @@
-
 "use client";
 
-import React, { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
-import Link from "next/link";
-import Image from "next/image";
 import {
     ArrowLeft,
-    FileText,
-    Link as LinkIcon,
-    Youtube,
-    Image as ImageIcon,
-    MoreVertical,
-    Plus,
+    Bot,
+    Braces,
+    CheckCircle2,
+    Clock3,
+    Database,
+    FileJson2,
+    Layers3,
     Loader2,
-    Trash2,
-    MessageSquare,
-    Search,
-    Sparkles
+    Radio,
+    RefreshCw,
 } from "lucide-react";
+import Link from "next/link";
+import { useParams, useRouter } from "next/navigation";
+import {
+    type ReactNode,
+    useCallback,
+    useEffect,
+    useMemo,
+    useState,
+} from "react";
+
 import { useAuth } from "@/lib/auth-context";
-import ResearchDialog from "@/components/research-dialog";
-import ModelSelector from "@/components/model-selector";
 import api, { Notebook, Source } from "@/lib/api";
+import SubscriptionFeatureGate from "@/components/subscription-feature-gate";
 
 export default function NotebookDetailPage() {
+    return (
+        <SubscriptionFeatureGate feature="memory_bank">
+            <NotebookDetailContent />
+        </SubscriptionFeatureGate>
+    );
+}
+
+function NotebookDetailContent() {
     const { id } = useParams() as { id: string };
     const router = useRouter();
     const { isAuthenticated, isLoading: authLoading } = useAuth();
-
     const [notebook, setNotebook] = useState<Notebook | null>(null);
     const [sources, setSources] = useState<Source[]>([]);
+    const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(true);
+    const [isRefreshing, setIsRefreshing] = useState(false);
+    const [error, setError] = useState<string | null>(null);
 
-    // Add Source State
-    const [isAddSourceOpen, setIsAddSourceOpen] = useState(false);
-    const [isResearchOpen, setIsResearchOpen] = useState(false);
-    const [activeTab, setActiveTab] = useState<'url' | 'text'>('url');
-    const [newSourceTitle, setNewSourceTitle] = useState("");
-    const [newSourceContent, setNewSourceContent] = useState("");
+    const loadNotebook = useCallback(
+        async (background = false) => {
+            if (!background) {
+                setIsLoading(true);
+            } else {
+                setIsRefreshing(true);
+            }
 
-    // Chat State
-    const [messages, setMessages] = useState<{ role: string; content: string }[]>([]);
-    const [inputMessage, setInputMessage] = useState("");
-    const [isChatLoading, setIsChatLoading] = useState(false);
-
-    // Model Selection State
-    const [selectedModelId, setSelectedModelId] = useState<string>("gemini-1.5-flash"); // Default
-    const [selectedProvider, setSelectedProvider] = useState<string>("gemini");
+            try {
+                const result = await api.getMemoryNotebook(id);
+                setNotebook(result.notebook);
+                setSources(result.sources);
+                setSelectedSourceId((current) => {
+                    if (
+                        current &&
+                        result.sources.some((source) => source.id === current)
+                    ) {
+                        return current;
+                    }
+                    return result.sources[0]?.id || null;
+                });
+                setError(null);
+            } catch (loadError) {
+                console.error("Failed to load memory notebook:", loadError);
+                setError("This memory notebook could not be loaded.");
+            } finally {
+                setIsLoading(false);
+                setIsRefreshing(false);
+            }
+        },
+        [id],
+    );
 
     useEffect(() => {
         if (!authLoading && !isAuthenticated) {
             router.push("/login");
             return;
         }
-
-        if (isAuthenticated && id) {
-            loadNotebookData();
+        if (!isAuthenticated) {
+            return;
         }
-    }, [id, authLoading, isAuthenticated]);
 
-    const loadNotebookData = async () => {
-        try {
-            const [nb, srcs] = await Promise.all([
-                api.getNotebook(id),
-                api.getSources(id)
-            ]);
-            setNotebook(nb);
-            setSources(srcs);
-        } catch (error) {
-            console.error("Failed to load notebook:", error);
-            // alert("Failed to load notebook. It may not exist.");
-            // router.push("/dashboard");
-        } finally {
-            setIsLoading(false);
-        }
-    };
+        void loadNotebook();
+        const refreshTimer = window.setInterval(
+            () => void loadNotebook(true),
+            7_500,
+        );
+        return () => window.clearInterval(refreshTimer);
+    }, [authLoading, isAuthenticated, loadNotebook, router]);
 
-    const handleSendMessage = async (e?: React.FormEvent) => {
-        e?.preventDefault();
-        if (!inputMessage.trim() || isChatLoading) return;
+    const selectedSource = useMemo(
+        () => sources.find((source) => source.id === selectedSourceId) || null,
+        [selectedSourceId, sources],
+    );
 
-        const userMsg = { role: "user", content: inputMessage };
-        setMessages(prev => [...prev, userMsg]);
-        setInputMessage("");
-        setIsChatLoading(true);
-
-        try {
-            let chatMessages = [...messages, userMsg];
-
-            // Construct system prompt with sources context if it's the start
-            if (messages.length === 0) {
-                const context = sources.map(s => `Source: ${s.title}\n${s.content || s.url || ''}`).join("\n\n");
-                const systemPrompt = `You are a helpful AI assistant for this notebook. Answer questions based on the provided sources.\n\nContext:\n${context}`;
-                chatMessages = [{ role: "system", content: systemPrompt }, ...chatMessages];
-            }
-
-            let aiResponse = "";
-            const tempAiMsg = { role: "model", content: "" };
-            setMessages(prev => [...prev, tempAiMsg]);
-
-            await api.chatWithAIStream(
-                chatMessages,
-                (chunk) => {
-                    aiResponse += chunk;
-                    setMessages(prev => {
-                        const newMsgs = [...prev];
-                        newMsgs[newMsgs.length - 1] = { role: "model", content: aiResponse };
-                        return newMsgs;
-                    });
-                },
-                selectedProvider,
-                selectedModelId
-            );
-
-        } catch (error) {
-            console.error("Chat failed:", error);
-            setMessages(prev => [...prev, { role: "model", content: "Sorry, I encountered an error answering that." }]);
-        } finally {
-            setIsChatLoading(false);
-        }
-    };
-
-    const handleAddSource = async (e: React.FormEvent) => {
-        e.preventDefault();
-        try {
-            const type = activeTab === 'url' ? 'url' : 'text';
-            const payload: any = {
-                notebookId: id,
-                type,
-                title: newSourceTitle,
-            };
-
-            if (type === 'url') {
-                payload.url = newSourceContent;
-            } else {
-                payload.content = newSourceContent;
-            }
-
-            const newSource = await api.createSource(payload);
-            setSources([newSource, ...sources]);
-            setIsAddSourceOpen(false);
-            setNewSourceTitle("");
-            setNewSourceContent("");
-        } catch (error) {
-            alert("Failed to create source");
-        }
-    };
-
-    const handleDeleteSource = async (sourceId: string) => {
-        if (!confirm("Delete this source?")) return;
-        try {
-            await api.deleteSource(sourceId);
-            setSources(sources.filter(s => s.id !== sourceId));
-        } catch (error) {
-            alert("Failed to delete source");
-        }
-    };
-
-    const getSourceIcon = (type: string) => {
-        switch (type.toLowerCase()) {
-            case 'pdf': return <FileText size={20} className="text-red-400" />;
-            case 'youtube': return <Youtube size={20} className="text-red-500" />;
-            case 'url': return <LinkIcon size={20} className="text-blue-400" />;
-            case 'image': return <ImageIcon size={20} className="text-green-400" />;
-            default: return <FileText size={20} className="text-neutral-400" />;
-        }
-    };
-
-    if (isLoading) {
+    if (authLoading || isLoading) {
         return (
-            <div className="min-h-screen bg-neutral-950 flex items-center justify-center">
-                <Loader2 className="animate-spin text-blue-500" size={40} />
+            <div className="flex min-h-screen items-center justify-center bg-[#050607]">
+                <Loader2 className="animate-spin text-[#62d3d0]" size={36} />
             </div>
         );
     }
 
     if (!notebook) {
         return (
-            <div className="min-h-screen bg-neutral-950 flex flex-col items-center justify-center text-white">
-                <h1 className="text-2xl font-bold mb-4">Notebook not found</h1>
-                <Link href="/dashboard" className="text-blue-400 hover:underline">
-                    Return to Dashboard
+            <div className="flex min-h-screen flex-col items-center justify-center bg-[#050607] px-6 text-center text-white">
+                <Database className="mb-5 text-neutral-700" size={42} />
+                <h1 className="text-2xl font-semibold">Memory notebook not found</h1>
+                <p className="mt-2 text-sm text-neutral-500">
+                    {error || "This notebook may no longer be available."}
+                </p>
+                <Link
+                    href="/dashboard"
+                    className="mt-6 rounded-full bg-[#62d3d0] px-5 py-2.5 text-sm font-semibold text-black"
+                >
+                    Return to memory banks
                 </Link>
             </div>
         );
     }
 
+    const liveConnections = notebook.session?.websocketConnectionCount || 0;
+
     return (
-        <div className="min-h-screen bg-neutral-950 text-white flex flex-col md:flex-row">
-            {/* Sidebar / Source List */}
-            <aside className="w-full md:w-80 border-r border-white/5 bg-neutral-900/50 flex flex-col h-screen overflow-hidden sticky top-0">
-                <div className="p-4 border-b border-white/5 flex items-center gap-3">
-                    <Link href="/dashboard" className="text-neutral-400 hover:text-white transition-colors">
-                        <ArrowLeft size={20} />
+        <div className="min-h-screen overflow-x-hidden bg-[#050607] text-white lg:flex">
+            <aside className="border-b border-white/8 bg-[#08090b] lg:sticky lg:top-0 lg:h-screen lg:w-80 lg:shrink-0 lg:border-b-0 lg:border-r">
+                <div className="flex items-center gap-3 border-b border-white/8 px-4 py-4">
+                    <Link
+                        href="/dashboard"
+                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/10 text-neutral-400 transition hover:text-white"
+                    >
+                        <ArrowLeft size={17} />
                     </Link>
-                    <h1 className="font-semibold truncate flex-1">{notebook.title}</h1>
-                </div>
-
-                <div className="p-4 border-b border-white/5 space-y-2">
-                    <button
-                        onClick={() => setIsAddSourceOpen(true)}
-                        className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 text-white py-2 rounded-lg font-medium transition-colors"
-                    >
-                        <Plus size={18} />
-                        Add Source
-                    </button>
-                    <button
-                        onClick={() => setIsResearchOpen(true)}
-                        className="w-full flex items-center justify-center gap-2 bg-purple-600 hover:bg-purple-500 text-white py-2 rounded-lg font-medium transition-colors"
-                    >
-                        <Sparkles size={18} />
-                        Deep Research
-                    </button>
-                </div>
-
-                <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                    <div className="text-xs font-medium text-neutral-500 uppercase tracking-wider mb-2">
-                        Sources ({sources.length})
+                    <div className="min-w-0 flex-1">
+                        <h1 className="truncate text-sm font-semibold">{notebook.title}</h1>
+                        <p className="truncate text-xs text-neutral-600">
+                            {notebook.session?.agentIdentifier}
+                        </p>
                     </div>
+                    <div
+                        className={`flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-1 text-[9px] font-semibold uppercase tracking-wider ${
+                            liveConnections > 0
+                                ? "border-emerald-400/20 bg-emerald-400/5 text-emerald-400"
+                                : "border-white/8 text-neutral-600"
+                        }`}
+                    >
+                        <span
+                            className={`h-1.5 w-1.5 rounded-full ${
+                                liveConnections > 0 ? "bg-emerald-400" : "bg-neutral-700"
+                            }`}
+                        />
+                        {liveConnections > 0 ? `${liveConnections} live` : "Offline"}
+                    </div>
+                </div>
+
+                <div className="border-b border-white/8 px-4 py-4">
+                    <div className="flex items-center justify-between text-xs">
+                        <span className="font-semibold uppercase tracking-[0.16em] text-neutral-500">
+                            Memory sources
+                        </span>
+                        <span className="rounded-full bg-white/5 px-2 py-0.5 text-neutral-500">
+                            {sources.length}
+                        </span>
+                    </div>
+                    <p className="mt-2 text-xs leading-5 text-neutral-600">
+                        Each source is a durable namespace shared through MCP.
+                    </p>
+                </div>
+
+                <div className="flex gap-2 overflow-x-auto p-3 lg:block lg:h-[calc(100vh-174px)] lg:space-y-2 lg:overflow-y-auto">
                     {sources.length === 0 ? (
-                        <div className="text-center py-8 px-4 text-neutral-500 text-sm">
-                            No sources yet. Add a PDF, URL, or Text to get started.
+                        <div className="min-w-64 rounded-xl border border-dashed border-white/10 p-5 text-center text-xs leading-5 text-neutral-600 lg:min-w-0">
+                            This notebook is ready. Sources appear when an agent writes its
+                            first memory namespace.
                         </div>
                     ) : (
-                        sources.map((source) => (
-                            <div key={source.id} className="group flex items-start justify-between p-3 rounded-lg hover:bg-white/5 transition-colors cursor-pointer border border-transparent hover:border-white/5">
-                                <div className="flex items-start gap-3 overflow-hidden">
-                                    {source.credibilityScore ? (
-                                        <img
-                                            src={`https://www.google.com/s2/favicons?domain=${new URL(source.url || 'https://example.com').hostname}&sz=32`}
-                                            className="w-5 h-5 mt-0.5 rounded-sm opacity-80"
-                                            onError={(e) => { (e.target as HTMLImageElement).src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="%239CA3AF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>'; }}
-                                        />
-                                    ) : (
-                                        <div className="mt-0.5">{getSourceIcon(source.type)}</div>
-                                    )}
-                                    <div className="min-w-0">
-                                        <h4 className="text-sm font-medium text-neutral-200 truncate pr-2">
-                                            {source.title}
-                                        </h4>
-                                        <p className="text-xs text-neutral-500 truncate">
-                                            {source.credibility ? `${source.credibility} • ` : ''}
-                                            {new Date(source.createdAt).toLocaleDateString()}
-                                        </p>
-                                    </div>
-                                </div>
+                        sources.map((source) => {
+                            const selected = source.id === selectedSourceId;
+                            return (
                                 <button
-                                    onClick={(e) => { e.stopPropagation(); handleDeleteSource(source.id); }}
-                                    className="opacity-0 group-hover:opacity-100 text-neutral-600 hover:text-red-400 transition-all"
+                                    key={source.id}
+                                    onClick={() => setSelectedSourceId(source.id)}
+                                    className={`min-w-64 rounded-xl border p-3 text-left transition lg:min-w-0 lg:w-full ${
+                                        selected
+                                            ? "border-[#62d3d0]/30 bg-[#62d3d0]/5"
+                                            : "border-transparent bg-white/[0.02] hover:border-white/10 hover:bg-white/[0.04]"
+                                    }`}
                                 >
-                                    <Trash2 size={16} />
+                                    <div className="flex min-w-0 items-start gap-3">
+                                        <div
+                                            className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
+                                                selected
+                                                    ? "bg-[#62d3d0]/10 text-[#62d3d0]"
+                                                    : "bg-white/5 text-neutral-500"
+                                            }`}
+                                        >
+                                            <FileJson2 size={16} />
+                                        </div>
+                                        <div className="min-w-0 flex-1">
+                                            <div className="truncate text-sm font-medium">
+                                                {source.title}
+                                            </div>
+                                            <div className="mt-1 truncate font-mono text-[10px] text-neutral-600">
+                                                {source.namespace}
+                                            </div>
+                                            <div className="mt-2 text-[10px] text-neutral-500">
+                                                Version {source.version || 0}
+                                            </div>
+                                        </div>
+                                    </div>
                                 </button>
-                            </div>
-                        ))
+                            );
+                        })
                     )}
                 </div>
             </aside>
 
-            {/* Research Dialog */}
-            <ResearchDialog
-                isOpen={isResearchOpen}
-                onClose={() => setIsResearchOpen(false)}
-                notebookId={id}
-                onComplete={(report, newSources) => {
-                    // Refresh sources and maybe add report to chat or sources?
-                    loadNotebookData();
-                    // Optionally open the report in chat
-                    setMessages(prev => [...prev,
-                    { role: 'user', content: 'Research completed.' },
-                    { role: 'model', content: report }
-                    ]);
-                }}
-            />
-
-            {/* Add Source Modal (existing) */}
-            {isAddSourceOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-                    <div className="w-full max-w-md bg-neutral-900 border border-white/10 rounded-xl p-6 shadow-2xl">
-                        <h2 className="text-xl font-bold mb-4">Add Source</h2>
-                        <div className="flex gap-2 mb-6">
-                            <button
-                                onClick={() => setActiveTab('url')}
-                                className={`flex-1 py-2 text-sm font-medium rounded-lg transition-colors ${activeTab === 'url' ? 'bg-white/10 text-white' : 'text-neutral-400 hover:text-white'}`}
-                            >
-                                Website URL
-                            </button>
-                            <button
-                                onClick={() => setActiveTab('text')}
-                                className={`flex-1 py-2 text-sm font-medium rounded-lg transition-colors ${activeTab === 'text' ? 'bg-white/10 text-white' : 'text-neutral-400 hover:text-white'}`}
-                            >
-                                Paste Text
-                            </button>
+            <main className="min-w-0 flex-1">
+                <header className="border-b border-white/8 bg-[#08090b]/80 px-4 py-5 backdrop-blur-xl sm:px-6 lg:px-8">
+                    <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="min-w-0">
+                            <div className="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#62d3d0]">
+                                <Bot size={13} />
+                                Shared agent memory
+                            </div>
+                            <h2 className="truncate text-xl font-semibold sm:text-2xl">
+                                {selectedSource?.title || notebook.title}
+                            </h2>
+                            <p className="mt-1 truncate font-mono text-xs text-neutral-600">
+                                {selectedSource?.namespace ||
+                                    "Waiting for the first namespace"}
+                            </p>
                         </div>
-
-                        <form onSubmit={handleAddSource}>
-                            <div className="space-y-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-neutral-300 mb-1">
-                                        Title
-                                    </label>
-                                    <input
-                                        type="text"
-                                        required
-                                        value={newSourceTitle}
-                                        onChange={(e) => setNewSourceTitle(e.target.value)}
-                                        className="w-full bg-neutral-800 border border-white/10 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
-                                        placeholder="Source Title"
-                                    />
-                                </div>
-
-                                {activeTab === 'url' && (
-                                    <div>
-                                        <label className="block text-sm font-medium text-neutral-300 mb-1">
-                                            URL
-                                        </label>
-                                        <input
-                                            type="url"
-                                            required
-                                            value={newSourceContent}
-                                            onChange={(e) => setNewSourceContent(e.target.value)}
-                                            className="w-full bg-neutral-800 border border-white/10 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
-                                            placeholder="https://example.com"
-                                        />
-                                    </div>
-                                )}
-
-                                {activeTab === 'text' && (
-                                    <div>
-                                        <label className="block text-sm font-medium text-neutral-300 mb-1">
-                                            Content
-                                        </label>
-                                        <textarea
-                                            required
-                                            value={newSourceContent}
-                                            onChange={(e) => setNewSourceContent(e.target.value)}
-                                            className="w-full h-32 bg-neutral-800 border border-white/10 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500 resize-none"
-                                            placeholder="Paste your text here..."
-                                        />
-                                    </div>
-                                )}
-                            </div>
-
-                            <div className="flex justify-end gap-3 mt-6">
-                                <button
-                                    type="button"
-                                    onClick={() => setIsAddSourceOpen(false)}
-                                    className="px-4 py-2 text-sm font-medium text-neutral-400 hover:text-white transition-colors"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    type="submit"
-                                    className="px-4 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors"
-                                >
-                                    Add Source
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            )}
-
-            {/* Main Content / Chat Area */}
-            <main className="flex-1 flex flex-col h-screen overflow-hidden relative">
-                <div className="p-4 border-b border-white/5 flex items-center justify-between bg-neutral-900/30">
-                    <h2 className="text-lg font-semibold flex items-center gap-2">
-                        <MessageSquare size={18} className="text-blue-400" />
-                        Chat with Notebook
-                    </h2>
-                    <ModelSelector
-                        selectedModel={selectedModelId}
-                        onSelect={(id, provider) => {
-                            setSelectedModelId(id);
-                            setSelectedProvider(provider);
-                        }}
-                    />
-                </div>
-
-                <div className="flex-1 overflow-y-auto p-6 scroll-smooth">
-                    {
-                        messages.length === 0 ? (
-                            <div className="h-full flex flex-col items-center justify-center text-center max-w-md mx-auto">
-                                <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500/20 to-purple-500/20 flex items-center justify-center mb-6 overflow-hidden">
-                                    <Image src="/icon.png" alt="NoteClaw" width={32} height={32} />
-                                </div>
-                                <h2 className="text-2xl font-bold mb-3">Chat with your notebook</h2>
-                                <p className="text-neutral-400 mb-8">
-                                    Ask questions, get summaries, or find specific information from your {sources.length} sources.
-                                </p>
-
-                                <div className="grid grid-cols-1 gap-3 text-left w-full">
-                                    <button
-                                        onClick={() => { setInputMessage("Summarize these sources for me"); }}
-                                        className="p-3 rounded-lg border border-white/10 hover:bg-white/5 transition-colors text-sm text-neutral-300"
-                                    >
-                                        "Summarize these sources for me"
-                                    </button>
-                                    <button
-                                        onClick={() => { setInputMessage("What are the key themes?"); }}
-                                        className="p-3 rounded-lg border border-white/10 hover:bg-white/5 transition-colors text-sm text-neutral-300"
-                                    >
-                                        "What are the key themes?"
-                                    </button>
-                                </div>
-                            </div>
-                        ) : (
-                            <div className="space-y-6 max-w-3xl mx-auto">
-                                {messages.filter(m => m.role !== 'system').map((msg, idx) => (
-                                    <div key={idx} className={`flex gap-4 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                                        {msg.role === 'model' && (
-                                            <div className="w-8 h-8 rounded-full bg-purple-500/20 flex items-center justify-center flex-shrink-0 mt-1 overflow-hidden">
-                                                <Image src="/icon.png" alt="NoteClaw" width={16} height={16} />
-                                            </div>
-                                        )}
-                                        <div className={`rounded-2xl px-5 py-3.5 max-w-[85%] text-sm leading-relaxed ${msg.role === 'user'
-                                            ? 'bg-blue-600 text-white'
-                                            : 'bg-neutral-800 text-neutral-200 border border-white/5'
-                                            }`}>
-                                            <div className="prose prose-invert prose-sm max-w-none whitespace-pre-wrap">
-                                                {msg.content}
-                                            </div>
-                                        </div>
-                                    </div>
-                                ))}
-                                {isChatLoading && (
-                                    <div className="flex gap-4 justify-start">
-                                        <div className="w-8 h-8 rounded-full bg-purple-500/20 flex items-center justify-center flex-shrink-0 mt-1 overflow-hidden">
-                                            <Image src="/icon.png" alt="NoteClaw" width={16} height={16} />
-                                        </div>
-                                        <div className="bg-neutral-800 rounded-2xl px-5 py-3.5 border border-white/5 flex items-center gap-2">
-                                            <div className="w-2 h-2 bg-neutral-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                                            <div className="w-2 h-2 bg-neutral-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                                            <div className="w-2 h-2 bg-neutral-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-                                        </div>
-                                    </div>
-                                )}
-                                <div className="h-4" /> {/* Spacer */}
-                            </div>
-                        )
-                    }
-                </div >
-
-                {/* Chat Input */}
-                < form onSubmit={handleSendMessage} className="p-4 border-t border-white/5 bg-neutral-900/30" >
-                    <div className="relative max-w-3xl mx-auto">
-                        <div className="absolute left-4 top-3.5 text-neutral-500">
-                            <MessageSquare size={18} />
-                        </div>
-                        <input
-                            type="text"
-                            value={inputMessage}
-                            onChange={(e) => setInputMessage(e.target.value)}
-                            placeholder="Type a message..."
-                            className="w-full bg-neutral-800/50 border border-white/10 rounded-xl py-3 pl-11 pr-12 text-white placeholder-neutral-500 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/50 transition-all"
-                        />
                         <button
-                            type="submit"
-                            disabled={!inputMessage.trim() || isChatLoading}
-                            className="absolute right-2 top-2 p-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-500 disabled:opacity-50 disabled:hover:bg-blue-600 transition-colors"
+                            onClick={() => void loadNotebook(true)}
+                            disabled={isRefreshing}
+                            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-full border border-white/10 px-4 py-2.5 text-sm text-neutral-400 transition hover:border-white/20 hover:text-white disabled:opacity-50"
                         >
-                            <ArrowLeft size={16} className="rotate-90" />
+                            <RefreshCw
+                                size={15}
+                                className={isRefreshing ? "animate-spin" : ""}
+                            />
+                            Refresh memory
                         </button>
                     </div>
-                </form >
-            </main >
-        </div >
+                </header>
+
+                <div className="mx-auto w-full max-w-5xl px-4 py-7 sm:px-6 lg:px-8">
+                    {error && (
+                        <div className="mb-5 rounded-xl border border-red-400/20 bg-red-400/5 px-4 py-3 text-sm text-red-200">
+                            {error}
+                        </div>
+                    )}
+
+                    {selectedSource ? (
+                        <MemorySourceView source={selectedSource} />
+                    ) : (
+                        <EmptyNotebook notebook={notebook} />
+                    )}
+                </div>
+            </main>
+        </div>
     );
+}
+
+function MemorySourceView({ source }: { source: Source }) {
+    const memory = source.memory || {};
+    const fields = Object.entries(memory);
+    const stats = source.memoryStats;
+
+    return (
+        <div className="min-w-0 space-y-5">
+            <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <SourceStat
+                    icon={<Braces size={16} />}
+                    label="Populated fields"
+                    value={stats?.nonEmptyFieldCount ?? fields.length}
+                />
+                <SourceStat
+                    icon={<Layers3 size={16} />}
+                    label="History items"
+                    value={stats?.historyLength || 0}
+                />
+                <SourceStat
+                    icon={<CheckCircle2 size={16} />}
+                    label="Checkpoints"
+                    value={stats?.checkpointCount || 0}
+                />
+                <SourceStat
+                    icon={<Clock3 size={16} />}
+                    label="Last updated"
+                    value={
+                        source.updatedAt
+                            ? new Date(source.updatedAt).toLocaleString()
+                            : "Unknown"
+                    }
+                    text
+                />
+            </section>
+
+            <section className="rounded-2xl border border-white/8 bg-[#090b0d]">
+                <div className="flex min-w-0 flex-col gap-2 border-b border-white/8 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+                    <div className="min-w-0">
+                        <h3 className="text-sm font-semibold">Memory contents</h3>
+                        <p className="mt-1 truncate text-xs text-neutral-600">
+                            {source.summary}
+                        </p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                        <span className="rounded-full border border-white/8 px-2.5 py-1 font-mono text-[10px] text-neutral-500">
+                            v{source.version || 0}
+                        </span>
+                        <span className="flex items-center gap-1.5 rounded-full border border-emerald-400/15 bg-emerald-400/5 px-2.5 py-1 text-[10px] text-emerald-400">
+                            <Radio size={10} />
+                            MCP managed
+                        </span>
+                    </div>
+                </div>
+
+                {fields.length === 0 ? (
+                    <div className="px-5 py-16 text-center text-sm text-neutral-600">
+                        This namespace exists but contains no memory fields yet.
+                    </div>
+                ) : (
+                    <div className="divide-y divide-white/7">
+                        {fields.map(([key, value]) => (
+                            <MemoryField key={key} name={key} value={value} />
+                        ))}
+                    </div>
+                )}
+            </section>
+        </div>
+    );
+}
+
+function SourceStat({
+    icon,
+    label,
+    value,
+    text = false,
+}: {
+    icon: ReactNode;
+    label: string;
+    value: number | string;
+    text?: boolean;
+}) {
+    return (
+        <div className="min-w-0 rounded-2xl border border-white/8 bg-[#090b0d] p-4">
+            <div className="mb-3 text-neutral-600">{icon}</div>
+            <div className={`${text ? "truncate text-sm" : "text-2xl"} font-semibold`}>
+                {value}
+            </div>
+            <div className="mt-1 text-xs text-neutral-600">{label}</div>
+        </div>
+    );
+}
+
+function MemoryField({ name, value }: { name: string; value: unknown }) {
+    const label = name
+        .replace(/([a-z])([A-Z])/g, "$1 $2")
+        .replace(/[_-]+/g, " ")
+        .replace(/\b\w/g, (character) => character.toUpperCase());
+
+    return (
+        <div className="min-w-0 px-4 py-5 sm:px-5">
+            <div className="mb-3 flex min-w-0 items-center justify-between gap-3">
+                <h4 className="truncate text-xs font-semibold uppercase tracking-[0.14em] text-neutral-500">
+                    {label}
+                </h4>
+                <span className="shrink-0 font-mono text-[9px] text-neutral-700">
+                    {getValueType(value)}
+                </span>
+            </div>
+            <MemoryValue value={value} />
+        </div>
+    );
+}
+
+function MemoryValue({ value }: { value: unknown }) {
+    if (value == null) {
+        return <span className="text-sm italic text-neutral-600">No value</span>;
+    }
+
+    if (typeof value === "boolean") {
+        return (
+            <span
+                className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${
+                    value
+                        ? "bg-emerald-400/10 text-emerald-300"
+                        : "bg-white/5 text-neutral-500"
+                }`}
+            >
+                {String(value)}
+            </span>
+        );
+    }
+
+    if (typeof value === "string" || typeof value === "number") {
+        return (
+            <div className="break-words text-sm leading-6 text-neutral-300">
+                {String(value)}
+            </div>
+        );
+    }
+
+    if (Array.isArray(value)) {
+        const visibleItems = value.slice(0, 50);
+        return (
+            <div className="space-y-2">
+                {visibleItems.map((item, index) => (
+                    <div
+                        key={index}
+                        className="min-w-0 rounded-xl border border-white/7 bg-black/20 px-3 py-2.5"
+                    >
+                        <pre className="overflow-x-auto whitespace-pre-wrap break-words font-mono text-xs leading-5 text-neutral-400">
+                            {typeof item === "string"
+                                ? item
+                                : JSON.stringify(item, null, 2)}
+                        </pre>
+                    </div>
+                ))}
+                {value.length > visibleItems.length && (
+                    <div className="text-xs text-neutral-600">
+                        {value.length - visibleItems.length} additional items are hidden.
+                    </div>
+                )}
+            </div>
+        );
+    }
+
+    return (
+        <pre className="max-w-full overflow-x-auto whitespace-pre-wrap break-words rounded-xl border border-white/7 bg-black/25 p-4 font-mono text-xs leading-6 text-neutral-400">
+            {JSON.stringify(value, null, 2)}
+        </pre>
+    );
+}
+
+function EmptyNotebook({ notebook }: { notebook: Notebook }) {
+    return (
+        <div className="rounded-3xl border border-dashed border-white/10 px-6 py-20 text-center">
+            <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-[#62d3d0]/5 text-[#62d3d0]">
+                <Database size={25} />
+            </div>
+            <h2 className="text-xl font-semibold">Notebook ready for memory</h2>
+            <p className="mx-auto mt-3 max-w-lg text-sm leading-6 text-neutral-500">
+                Ask an agent connected to{" "}
+                <span className="font-mono text-neutral-400">
+                    {notebook.session?.agentIdentifier}
+                </span>{" "}
+                to call memory_put. Its namespace will appear here as an organized
+                source.
+            </p>
+        </div>
+    );
+}
+
+function getValueType(value: unknown): string {
+    if (Array.isArray(value)) {
+        return `${value.length} items`;
+    }
+    if (value == null) {
+        return "null";
+    }
+    return typeof value;
 }

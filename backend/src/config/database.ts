@@ -10,6 +10,9 @@ const connectionString = process.env.DATABASE_URL ||
     `postgresql://${process.env.NEON_USERNAME}:${process.env.NEON_PASSWORD}@${process.env.NEON_HOST}:${process.env.NEON_PORT || 5432}/${process.env.NEON_DATABASE}?sslmode=require`;
 
 const isNeonConnection = connectionString.includes('.neon.tech');
+const shouldUseSsl =
+    process.env.DATABASE_SSL === 'true' ||
+    (process.env.DATABASE_SSL !== 'false' && isNeonConnection);
 const shouldUseNeonServerless =
     process.env.DATABASE_USE_NEON_SERVERLESS === 'true' ||
     (process.env.DATABASE_USE_NEON_SERVERLESS !== 'false' &&
@@ -29,9 +32,7 @@ const pool: PgPool = shouldUseNeonServerless
     })()
     : new PgPool({
         connectionString,
-        ssl: {
-            rejectUnauthorized: false,
-        },
+        ssl: shouldUseSsl ? { rejectUnauthorized: false } : false,
         max: 20,
         idleTimeoutMillis: 30000,
         connectionTimeoutMillis: 60000, // Increased to 60s for Neon cold starts and heavy operations
@@ -103,6 +104,8 @@ export async function initializeDatabase() {
     try {
         console.log('🔧 Initializing database tables...');
 
+        await client.query('CREATE EXTENSION IF NOT EXISTS vector');
+
         // Core tables - split into smaller chunks
         await client.query(`
             CREATE TABLE IF NOT EXISTS users (
@@ -114,7 +117,9 @@ export async function initializeDatabase() {
                 email_verified BOOLEAN DEFAULT false,
                 two_factor_enabled BOOLEAN DEFAULT false,
                 avatar_url TEXT,
+                cover_url TEXT,
                 role TEXT DEFAULT 'user',
+                is_active BOOLEAN DEFAULT true,
                 reset_token TEXT,
                 reset_token_expiry TIMESTAMPTZ,
                 verification_token TEXT,
@@ -130,6 +135,7 @@ export async function initializeDatabase() {
                 title TEXT NOT NULL,
                 description TEXT,
                 cover_image TEXT,
+                category TEXT DEFAULT 'General',
                 is_agent_notebook BOOLEAN DEFAULT false,
                 agent_session_id TEXT,
                 created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -210,6 +216,7 @@ export async function initializeDatabase() {
                 is_free_plan BOOLEAN DEFAULT false,
                 is_active BOOLEAN DEFAULT true,
                 features JSONB DEFAULT '[]',
+                feature_access JSONB NOT NULL DEFAULT '{}',
                 created_at TIMESTAMPTZ DEFAULT NOW(),
                 updated_at TIMESTAMPTZ DEFAULT NOW()
             );
@@ -224,6 +231,7 @@ export async function initializeDatabase() {
                 credits_consumed_this_month INTEGER DEFAULT 0,
                 last_renewal_date TIMESTAMPTZ,
                 next_renewal_date TIMESTAMPTZ,
+                status TEXT NOT NULL DEFAULT 'active',
                 created_at TIMESTAMPTZ DEFAULT NOW(),
                 updated_at TIMESTAMPTZ DEFAULT NOW(),
                 UNIQUE(user_id)
@@ -239,8 +247,12 @@ export async function initializeDatabase() {
                 description TEXT,
                 balance_after INTEGER,
                 metadata JSONB,
+                idempotency_key TEXT,
                 created_at TIMESTAMPTZ DEFAULT NOW()
             );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_credit_transactions_idempotency_key
+                ON credit_transactions (idempotency_key)
+                WHERE idempotency_key IS NOT NULL;
 
             CREATE TABLE IF NOT EXISTS credit_packages (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -250,6 +262,54 @@ export async function initializeDatabase() {
                 google_play_product_id TEXT,
                 is_active BOOLEAN DEFAULT true,
                 created_at TIMESTAMPTZ DEFAULT NOW()
+            );
+        `);
+
+        // Admin-managed catalog and settings tables.
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS ai_models (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                name TEXT NOT NULL,
+                model_id TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                description TEXT,
+                cost_input DECIMAL DEFAULT 0,
+                cost_output DECIMAL DEFAULT 0,
+                context_window INTEGER DEFAULT 0,
+                is_active BOOLEAN DEFAULT true,
+                is_premium BOOLEAN DEFAULT false,
+                is_default BOOLEAN DEFAULT false,
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                updated_at TIMESTAMPTZ DEFAULT NOW()
+            );
+
+            CREATE TABLE IF NOT EXISTS api_keys (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                service_name TEXT UNIQUE NOT NULL,
+                encrypted_value TEXT NOT NULL,
+                description TEXT,
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                updated_at TIMESTAMPTZ DEFAULT NOW()
+            );
+
+            CREATE TABLE IF NOT EXISTS onboarding_screens (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                title TEXT NOT NULL,
+                description TEXT,
+                image_url TEXT,
+                icon_name TEXT,
+                sort_order INTEGER DEFAULT 0,
+                order_index INTEGER DEFAULT 0,
+                created_at TIMESTAMPTZ DEFAULT NOW()
+            );
+
+            CREATE TABLE IF NOT EXISTS app_settings (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                key TEXT UNIQUE NOT NULL,
+                content TEXT,
+                value TEXT,
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                updated_at TIMESTAMPTZ DEFAULT NOW()
             );
         `);
 
@@ -512,6 +572,24 @@ export async function initializeDatabase() {
             CREATE INDEX IF NOT EXISTS idx_agent_memory_entries_namespace ON agent_memory_entries(namespace);
             CREATE INDEX IF NOT EXISTS idx_agent_memory_entries_updated ON agent_memory_entries(updated_at DESC);
             CREATE INDEX IF NOT EXISTS idx_agent_memory_entries_memory_gin ON agent_memory_entries USING GIN(memory);
+        `);
+
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS agent_notebook_access (
+                user_id TEXT NOT NULL,
+                agent_session_id TEXT NOT NULL REFERENCES agent_sessions(id) ON DELETE CASCADE,
+                notebook_id UUID NOT NULL REFERENCES notebooks(id) ON DELETE CASCADE,
+                can_read BOOLEAN NOT NULL DEFAULT TRUE,
+                granted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                revoked_at TIMESTAMPTZ,
+                PRIMARY KEY (agent_session_id, notebook_id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_agent_notebook_access_user
+                ON agent_notebook_access(user_id);
+            CREATE INDEX IF NOT EXISTS idx_agent_notebook_access_active
+                ON agent_notebook_access(agent_session_id, notebook_id)
+                WHERE revoked_at IS NULL AND can_read = TRUE;
         `);
 
         console.log('✅ Agent communication tables initialized');

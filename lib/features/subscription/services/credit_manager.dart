@@ -9,6 +9,7 @@ import 'subscription_service.dart';
 class CreditCosts {
   // Chat & Conversation
   static const int chatMessage = 1;
+  static const int notebookChat = 1;
   static const int voiceMode = 2;
   static const int meetingMode = 3;
 
@@ -22,6 +23,7 @@ class CreditCosts {
   // Research & Search
   static const int webSearch = 1;
   static const int deepResearch = 5;
+  static const int codeReview = 2;
 
   // Audio & Media
   static const int podcastGeneration = 10;
@@ -47,6 +49,7 @@ class CreditCosts {
   static String getFeatureName(String feature) {
     final names = {
       'chat_message': 'AI Chat',
+      'notebook_chat': 'Memory Notebook Chat',
       'voice_mode': 'Voice Mode',
       'meeting_mode': 'Meeting Mode',
       'generate_flashcards': 'Flashcard Generation',
@@ -56,6 +59,7 @@ class CreditCosts {
       'generate_infographic': 'Infographic',
       'web_search': 'Web Search',
       'deep_research': 'Deep Research',
+      'code_review': 'Code Review',
       'podcast_generation': 'Podcast Generation',
       'audio_overview': 'Audio Overview',
       'text_to_speech': 'Text to Speech',

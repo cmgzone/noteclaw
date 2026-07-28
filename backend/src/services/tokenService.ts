@@ -16,8 +16,8 @@ export const TOKEN_PREFIX = 'nclaw_';
 /** Length of the random part of the token (32 bytes = 43 base64url chars) */
 export const TOKEN_RANDOM_BYTES = 32;
 
-/** Total expected token length: prefix (5) + base64url encoded 32 bytes (43) = 48 */
-export const TOKEN_TOTAL_LENGTH = 48;
+/** Total expected token length: prefix (6) + base64url encoded 32 bytes (43) = 49 */
+export const TOKEN_TOTAL_LENGTH = 49;
 
 /** Maximum tokens per user */
 export const MAX_TOKENS_PER_USER = 10;
@@ -47,6 +47,7 @@ export interface TokenValidationResult {
   valid: boolean;
   userId?: string;
   tokenId?: string;
+  metadata?: Record<string, any>;
   error?: string;
 }
 
@@ -189,7 +190,54 @@ class TokenService {
       valid: true,
       userId: tokenRecord.user_id,
       tokenId: tokenRecord.id,
+      metadata:
+        typeof tokenRecord.metadata === 'string'
+          ? JSON.parse(tokenRecord.metadata)
+          : tokenRecord.metadata || {},
     };
+  }
+
+  /**
+   * Permanently associate one personal API token with one agent session.
+   *
+   * A token is deliberately single-agent: sharing a token between unrelated
+   * agents would otherwise let one client impersonate another session merely
+   * by supplying its session ID.
+   */
+  async bindTokenToAgentSession(
+    tokenId: string,
+    userId: string,
+    agentSessionId: string,
+  ): Promise<Record<string, any>> {
+    const result = await pool.query(
+      `UPDATE api_tokens
+       SET metadata = jsonb_set(
+         COALESCE(metadata, '{}'::jsonb),
+         '{boundAgentSessionId}',
+         to_jsonb($3::text),
+         TRUE
+       )
+       WHERE id = $1
+         AND user_id = $2
+         AND revoked_at IS NULL
+         AND (
+           metadata->>'boundAgentSessionId' IS NULL
+           OR metadata->>'boundAgentSessionId' = $3
+         )
+       RETURNING metadata`,
+      [tokenId, userId, agentSessionId],
+    );
+
+    if (result.rows.length === 0) {
+      throw new Error(
+        'This MCP token is already bound to another agent session. Create a separate token for each agent.',
+      );
+    }
+
+    const metadata = result.rows[0].metadata;
+    return typeof metadata === 'string'
+      ? JSON.parse(metadata)
+      : metadata || {};
   }
 
   /**

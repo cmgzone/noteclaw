@@ -24,6 +24,10 @@ import {
 import {
     ensureGooglePlayCatalogColumns,
 } from '../services/googlePlayBillingService.js';
+import {
+    ensurePlanFeatureAccessReady,
+    normalizePlanFeatureAccess,
+} from '../services/planFeatureService.js';
 
 const router = express.Router();
 const SUPPORTED_ADMIN_NOTIFICATION_TYPES = new Set<NotificationType>(['system']);
@@ -527,7 +531,10 @@ router.put('/settings', async (req: AuthRequest, res: Response) => {
 
 router.get('/plans', async (req: AuthRequest, res: Response) => {
     try {
-        await ensureGooglePlayCatalogReady();
+        await Promise.all([
+            ensureGooglePlayCatalogReady(),
+            ensurePlanFeatureAccessReady(),
+        ]);
         const result = await pool.query(`
             SELECT sp.*, COUNT(us.id) as subscriber_count
             FROM subscription_plans sp
@@ -544,7 +551,10 @@ router.get('/plans', async (req: AuthRequest, res: Response) => {
 
 router.put('/plans/:id', async (req: AuthRequest, res: Response) => {
     try {
-        await ensureGooglePlayCatalogReady();
+        await Promise.all([
+            ensureGooglePlayCatalogReady(),
+            ensurePlanFeatureAccessReady(),
+        ]);
         const { id } = req.params;
         const {
             name,
@@ -552,7 +562,10 @@ router.put('/plans/:id', async (req: AuthRequest, res: Response) => {
             creditsPerMonth,
             price,
             isActive,
+            isFreePlan,
             features,
+            featureAccess,
+            feature_access,
             googlePlayProductId,
             google_play_product_id,
         } = req.body;
@@ -566,7 +579,29 @@ router.put('/plans/:id', async (req: AuthRequest, res: Response) => {
         if (creditsPerMonth !== undefined) { updates.push(`credits_per_month = $${paramIndex++}`); values.push(creditsPerMonth); }
         if (price !== undefined) { updates.push(`price = $${paramIndex++}`); values.push(price); }
         if (isActive !== undefined) { updates.push(`is_active = $${paramIndex++}`); values.push(isActive); }
+        if (isFreePlan !== undefined) { updates.push(`is_free_plan = $${paramIndex++}`); values.push(isFreePlan); }
         if (features !== undefined) { updates.push(`features = $${paramIndex++}`); values.push(JSON.stringify(features)); }
+        const requestedFeatureAccess = featureAccess ?? feature_access;
+        if (requestedFeatureAccess !== undefined) {
+            const currentPlan = await pool.query(
+                'SELECT is_free_plan FROM subscription_plans WHERE id = $1',
+                [id],
+            );
+            if (currentPlan.rows.length === 0) {
+                return res.status(404).json({ error: 'Plan not found' });
+            }
+            const resolvedIsFreePlan =
+                isFreePlan !== undefined
+                    ? isFreePlan === true
+                    : currentPlan.rows[0].is_free_plan === true;
+            updates.push(`feature_access = $${paramIndex++}::jsonb`);
+            values.push(JSON.stringify(
+                normalizePlanFeatureAccess(
+                    requestedFeatureAccess,
+                    resolvedIsFreePlan,
+                ),
+            ));
+        }
         const playProductId = googlePlayProductId ?? google_play_product_id;
         if (playProductId !== undefined) {
             updates.push(`google_play_product_id = $${paramIndex++}`);
@@ -602,7 +637,10 @@ router.put('/plans/:id', async (req: AuthRequest, res: Response) => {
 
 router.post('/plans', async (req: AuthRequest, res: Response) => {
     try {
-        await ensureGooglePlayCatalogReady();
+        await Promise.all([
+            ensureGooglePlayCatalogReady(),
+            ensurePlanFeatureAccessReady(),
+        ]);
         const {
             name,
             description,
@@ -610,14 +648,24 @@ router.post('/plans', async (req: AuthRequest, res: Response) => {
             price,
             isActive,
             isFreePlan,
+            features,
+            featureAccess,
+            feature_access,
             googlePlayProductId,
             google_play_product_id,
         } = req.body;
         const playProductId = googlePlayProductId ?? google_play_product_id;
+        const resolvedIsFreePlan = isFreePlan ?? false;
+        const resolvedFeatureAccess = normalizePlanFeatureAccess(
+            featureAccess ?? feature_access,
+            resolvedIsFreePlan,
+        );
 
         const result = await pool.query(`
-            INSERT INTO subscription_plans (name, description, credits_per_month, price, is_active, is_free_plan, google_play_product_id)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            INSERT INTO subscription_plans
+              (name, description, credits_per_month, price, is_active, is_free_plan,
+               features, feature_access, google_play_product_id)
+            VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9)
             RETURNING *
         `, [
             name,
@@ -625,7 +673,9 @@ router.post('/plans', async (req: AuthRequest, res: Response) => {
             creditsPerMonth || 30,
             price || 0,
             isActive ?? true,
-            isFreePlan ?? false,
+            resolvedIsFreePlan,
+            JSON.stringify(Array.isArray(features) ? features : []),
+            JSON.stringify(resolvedFeatureAccess),
             typeof playProductId === 'string' && playProductId.trim().length > 0
                 ? playProductId.trim()
                 : null,

@@ -33,6 +33,95 @@ export interface CreateNotebookOptions {
 
 class AgentNotebookService {
   /**
+   * Create the user-facing notebook projection for a durable memory session.
+   * A transaction-level advisory lock keeps simultaneous agents from creating
+   * duplicate notebooks for the same shared project.
+   */
+  async createOrGetMemoryNotebook(
+    userId: string,
+    agentSession: AgentSession,
+    options: CreateNotebookOptions = {},
+  ): Promise<AgentNotebook> {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        'SELECT pg_advisory_xact_lock(hashtext($1))',
+        [`noteclaw-memory-notebook:${userId}:${agentSession.id}`],
+      );
+
+      const existingResult = await client.query(
+        `SELECT *
+         FROM notebooks
+         WHERE user_id = $1
+           AND (
+             agent_session_id = $2
+             OR ($3::text IS NOT NULL AND id::text = $3::text)
+           )
+         ORDER BY updated_at DESC
+         LIMIT 1`,
+        [userId, agentSession.id, agentSession.notebookId || null],
+      );
+
+      if (existingResult.rows.length > 0) {
+        const existing = existingResult.rows[0];
+        await client.query(
+          `UPDATE agent_sessions
+           SET notebook_id = $1
+           WHERE id = $2 AND user_id = $3`,
+          [existing.id, agentSession.id, userId],
+        );
+        await client.query('COMMIT');
+        return this.mapRowToNotebook(existing);
+      }
+
+      const notebookId = uuidv4();
+      const title = options.title?.trim() || `${agentSession.agentName} Memory`;
+      const description =
+        options.description?.trim() ||
+        `Shared agent memory for ${agentSession.agentIdentifier}`;
+      const result = await client.query(
+        `INSERT INTO notebooks
+         (id, user_id, title, description, cover_image, is_agent_notebook, agent_session_id, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, true, $6, NOW(), NOW())
+         RETURNING *`,
+        [
+          notebookId,
+          userId,
+          title,
+          description,
+          options.coverImage || null,
+          agentSession.id,
+        ],
+      );
+
+      await client.query(
+        `UPDATE agent_sessions
+         SET notebook_id = $1
+         WHERE id = $2 AND user_id = $3`,
+        [notebookId, agentSession.id, userId],
+      );
+      await client.query(
+        `INSERT INTO user_stats (user_id, notebooks_created)
+         VALUES ($1, 1)
+         ON CONFLICT (user_id)
+         DO UPDATE SET
+           notebooks_created = user_stats.notebooks_created + 1,
+           updated_at = NOW()`,
+        [userId],
+      );
+
+      await client.query('COMMIT');
+      return this.mapRowToNotebook(result.rows[0]);
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
    * Create a new agent notebook or return existing one for the same agent session.
    * Implements idempotent behavior per Requirement 1.3.
    * 

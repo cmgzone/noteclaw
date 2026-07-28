@@ -11,6 +11,7 @@ export interface AuthRequest extends Request {
     userRole?: string;
     authMethod?: 'jwt' | 'api_token';
     tokenId?: string;
+    tokenMetadata?: Record<string, any>;
 }
 
 /**
@@ -109,6 +110,7 @@ export const authenticateToken = async (
             req.userId = result.userId;
             req.authMethod = 'api_token';
             req.tokenId = result.tokenId;
+            req.tokenMetadata = result.metadata || {};
 
             // Update last used timestamp (fire and forget)
             if (result.tokenId) {
@@ -231,6 +233,7 @@ export const optionalAuth = async (
                 req.userId = result.userId;
                 req.authMethod = 'api_token';
                 req.tokenId = result.tokenId;
+                req.tokenMetadata = result.metadata || {};
 
                 // Update last used timestamp (fire and forget)
                 if (result.tokenId) {

@@ -1,30 +1,40 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
 import {
-    CreditCard,
-    Zap,
-    Clock,
-    Database,
-    LogOut,
-    Loader2,
+    Activity,
     ArrowUpRight,
     Bot,
+    Clock3,
+    Database,
+    Layers3,
+    Loader2,
+    LogOut,
+    Radio,
+    Settings,
 } from "lucide-react";
-import Link from "next/link";
 import Image from "next/image";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { motion } from "framer-motion";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
+
 import { useAuth } from "@/lib/auth-context";
-import api, { Subscription, CreditTransaction, Notebook } from "@/lib/api";
+import api, { Notebook } from "@/lib/api";
+import SubscriptionFeatureGate from "@/components/subscription-feature-gate";
 
 export default function DashboardPage() {
+    return (
+        <SubscriptionFeatureGate feature="memory_bank">
+            <DashboardContent />
+        </SubscriptionFeatureGate>
+    );
+}
+
+function DashboardContent() {
     const { user, isLoading: authLoading, isAuthenticated, logout } = useAuth();
     const router = useRouter();
-    const [subscription, setSubscription] = useState<Subscription | null>(null);
-    const [transactions, setTransactions] = useState<CreditTransaction[]>([]);
     const [notebooks, setNotebooks] = useState<Notebook[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
         if (!authLoading && !isAuthenticated) {
@@ -32,336 +42,290 @@ export default function DashboardPage() {
             return;
         }
 
-        if (isAuthenticated) {
-            loadData();
+        if (!isAuthenticated) {
+            return;
         }
+
+        let active = true;
+        const loadNotebooks = async () => {
+            try {
+                const result = await api.getNotebooks();
+                if (active) {
+                    setNotebooks(result);
+                    setError(null);
+                }
+            } catch (loadError) {
+                console.error("Failed to load memory notebooks:", loadError);
+                if (active) {
+                    setError("Could not load your memory banks.");
+                }
+            } finally {
+                if (active) {
+                    setIsLoading(false);
+                }
+            }
+        };
+
+        void loadNotebooks();
+        const refreshTimer = window.setInterval(loadNotebooks, 10_000);
+        return () => {
+            active = false;
+            window.clearInterval(refreshTimer);
+        };
     }, [authLoading, isAuthenticated, router]);
 
-    const loadData = async () => {
-        setIsLoading(true);
-        try {
-            const [sub, txs, nbs] = await Promise.all([
-                api.getSubscription(),
-                api.getTransactions(10),
-                api.getNotebooks(),
-            ]);
-            setSubscription(sub);
-            setTransactions(txs);
-            setNotebooks(nbs);
-        } catch (error) {
-            console.error("Failed to load dashboard data:", error);
-        } finally {
-            setIsLoading(false);
-        }
-    };
+    const totals = useMemo(() => {
+        const sources = notebooks.reduce(
+            (count, notebook) => count + (notebook.sourceCount || 0),
+            0,
+        );
+        const liveConnections = notebooks.reduce(
+            (count, notebook) =>
+                count + (notebook.session?.websocketConnectionCount || 0),
+            0,
+        );
+        return { sources, liveConnections };
+    }, [notebooks]);
 
     const handleLogout = () => {
         logout();
         router.push("/");
     };
 
-
-
     if (authLoading || (!isAuthenticated && !authLoading)) {
         return (
-            <div className="min-h-screen bg-neutral-950 flex items-center justify-center">
-                <Loader2 className="animate-spin text-blue-500" size={40} />
+            <div className="flex min-h-screen items-center justify-center bg-[#050607]">
+                <Loader2 className="animate-spin text-[#62d3d0]" size={36} />
             </div>
         );
     }
 
     return (
-        <div className="min-h-screen bg-neutral-950 text-white">
+        <div className="min-h-screen overflow-x-hidden bg-[#050607] text-white">
             <DashboardNav user={user} onLogout={handleLogout} />
 
-            <main className="container mx-auto px-6 py-8">
-                <header className="mb-8 flex justify-between items-center">
-                    <div>
-                        <h1 className="text-3xl font-bold tracking-tight">Overview</h1>
-                        <p className="text-neutral-400">Welcome back, {user?.displayName || user?.email?.split("@")[0]}.</p>
+            <main className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+                <header className="mb-10 flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+                    <div className="min-w-0">
+                        <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-[#62d3d0]">
+                            <Activity size={14} />
+                            Memory control room
+                        </div>
+                        <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
+                            Your agent memory banks
+                        </h1>
+                        <p className="mt-3 max-w-2xl text-sm leading-6 text-neutral-400 sm:text-base">
+                            Each notebook is one shared project session. Its sources are
+                            durable memory namespaces maintained by your agents.
+                        </p>
                     </div>
-
+                    <Link
+                        href="/dashboard/mcp"
+                        className="inline-flex shrink-0 items-center justify-center gap-2 rounded-full bg-[#62d3d0] px-5 py-3 text-sm font-semibold text-black transition hover:bg-[#91e2df]"
+                    >
+                        Connect an agent
+                        <ArrowUpRight size={16} />
+                    </Link>
                 </header>
 
-                {isLoading ? (
-                    <div className="flex items-center justify-center py-12">
-                        <Loader2 className="animate-spin text-blue-500" size={32} />
+                <section className="mb-10 grid gap-3 sm:grid-cols-3">
+                    <MemoryStat
+                        icon={<Database size={18} />}
+                        label="Project notebooks"
+                        value={notebooks.length}
+                    />
+                    <MemoryStat
+                        icon={<Layers3 size={18} />}
+                        label="Memory sources"
+                        value={totals.sources}
+                    />
+                    <MemoryStat
+                        icon={<Radio size={18} />}
+                        label="Agents live now"
+                        value={totals.liveConnections}
+                        live={totals.liveConnections > 0}
+                    />
+                </section>
+
+                {error && (
+                    <div className="mb-6 rounded-2xl border border-red-400/20 bg-red-400/5 px-4 py-3 text-sm text-red-200">
+                        {error}
                     </div>
+                )}
+
+                {isLoading ? (
+                    <div className="flex items-center justify-center py-24">
+                        <Loader2 className="animate-spin text-[#62d3d0]" size={32} />
+                    </div>
+                ) : notebooks.length === 0 ? (
+                    <EmptyMemoryState />
                 ) : (
-                    <>
-                        {/* Notebooks Section */}
-                        <section className="mb-12">
-                            <h2 className="text-xl font-semibold mb-6 flex items-center gap-2">
-                                <Database size={20} className="text-blue-400" />
-                                Your Notebooks
+                    <section>
+                        <div className="mb-5 flex items-center justify-between">
+                            <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-neutral-500">
+                                Shared project memory
                             </h2>
-                            {notebooks.length === 0 ? (
-                                <div className="rounded-xl border border-white/5 bg-neutral-900/30 p-12 text-center">
-                                    <div className="mx-auto w-12 h-12 rounded-full bg-neutral-800 flex items-center justify-center mb-4 text-neutral-500">
-                                        <Database size={24} />
-                                    </div>
-                                    <h3 className="text-lg font-medium text-white mb-2">No notebooks yet</h3>
-                                    <p className="text-neutral-400 mb-6">Create your first notebook in the mobile app to start organizing your ideas.</p>
-                                </div>
-                            ) : (
-                                <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                                    {notebooks.map((notebook) => (
-                                        <Link key={notebook.id} href={`/notebook/${notebook.id}`}>
-                                            <motion.div
-                                                whileHover={{ scale: 1.02 }}
-                                                className="group relative overflow-hidden rounded-xl border border-white/5 bg-neutral-900/50 p-6 hover:bg-neutral-900/80 transition-all cursor-pointer h-full"
-                                            >
-                                                <div className="flex justify-between items-start mb-4">
-                                                    <div className="p-3 rounded-lg bg-blue-500/10 text-blue-400 group-hover:bg-blue-500/20 transition-colors">
-                                                        <Database size={24} />
-                                                    </div>
-                                                    {notebook.category && (
-                                                        <span className="text-xs font-mono bg-white/5 px-2 py-1 rounded text-neutral-400 border border-white/5">
-                                                            {notebook.category}
-                                                        </span>
-                                                    )}
-                                                </div>
-                                                <h3 className="text-lg font-semibold mb-2 group-hover:text-blue-400 transition-colors">
-                                                    {notebook.title}
-                                                </h3>
-                                                <p className="text-sm text-neutral-400 line-clamp-2 mb-4">
-                                                    {notebook.description || "No description"}
-                                                </p>
-                                                <div className="flex items-center gap-4 text-xs text-neutral-500 mt-auto pt-4 border-t border-white/5">
-                                                    <div className="flex items-center gap-1">
-                                                        <Clock size={12} />
-                                                        {new Date(notebook.updatedAt).toLocaleDateString()}
-                                                    </div>
-                                                    <div className="flex items-center gap-1">
-                                                        <Database size={12} />
-                                                        {notebook.sourceCount || 0} sources
-                                                    </div>
-                                                </div>
-                                            </motion.div>
-                                        </Link>
-                                    ))}
-                                </div>
-                            )}
-                        </section>
-
-                        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4 mb-8">
-                            <StatCard
-                                title="Credits Remaining"
-                                value={subscription?.current_credits?.toString() || "0"}
-                                label={`/ ${subscription?.credits_per_month || 0} monthly`}
-                                icon={<Zap className="text-amber-400" size={20} />}
-                            />
-                            <StatCard
-                                title="Credits Used"
-                                value={subscription?.credits_consumed_this_month?.toString() || "0"}
-                                label="This billing cycle"
-                                icon={<Clock className="text-blue-400" size={20} />}
-                            />
-                            <StatCard
-                                title="Total Transactions"
-                                value={transactions.length.toString()}
-                                label="Recent activities"
-                                icon={<Database className="text-purple-400" size={20} />}
-                            />
-                            <StatCard
-                                title="Current Plan"
-                                value={subscription?.plan_name || "Free"}
-                                label={subscription?.next_renewal_date ? `Renews ${new Date(subscription.next_renewal_date).toLocaleDateString()}` : ""}
-                                icon={<CreditCard className="text-green-400" size={20} />}
-                            />
+                            <span className="text-xs text-neutral-600">
+                                Refreshes automatically
+                            </span>
                         </div>
-
-                        <div className="grid gap-6 md:grid-cols-3">
-                            <div className="md:col-span-2 space-y-6">
-                                <UsageChart subscription={subscription} />
-                                <RecentActivity transactions={transactions} />
-                            </div>
-                            <div className="space-y-6">
-                                <SubscriptionCard subscription={subscription} />
-                                <McpCard />
-                            </div>
+                        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                            {notebooks.map((notebook) => (
+                                <MemoryNotebookCard key={notebook.id} notebook={notebook} />
+                            ))}
                         </div>
-                    </>
+                    </section>
                 )}
             </main>
         </div>
     );
 }
 
-function DashboardNav({ user, onLogout }: { user: any; onLogout: () => void }) {
+function DashboardNav({
+    user,
+    onLogout,
+}: {
+    user: { email?: string; displayName?: string } | null;
+    onLogout: () => void;
+}) {
     return (
-        <nav className="border-b border-white/5 bg-neutral-900/50 backdrop-blur-xl">
-            <div className="container mx-auto flex h-16 items-center justify-between px-6">
-                <Link href="/" className="flex items-center gap-2">
-                    <Image src="/icon.png" alt="NoteClaw" width={24} height={24} className="rounded-md" />
-                    <span className="font-bold tracking-tight">NoteClaw</span>
+        <nav className="border-b border-white/8 bg-[#08090b]/90 backdrop-blur-xl">
+            <div className="mx-auto flex h-16 w-full max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
+                <Link href="/" className="flex min-w-0 items-center gap-2.5">
+                    <Image
+                        src="/icon.png"
+                        alt="NoteClaw"
+                        width={28}
+                        height={28}
+                        className="rounded-lg"
+                    />
+                    <span className="truncate font-semibold tracking-tight">NoteClaw</span>
+                    <span className="hidden rounded-full border border-[#62d3d0]/20 bg-[#62d3d0]/5 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.18em] text-[#62d3d0] sm:inline">
+                        Memory
+                    </span>
                 </Link>
-                <div className="flex items-center gap-4">
-                    <span className="text-sm text-neutral-400 hidden md:block">{user?.email}</span>
+                <div className="flex items-center gap-3">
+                    <span className="hidden max-w-56 truncate text-sm text-neutral-500 md:block">
+                        {user?.email}
+                    </span>
+                    <Link
+                        href="/dashboard/settings"
+                        aria-label="Account settings"
+                        className="inline-flex items-center gap-2 rounded-full border border-white/10 px-3 py-2 text-sm text-neutral-400 transition hover:border-white/20 hover:text-white"
+                    >
+                        <Settings size={15} />
+                        <span className="hidden sm:inline">Settings</span>
+                    </Link>
                     <button
                         onClick={onLogout}
-                        className="flex items-center gap-2 text-sm font-medium text-neutral-400 hover:text-white transition-colors"
+                        className="inline-flex items-center gap-2 rounded-full border border-white/10 px-3 py-2 text-sm text-neutral-400 transition hover:border-white/20 hover:text-white"
                     >
-                        <LogOut size={16} />
-                        <span className="hidden md:inline">Log out</span>
+                        <LogOut size={15} />
+                        <span className="hidden sm:inline">Log out</span>
                     </button>
-                    <div className="h-8 w-8 rounded-full bg-gradient-to-tr from-blue-500 to-purple-500 flex items-center justify-center text-xs font-bold">
-                        {user?.displayName?.[0]?.toUpperCase() || user?.email?.[0]?.toUpperCase() || "U"}
-                    </div>
                 </div>
             </div>
         </nav>
     );
 }
 
-function StatCard({ title, value, label, icon }: { title: string, value: string, label: string, icon: React.ReactNode }) {
+function MemoryStat({
+    icon,
+    label,
+    value,
+    live = false,
+}: {
+    icon: ReactNode;
+    label: string;
+    value: number;
+    live?: boolean;
+}) {
     return (
-        <div className="rounded-xl border border-white/5 bg-neutral-900/50 p-6 backdrop-blur-sm hover:bg-neutral-900/80 transition-colors">
-            <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-medium text-neutral-400">{title}</h3>
+        <div className="min-w-0 rounded-2xl border border-white/8 bg-[#0a0c0f] p-5">
+            <div className="mb-4 flex items-center justify-between text-neutral-500">
                 {icon}
+                {live && (
+                    <span className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-emerald-400">
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                        Live
+                    </span>
+                )}
             </div>
-            <div className="text-2xl font-bold">{value}</div>
-            <p className="text-xs text-neutral-500 mt-1">{label}</p>
+            <div className="text-3xl font-semibold">{value}</div>
+            <div className="mt-1 text-sm text-neutral-500">{label}</div>
         </div>
     );
 }
 
-function UsageChart({ subscription }: { subscription: Subscription | null }) {
-    const used = subscription?.credits_consumed_this_month || 0;
-    const total = subscription?.credits_per_month || 1;
-    const percentage = Math.min((used / total) * 100, 100);
-
+function MemoryNotebookCard({ notebook }: { notebook: Notebook }) {
+    const liveConnections = notebook.session?.websocketConnectionCount || 0;
     return (
-        <div className="rounded-xl border border-white/5 bg-neutral-900/50 p-6">
-            <h3 className="text-lg font-semibold mb-6">Credit Usage</h3>
-            <div className="space-y-4">
-                <div className="flex justify-between text-sm">
-                    <span className="text-neutral-400">Used this month</span>
-                    <span className="font-mono">{used} / {total}</span>
+        <Link
+            href={`/notebook/${notebook.id}`}
+            className="group min-w-0 rounded-2xl border border-white/8 bg-[#0a0c0f] p-5 transition hover:border-[#62d3d0]/30 hover:bg-[#0d100f]"
+        >
+            <div className="mb-7 flex items-start justify-between gap-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[#62d3d0]/15 bg-[#62d3d0]/5 text-[#62d3d0]">
+                    <Bot size={21} />
                 </div>
-                <div className="h-3 w-full rounded-full bg-neutral-800 overflow-hidden">
-                    <motion.div
-                        initial={{ width: 0 }}
-                        animate={{ width: `${percentage}%` }}
-                        transition={{ duration: 1, ease: "easeOut" }}
-                        className={`h-full rounded-full ${percentage > 80 ? 'bg-red-500' : percentage > 50 ? 'bg-amber-500' : 'bg-blue-500'}`}
+                <div
+                    className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider ${
+                        liveConnections > 0
+                            ? "border-emerald-400/20 bg-emerald-400/5 text-emerald-400"
+                            : "border-white/8 text-neutral-600"
+                    }`}
+                >
+                    <span
+                        className={`h-1.5 w-1.5 rounded-full ${
+                            liveConnections > 0 ? "bg-emerald-400" : "bg-neutral-700"
+                        }`}
                     />
+                    {liveConnections > 0
+                        ? `${liveConnections} live`
+                        : "Offline"}
                 </div>
-                <p className="text-xs text-neutral-500">
-                    {percentage < 50
-                        ? "You're using credits efficiently!"
-                        : percentage < 80
-                            ? "Over halfway through your monthly credits."
-                            : "Consider upgrading your plan for more credits."}
-                </p>
             </div>
-        </div>
+            <h3 className="truncate text-lg font-semibold transition group-hover:text-[#62d3d0]">
+                {notebook.title}
+            </h3>
+            <p className="mt-2 line-clamp-2 min-h-10 text-sm leading-5 text-neutral-500">
+                {notebook.description || "Shared durable agent memory"}
+            </p>
+            <div className="mt-6 flex min-w-0 items-center justify-between gap-3 border-t border-white/7 pt-4 text-xs text-neutral-500">
+                <span className="flex min-w-0 items-center gap-1.5">
+                    <Layers3 size={13} />
+                    <span className="truncate">
+                        {notebook.sourceCount || 0} memory sources
+                    </span>
+                </span>
+                <span className="flex shrink-0 items-center gap-1.5">
+                    <Clock3 size={13} />
+                    {new Date(notebook.updatedAt).toLocaleDateString()}
+                </span>
+            </div>
+        </Link>
     );
 }
 
-function RecentActivity({ transactions }: { transactions: CreditTransaction[] }) {
+function EmptyMemoryState() {
     return (
-        <div className="rounded-xl border border-white/5 bg-neutral-900/50 p-6">
-            <h3 className="text-lg font-semibold mb-4">Recent Activity</h3>
-            {transactions.length === 0 ? (
-                <p className="text-neutral-500 text-sm">No recent activity.</p>
-            ) : (
-                <div className="space-y-4">
-                    {transactions.slice(0, 5).map((tx) => (
-                        <div key={tx.id} className="flex items-center justify-between p-3 rounded-lg bg-white/5">
-                            <div>
-                                <div className="font-medium text-sm">{tx.description || tx.transaction_type}</div>
-                                <div className="text-xs text-neutral-500">
-                                    {new Date(tx.created_at).toLocaleDateString()} at {new Date(tx.created_at).toLocaleTimeString()}
-                                </div>
-                            </div>
-                            <span className={`text-xs font-mono ${tx.amount < 0 ? 'text-red-400' : 'text-green-400'}`}>
-                                {tx.amount > 0 ? '+' : ''}{tx.amount} credits
-                            </span>
-                        </div>
-                    ))}
-                </div>
-            )}
-        </div>
-    );
-}
-
-function SubscriptionCard({ subscription }: { subscription: Subscription | null }) {
-    const planName = subscription?.plan_name || "Free";
-    const isFree = subscription?.is_free_plan ?? true;
-
-    return (
-        <div className="rounded-xl border border-white/5 bg-gradient-to-br from-blue-900/20 to-purple-900/20 p-6 relative overflow-hidden">
-            <div className="relative z-10">
-                <div className="flex items-center justify-between mb-2">
-                    <h3 className="text-lg font-semibold">{planName} Plan</h3>
-                    {!isFree && (
-                        <span className="px-2 py-1 text-xs font-bold bg-blue-500/20 text-blue-400 rounded-full">
-                            Active
-                        </span>
-                    )}
-                </div>
-                <p className="text-sm text-neutral-400 mb-6">
-                    {isFree
-                        ? "Upgrade to unlock more credits and premium features."
-                        : "You have access to all premium features."}
-                </p>
-
-                <div className="space-y-3 mb-6">
-                    <div className="flex items-center gap-2 text-sm text-neutral-300">
-                        <Zap size={16} className="text-blue-400" />
-                        <span>{subscription?.credits_per_month || 50} monthly credits</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-sm text-neutral-300">
-                        <Bot size={16} className="text-purple-400" />
-                        <span>{isFree ? "Limited Deep Research" : "Unlimited Deep Research"}</span>
-                    </div>
-                </div>
-
-                <Link
-                    href="/plans"
-                    className="w-full flex items-center justify-center gap-2 rounded-lg bg-white/10 py-2 text-sm font-medium hover:bg-white/20 transition-colors border border-white/10"
-                >
-                    {isFree ? "Upgrade Plan" : "Manage Subscription"}
-                    <ArrowUpRight size={14} />
-                </Link>
+        <div className="rounded-3xl border border-dashed border-white/12 bg-[#090a0c] px-6 py-20 text-center">
+            <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl border border-[#62d3d0]/15 bg-[#62d3d0]/5 text-[#62d3d0]">
+                <Database size={25} />
             </div>
-        </div>
-    );
-}
-
-function McpCard() {
-    return (
-        <div className="rounded-xl border border-white/5 bg-gradient-to-br from-purple-900/20 to-pink-900/20 p-6 relative overflow-hidden">
-            <div className="relative z-10">
-                <div className="flex items-center justify-between mb-2">
-                    <h3 className="text-lg font-semibold">MCP Integration</h3>
-                    <Bot size={20} className="text-purple-400" />
-                </div>
-                <p className="text-sm text-neutral-400 mb-6">
-                    Connect AI coding agents to verify and save code directly to your notebooks.
-                </p>
-
-                <div className="space-y-3 mb-6">
-                    <div className="flex items-center gap-2 text-sm text-neutral-300">
-                        <Zap size={16} className="text-amber-400" />
-                        <span>API token management</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-sm text-neutral-300">
-                        <Database size={16} className="text-green-400" />
-                        <span>Code verification & storage</span>
-                    </div>
-                </div>
-
-                <Link
-                    href="/dashboard/mcp"
-                    className="w-full flex items-center justify-center gap-2 rounded-lg bg-purple-600/20 py-2 text-sm font-medium hover:bg-purple-600/30 transition-colors border border-purple-500/20"
-                >
-                    View MCP Dashboard
-                    <ArrowUpRight size={14} />
-                </Link>
-            </div>
+            <h2 className="text-xl font-semibold">No project memory yet</h2>
+            <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-neutral-500">
+                Connect an MCP agent and open a stable project session. NoteClaw will
+                create its notebook automatically and organize every namespace as a
+                memory source.
+            </p>
+            <Link
+                href="/dashboard/mcp"
+                className="mt-7 inline-flex items-center gap-2 rounded-full bg-[#62d3d0] px-5 py-3 text-sm font-semibold text-black"
+            >
+                Configure MCP
+                <ArrowUpRight size={16} />
+            </Link>
         </div>
     );
 }

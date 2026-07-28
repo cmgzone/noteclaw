@@ -29,7 +29,15 @@ export default function SignupPage() {
         setIsLoading(true);
         try {
             await signup(email, password, displayName || undefined);
-            router.push("/dashboard");
+            const selectedPlan =
+                typeof window !== "undefined"
+                    ? new URLSearchParams(window.location.search).get("plan")
+                    : null;
+            router.push(
+                selectedPlan
+                    ? `/plans?selected=${encodeURIComponent(selectedPlan)}`
+                    : "/dashboard",
+            );
         } catch (err: any) {
             setError(err.message || "Signup failed. Please try again.");
         } finally {
@@ -71,7 +79,7 @@ export default function SignupPage() {
                                 type="text"
                                 value={displayName}
                                 onChange={(e) => setDisplayName(e.target.value)}
-                                className="mt-1 block w-full rounded-lg border border-white/10 bg-neutral-800/50 px-3 py-2 text-white placeholder-neutral-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-all"
+                                className="mt-1 block w-full rounded-lg border border-white/10 bg-neutral-800/50 px-3 py-2 text-white placeholder-neutral-500 focus:border-[#62d3d0] focus:ring-1 focus:ring-[#62d3d0] focus:outline-none transition-all"
                                 placeholder="Your name"
                             />
                         </div>
@@ -87,7 +95,7 @@ export default function SignupPage() {
                                 required
                                 value={email}
                                 onChange={(e) => setEmail(e.target.value)}
-                                className="mt-1 block w-full rounded-lg border border-white/10 bg-neutral-800/50 px-3 py-2 text-white placeholder-neutral-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-all"
+                                className="mt-1 block w-full rounded-lg border border-white/10 bg-neutral-800/50 px-3 py-2 text-white placeholder-neutral-500 focus:border-[#62d3d0] focus:ring-1 focus:ring-[#62d3d0] focus:outline-none transition-all"
                                 placeholder="you@example.com"
                             />
                         </div>
@@ -103,7 +111,7 @@ export default function SignupPage() {
                                 required
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
-                                className="mt-1 block w-full rounded-lg border border-white/10 bg-neutral-800/50 px-3 py-2 text-white placeholder-neutral-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-all"
+                                className="mt-1 block w-full rounded-lg border border-white/10 bg-neutral-800/50 px-3 py-2 text-white placeholder-neutral-500 focus:border-[#62d3d0] focus:ring-1 focus:ring-[#62d3d0] focus:outline-none transition-all"
                                 placeholder="••••••••"
                             />
                         </div>
@@ -119,7 +127,7 @@ export default function SignupPage() {
                                 required
                                 value={confirmPassword}
                                 onChange={(e) => setConfirmPassword(e.target.value)}
-                                className="mt-1 block w-full rounded-lg border border-white/10 bg-neutral-800/50 px-3 py-2 text-white placeholder-neutral-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-all"
+                                className="mt-1 block w-full rounded-lg border border-white/10 bg-neutral-800/50 px-3 py-2 text-white placeholder-neutral-500 focus:border-[#62d3d0] focus:ring-1 focus:ring-[#62d3d0] focus:outline-none transition-all"
                                 placeholder="••••••••"
                             />
                         </div>
@@ -128,7 +136,7 @@ export default function SignupPage() {
                     <button
                         type="submit"
                         disabled={isLoading}
-                        className="group relative flex w-full justify-center rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-neutral-900 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                        className="group relative flex w-full justify-center rounded-lg bg-gradient-to-r from-[#318f96] to-[#68408d] px-4 py-2.5 text-sm font-semibold text-white hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-[#62d3d0] focus:ring-offset-2 focus:ring-offset-neutral-900 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                     >
                         {isLoading ? (
                             <Loader2 className="animate-spin" size={20} />
@@ -142,7 +150,7 @@ export default function SignupPage() {
 
                     <p className="text-center text-sm text-neutral-400">
                         Already have an account?{" "}
-                        <Link href="/login" className="text-blue-400 hover:text-blue-300 font-medium">
+                        <Link href="/login" className="text-[#62d3d0] hover:text-[#a8ebe7] font-medium">
                             Sign in
                         </Link>
                     </p>

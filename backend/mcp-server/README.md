@@ -1,398 +1,168 @@
-# NoteClaw MCP Server
+# NoteClaw Memory MCP
 
-An MCP (Model Context Protocol) server that allows third-party coding agents to verify code and save it as sources in your NoteClaw app.
+This MCP server gives third-party agents a small, durable memory surface backed
+by NoteClaw.
 
-## Quick Install
+## Tools
 
-This MCP package is distributed directly from this GitHub repo. No npm, npx, or GitHub Release download is required for end users.
+- `memory_session_open` — create or resume an agent session
+- `memory_sessions_list` — list the current token-bound session and memory health
+- `memory_topics_list` — list only the notebook topics granted to this agent
+- `memory_topic_get` — read a granted topic's sources and memory namespaces
+- `memory_get` — read a named memory namespace
+- `memory_put` — merge, replace, or append durable memory
+- `memory_compact` — roll older history into checkpoint summaries
+- `get_websocket_info` — get the live WebSocket endpoint and connection template
+- `review_code` — review code for correctness, security, and maintainability
+- `web_search` — run a focused live-web search with optional domain controls
+- `deep_research_start` — start a cited background research job
+- `deep_research_status` — check job progress and obtain the completed session ID
+- `deep_research_result` — retrieve the completed report and citations
+- `research_save_to_notebook` — store the report and source list in a notebook
 
-Prerequisite: install Node.js 20+ before using the MCP server.
+Web search, deep research, and code review require an active plan entitlement.
+The metered costs are 1 credit for web search, 2 credits for code review, 5
+credits for quick/standard research, and 10 credits for deep research. Failed
+operations are refunded. Memory reads/writes, WebSocket collaboration, research
+status/result retrieval, and saving a finished report are not metered. The
+backend uses Serper for search and Gemini or OpenRouter for synthesis.
 
-**Windows (PowerShell):**
-```powershell
-irm https://raw.githubusercontent.com/cmgzone/noteclaw/HEAD/scripts/install-mcp.ps1 | iex
+## Configuration
+
+Requires Node.js 20 or newer.
+
+```env
+BACKEND_URL=https://your-noteclaw-backend.example
+NOTECLAW_API_TOKEN=nclaw_your_token
 ```
 
-**macOS/Linux:**
-```bash
-curl -fsSL https://raw.githubusercontent.com/cmgzone/noteclaw/HEAD/scripts/install-mcp.sh | bash
-```
+`CODING_AGENT_API_KEY` remains supported as a legacy alias for
+`NOTECLAW_API_TOKEN`.
 
-
-
-## Features
-
-- **Code Verification**: Validate code for syntax, security, and best practices
-- **AI-Powered Analysis**: Deep code analysis using Gemini AI
-- **Source Management**: Save verified code as sources in your app
-- **Ebook Access**: Read existing ebooks, create them directly, or generate them with AI through MCP
-- **Batch Processing**: Verify multiple code snippets at once
-- **Multi-Language Support**: JavaScript, TypeScript, Python, Dart, JSON, and more
-- **Project Workspace**: Create and manage structured projects with tasks
-- **Task Tracking**: Update task status, add outputs, and track progress
-- **GitHub Integration**: Access repositories, files, and create issues
-
-## Tools Available
-
-### `verify_code`
-Verify code for correctness, security vulnerabilities, and best practices.
+Example MCP client configuration:
 
 ```json
 {
-  "code": "function hello() { return 'world'; }",
-  "language": "javascript",
-  "context": "A simple greeting function",
-  "strictMode": false
-}
-```
-
-### `verify_and_save`
-Verify code and save it as a source if it passes verification (score >= 60).
-
-```json
-{
-  "code": "const add = (a, b) => a + b;",
-  "language": "javascript",
-  "title": "Add Function",
-  "description": "Simple addition utility",
-  "notebookId": "optional-notebook-id"
-}
-```
-
-### `batch_verify`
-Verify multiple code snippets at once.
-
-```json
-{
-  "snippets": [
-    { "id": "1", "code": "...", "language": "python" },
-    { "id": "2", "code": "...", "language": "typescript" }
-  ]
-}
-```
-
-### `analyze_code`
-Deep analysis with comprehensive suggestions.
-
-```json
-{
-  "code": "...",
-  "language": "python",
-  "analysisType": "security"
-}
-```
-
-### `get_verified_sources`
-Retrieve previously saved verified code sources.
-
-```json
-{
-  "notebookId": "optional-filter",
-  "language": "optional-filter"
-}
-```
-
-### `list_ebooks`
-List all ebook projects owned by the authenticated user.
-
-```json
-{}
-```
-
-### `get_ebook`
-Get a specific ebook and its chapters.
-
-```json
-{
-  "ebookId": "ebook-uuid-here",
-  "includeChapters": true
-}
-```
-
-### `create_ebook`
-Create a new ebook or update an existing one, with optional chapters and images.
-
-```json
-{
-  "title": "API Integration Guide",
-  "topic": "Building integrations with MCP",
-  "targetAudience": "Developers",
-  "status": "draft",
-  "chapters": [
-    {
-      "title": "Introduction",
-      "content": "# Welcome\nThis ebook explains the basics.",
-      "chapterOrder": 1,
-      "images": [
-        {
-          "url": "https://example.com/cover.jpg",
-          "caption": "Opening illustration",
-          "type": "web"
-        }
-      ]
+  "mcpServers": {
+    "noteclaw-memory": {
+      "command": "node",
+      "args": ["/absolute/path/to/dist/index.js"],
+      "env": {
+        "BACKEND_URL": "https://your-noteclaw-backend.example",
+        "NOTECLAW_API_TOKEN": "nclaw_your_token"
+      }
     }
-  ]
+  }
 }
 ```
 
-### `generate_ebook`
-Start backend AI generation for an ebook. The call returns quickly with a project ID; then poll with `get_ebook` until the status is `completed` or `error`. The backend always tries to add a cover image, and it can optionally add chapter illustrations too.
+## Typical agent flow
+
+1. Give each agent its own NoteClaw token, then call `memory_session_open` with
+   a stable `agentIdentifier`. Agents intentionally sharing one project session
+   can use the same project identifier.
+2. Call `memory_topics_list`, then `memory_topic_get` for the notebook topics
+   the account owner allowed this agent to read.
+3. Call `memory_get` at startup to restore the agent's own settings and context.
+4. Call `memory_put` as work progresses. Include the returned namespace version
+   as `expectedVersion` and identify the writer with `actorIdentifier`.
+5. Call `memory_compact` when history becomes large.
+6. Call `get_websocket_info`, connect with the same token, and reply to every
+   `ping` event with `{"type":"pong"}`.
+7. Call `review_code` when the agent needs a focused quality check before
+   shipping a change.
+8. Call `web_search` for a quick current-information lookup, or start a longer
+   run with `deep_research_start`.
+9. Poll `deep_research_status`, retrieve the cited report with
+   `deep_research_result`, then persist it with `research_save_to_notebook`.
+
+## Research configuration
+
+The NoteClaw backend, not the third-party MCP client, owns provider secrets:
+
+```env
+SERPER_API_KEY=your-serper-api-key
+GEMINI_API_KEY=your-gemini-api-key
+# or
+OPENROUTER_API_KEY=your-openrouter-api-key
+```
+
+Search supports `allowedDomains` and `blockedDomains`. Deep research can use
+`quick`, `standard`, or `deep` depth and can be grounded in a user-owned
+notebook by passing both `notebookId` and `useNotebookContext: true`.
+
+## Plan feature access
+
+The admin panel controls these entitlements independently for every free or
+paid plan:
+
+- durable memory;
+- memory notebook chat;
+- WebSocket collaboration;
+- code review;
+- web search;
+- deep research;
+- saving research to notebooks.
+
+The same entitlement map is enforced by the API, MCP tools, WebSocket
+authentication, Flutter app, and web app. Changing a plan takes effect on the
+next request or subscription refresh.
+
+## Shared project memory
+
+Agents on the same NoteClaw account can share one project session:
 
 ```json
 {
-  "title": "MCP Agent Playbook",
-  "topic": "How coding agents collaborate with notebooks and ebooks",
-  "targetAudience": "Developers building agent workflows",
-  "chapterCount": 6,
-  "chapterInstructions": "Keep it practical and include implementation examples.",
-  "generateChapterImages": true,
-  "imageSource": "auto",
-  "imageModel": "google/gemini-2.5-flash-image-preview"
+  "agentName": "NoteClaw Project",
+  "agentIdentifier": "project:noteclaw"
 }
 ```
 
-## Project Workspace Tools
+Opening the session creates or reuses a user-facing memory notebook. Every
+namespace written through `memory_put` appears inside that notebook as a
+read-only memory source. The versioned `agent_memory_entries` record remains
+the source of truth, so the notebook view cannot drift from agent memory.
 
-The MCP server also provides tools for managing plans and tasks, enabling agents to work on structured projects for coding, research, writing, operations, and other general workflows.
+Every notebook is also a user-owned topic. In Agent topic access, the account
+owner chooses which topics a session may read. MCP tokens cannot change these
+grants. A token permanently binds to the first session it opens, so use
+separate tokens when agents need separate identities or different topic access.
 
-Project-focused aliases are also available so agents can use the same language users now see in the app:
+Use shared namespaces such as `project:state`, `project:decisions`, and
+`project:tasks`, plus private namespaces such as `agent:codex` and
+`agent:claude`.
 
-- `list_projects` -> alias for `list_plans`
-- `get_project` -> alias for `get_plan`
-- `create_project` -> alias for `create_plan`
+Each live client connects with its own identity:
 
-### `list_plans`
-List all plans accessible to the authenticated user.
-
-```json
-{
-  "status": "active",
-  "includeArchived": false,
-  "limit": 50,
-  "offset": 0
-}
+```text
+wss://your-backend/ws/agent?token=...&agentIdentifier=project:noteclaw&clientIdentifier=codex
 ```
 
-### `get_plan`
-Get a specific plan with full details including requirements, design notes, and tasks.
+Multiple clients can stay connected to the same session. Memory events are
+broadcast to every connected client. Writes are serialized per session, and
+`expectedVersion` rejects a stale write with `memory_version_conflict` so the
+agent can read the latest namespace and retry.
 
-```json
-{
-  "planId": "plan-uuid-here",
-  "includeRelations": true
-}
-```
+The WebSocket sends:
 
-### `create_plan`
-Create a new plan following the spec-driven format.
+- `memory_ready` after authentication;
+- `agent_joined` when another live client connects;
+- `agent_left` when a live client disconnects;
+- `memory_changed` after an MCP memory write;
+- `memory_compacted` after an MCP compaction;
+- `ping` keep-alives;
+- `error` for invalid or unsupported socket messages.
 
-```json
-{
-  "title": "My Feature Plan",
-  "description": "Implementation plan for new feature",
-  "isPrivate": true
-}
-```
+Memory commands stay on MCP. WebSocket provides live presence and change
+notifications without polling.
 
-### `create_task`
-Create a new task in a plan.
-
-```json
-{
-  "planId": "plan-uuid-here",
-  "title": "Implement user authentication",
-  "description": "Add login and registration functionality",
-  "priority": "high",
-  "requirementIds": ["req-1", "req-2"]
-}
-```
-
-### `update_task_status`
-Update a task's status (not_started, in_progress, paused, blocked, completed).
-
-```json
-{
-  "planId": "plan-uuid-here",
-  "taskId": "task-uuid-here",
-  "status": "in_progress",
-  "reason": "Optional reason for status change"
-}
-```
-
-### `add_task_output`
-Add an output to a task (comment, code, file, or completion note).
-
-```json
-{
-  "planId": "plan-uuid-here",
-  "taskId": "task-uuid-here",
-  "type": "code",
-  "content": "function authenticate() { ... }",
-  "agentName": "Kiro"
-}
-```
-
-### `complete_task`
-Complete a task with an optional summary.
-
-```json
-{
-  "planId": "plan-uuid-here",
-  "taskId": "task-uuid-here",
-  "summary": "Implemented authentication with JWT tokens"
-}
-```
-
-## Installation
-
-### Option 1: Quick Install (Recommended)
-
-Use the install scripts above. They download the standalone MCP runtime from this repo into `~/.noteclaw-mcp` or `%USERPROFILE%\.noteclaw-mcp`, and print a ready-to-paste MCP config.
-
-### Option 2: Manual Install from the GitHub Repo
-
-1. Download [`index.cjs`](https://raw.githubusercontent.com/cmgzone/noteclaw/HEAD/backend/mcp-server/github-install/index.cjs)
-2. Save it to `~/.noteclaw-mcp/index.cjs` on macOS/Linux or `%USERPROFILE%\.noteclaw-mcp\index.cjs` on Windows
-3. Configure your MCP client (see below)
-
-The bundled `index.cjs` file already includes the runtime dependencies needed to run the MCP server.
-
-### Option 3: Build from Source
+## Build
 
 ```bash
-cd backend/mcp-server
 npm install
 npm run build
 npm run build:standalone
 ```
 
-## Authentication
-
-The MCP server requires a personal API token to authenticate with your NoteClaw account. This token links the coding agent to your user account, allowing it to save verified code as sources.
-
-### Generating a Personal API Token
-
-1. Open the NoteClaw app
-2. Go to **Settings** → **Agent Connections**
-3. In the **API Tokens** section, click **Generate New Token**
-4. Give your token a descriptive name (e.g., "Kiro MCP Server")
-5. Optionally set an expiration date
-6. Click **Generate** and **copy the token immediately**
-
-> ⚠️ **Important**: The token is only displayed once. If you lose it, you'll need to generate a new one.
-
-### Token Format
-
-Personal API tokens use the format: `nclaw_` followed by 43 characters of random data.
-
-Example: `nclaw_a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2`
-
-## Configuration
-
-Create a `.env` file:
-
-```env
-BACKEND_URL=http://localhost:3000
-CODING_AGENT_API_KEY=nclaw_your-personal-api-token-here
-```
-
-Replace `nclaw_your-personal-api-token-here` with the token you generated from the app.
-
-## Usage with MCP Clients
-
-### Kiro Configuration
-
-Add to `.kiro/settings/mcp.json`:
-
-```json
-{
-  "mcpServers": {
-    "noteclaw": {
-      "command": "node",
-      "args": ["~/.noteclaw-mcp/index.cjs"],
-      "env": {
-        "BACKEND_URL": "https://noteclaw.onrender.com",
-        "CODING_AGENT_API_KEY": "nclaw_your-personal-api-token-here"
-      }
-    }
-  }
-}
-```
-
-### Claude Desktop Configuration
-
-Add to `claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "noteclaw": {
-      "command": "node",
-      "args": ["/absolute/path/to/.noteclaw-mcp/index.cjs"],
-      "env": {
-        "BACKEND_URL": "https://noteclaw.onrender.com",
-        "CODING_AGENT_API_KEY": "nclaw_your-personal-api-token-here"
-      }
-    }
-  }
-}
-```
-
-## Troubleshooting
-
-- 401: Invalid or expired API key. Generate a new token in Settings -> Agent Connections.
-- 403: MCP disabled or insufficient permissions. Check MCP is enabled and your token permissions.
-- 429: Rate limit exceeded. Call `get_quota` and retry later.
-- 503: Service unavailable. Wait briefly and retry.
-- Network: Verify `BACKEND_URL` and `CODING_AGENT_API_KEY` in your `.env`.
-
-## Token Management
-
-### Viewing Your Tokens
-
-In the app, go to **Settings** → **Agent Connections** to see all your active tokens. You can view:
-- Token name
-- Creation date
-- Last used date
-- Partial token (last 4 characters for identification)
-
-### Revoking Tokens
-
-If a token is compromised or no longer needed:
-1. Go to **Settings** → **Agent Connections**
-2. Find the token in the list
-3. Click the **Revoke** button
-4. Confirm the revocation
-
-Revoked tokens are immediately invalidated and cannot be used for authentication.
-
-## Architecture
-
-```
-Third-Party Agent (Claude, Kiro, etc.)
-           ↓
-    [MCP Protocol - stdio]
-           ↓
-    [Coding Agent MCP Server]
-           ↓
-    [HTTP API calls]
-           ↓
-    [Your Backend API]
-           ↓
-    [Code Verification Service]
-           ↓
-    [Database - Sources Table]
-```
-
-## Development
-
-```bash
-# Run in development mode
-npm run dev
-
-# Build for production
-npm run build
-
-# Run production build locally
-node dist/index.js
-```
+The standalone bundle is written to `github-install/index.cjs`.

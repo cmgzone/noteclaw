@@ -1,491 +1,479 @@
-"use client";
-
-import React, { useState, useEffect, useRef } from "react";
-import { motion, useAnimation, useMotionValue, useSpring, useTransform } from "framer-motion";
-import {
-  Search,
-  Globe,
-  Sparkles,
-  ArrowRight,
-  Zap,
-  ShieldCheck,
-  BookOpen,
-  Check,
-  Crown,
-  Rocket,
-  Loader2,
-  Mic,
-  Headphones,
-  Book,
-  GraduationCap,
-  Youtube,
-  Plug
-} from "lucide-react";
 import Image from "next/image";
-import api from "@/lib/api";
 import Link from "next/link";
+import {
+  ArrowRight,
+  Archive,
+  Bot,
+  Braces,
+  Check,
+  ChevronRight,
+  CircleDot,
+  Clock3,
+  Database,
+  Fingerprint,
+  KeyRound,
+  Layers3,
+  LockKeyhole,
+  Radio,
+  RefreshCw,
+  ServerCog,
+  ShieldCheck,
+  Sparkles,
+  Unplug,
+  Waypoints,
+} from "lucide-react";
 
+const agents = [
+  {
+    name: "Codex Workspace",
+    identifier: "codex-production",
+    namespaces: 4,
+    status: "Live",
+  },
+  {
+    name: "Claude Research",
+    identifier: "claude-research",
+    namespaces: 3,
+    status: "Idle",
+  },
+  {
+    name: "OpenClaw Ops",
+    identifier: "openclaw-ops",
+    namespaces: 1,
+    status: "Live",
+  },
+];
 
-// --- HOOKS ---
-function useMousePosition() {
-  const mouseX = useMotionValue(0);
-  const mouseY = useMotionValue(0);
+const features = [
+  {
+    icon: Layers3,
+    title: "Project notebooks",
+    description:
+      "Each shared session becomes a notebook, with every durable namespace organized as a readable memory source.",
+  },
+  {
+    icon: Archive,
+    title: "Automatic compaction",
+    description:
+      "Roll older working history into durable checkpoints while the agent keeps its most useful recent context.",
+  },
+  {
+    icon: Radio,
+    title: "Live over WebSocket",
+    description:
+      "See presence instantly and receive memory-ready, memory-changed, and memory-compacted events without polling.",
+  },
+  {
+    icon: ShieldCheck,
+    title: "Focused code review",
+    description:
+      "Let an agent check correctness, security, and maintainability without adding a full development suite.",
+  },
+  {
+    icon: Braces,
+    title: "Model-agnostic JSON",
+    description:
+      "Store structured memory that any compatible third-party agent can read, merge, append, and carry forward.",
+  },
+  {
+    icon: ShieldCheck,
+    title: "Private by default",
+    description:
+      "Every memory session is scoped to its owner, authenticated, and isolated from other agents and accounts.",
+  },
+];
 
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      mouseX.set(e.clientX);
-      mouseY.set(e.clientY);
-      document.documentElement.style.setProperty("--mouse-x", `${e.clientX}px`);
-      document.documentElement.style.setProperty("--mouse-y", `${e.clientY}px`);
-    };
-    window.addEventListener("mousemove", handleMouseMove);
-    return () => window.removeEventListener("mousemove", handleMouseMove);
-  }, [mouseX, mouseY]);
-
-  return { mouseX, mouseY };
-}
-
-// --- COMPONENTS ---
-function Magnetic({ children }: { children: React.ReactNode }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const x = useMotionValue(0);
-  const y = useMotionValue(0);
-  const springX = useSpring(x, { stiffness: 150, damping: 15 });
-  const springY = useSpring(y, { stiffness: 150, damping: 15 });
-
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (!ref.current) return;
-    const { clientX, clientY } = e;
-    const { left, top, width, height } = ref.current.getBoundingClientRect();
-    const centerX = left + width / 2;
-    const centerY = top + height / 2;
-    x.set((clientX - centerX) * 0.35);
-    y.set((clientY - centerY) * 0.35);
-  };
-
-  const handleMouseLeave = () => {
-    x.set(0);
-    y.set(0);
-  };
-
-  return (
-    <motion.div
-      ref={ref}
-      onMouseMove={handleMouseMove}
-      onMouseLeave={handleMouseLeave}
-      style={{ x: springX, y: springY }}
-    >
-      {children}
-    </motion.div>
-  );
-}
-
-function NodeNetwork() {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const { mouseX, mouseY } = useMousePosition();
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    let particles: { x: number; y: number; vx: number; vy: number; size: number }[] = [];
-    const particleCount = 40;
-
-    const resize = () => {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
-    };
-
-    const createParticles = () => {
-      particles = [];
-      for (let i = 0; i < particleCount; i++) {
-        particles.push({
-          x: Math.random() * canvas.width,
-          y: Math.random() * canvas.height,
-          vx: (Math.random() - 0.5) * 0.5,
-          vy: (Math.random() - 0.5) * 0.5,
-          size: Math.random() * 2,
-        });
-      }
-    };
-
-    const animate = () => {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.strokeStyle = "rgba(59, 130, 246, 0.15)";
-      ctx.lineWidth = 0.5;
-
-      const mX = mouseX.get();
-      const mY = mouseY.get();
-
-      particles.forEach((p, i) => {
-        p.x += p.vx;
-        p.y += p.vy;
-
-        if (p.x < 0 || p.x > canvas.width) p.vx *= -1;
-        if (p.y < 0 || p.y > canvas.height) p.vy *= -1;
-
-        // Draw particle
-        ctx.fillStyle = "rgba(255, 255, 255, 0.2)";
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Connect to mouse
-        const dx = mX - p.x;
-        const dy = mY - p.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-
-        if (dist < 200) {
-          ctx.beginPath();
-          ctx.moveTo(p.x, p.y);
-          ctx.lineTo(mX, mY);
-          ctx.stroke();
-        }
-
-        // Connect to other particles
-        for (let j = i + 1; j < particles.length; j++) {
-          const p2 = particles[j];
-          const dx2 = p.x - p2.x;
-          const dy2 = p.y - p2.y;
-          const dist2 = Math.sqrt(dx2 * dx2 + dy2 * dy2);
-
-          if (dist2 < 150) {
-            ctx.beginPath();
-            ctx.moveTo(p.x, p.y);
-            ctx.lineTo(p2.x, p2.y);
-            ctx.stroke();
-          }
-        }
-      });
-      requestAnimationFrame(animate);
-    };
-
-    window.addEventListener("resize", resize);
-    resize();
-    createParticles();
-    animate();
-
-    return () => window.removeEventListener("resize", resize);
-  }, [mouseX, mouseY]);
-
-  return <canvas ref={canvasRef} className="fixed inset-0 z-0 pointer-events-none opacity-50" />;
-}
-
-function NebulaField() {
-  return (
-    <>
-      <div className="nebula w-[800px] h-[800px] -top-96 -left-96 bg-blue-600/10" />
-      <div className="nebula w-[600px] h-[600px] top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-purple-600/5 animation-delay-2000" />
-      <div className="nebula w-[700px] h-[700px] -bottom-96 -right-96 bg-blue-400/5 animation-delay-4000" />
-    </>
-  );
-}
+const steps = [
+  {
+    number: "01",
+    icon: KeyRound,
+    title: "Create one access token",
+    description:
+      "Generate a revocable MCP token in NoteClaw and add it to the agent’s private environment.",
+  },
+  {
+    number: "02",
+    icon: ServerCog,
+    title: "Open a stable session",
+    description:
+      "Call memory_session_open with a durable agent identifier. Reconnecting returns the same session.",
+  },
+  {
+    number: "03",
+    icon: RefreshCw,
+    title: "Restore, work, and sync",
+    description:
+      "Read memory at startup, write changes as work progresses, and listen for live WebSocket events.",
+  },
+];
 
 export default function LandingPage() {
-  useMousePosition();
-
   return (
-    <div className="relative min-h-screen bg-neutral-950 text-white selection:bg-blue-500/30 overflow-hidden">
-      <div className="grain-overlay" />
-      <div className="mouse-spotlight" />
-      <StarField />
-      <NebulaField />
-      <NodeNetwork />
+    <main className="site-shell min-h-screen overflow-x-clip bg-[#07080c] text-white">
+      <div className="site-grid" aria-hidden="true" />
+      <div className="site-glow site-glow-one" aria-hidden="true" />
+      <div className="site-glow site-glow-two" aria-hidden="true" />
+
       <Navbar />
+
       <div className="relative z-10">
-        <HeroSection />
-        <LiveFeedTicker />
-        <FeaturesSection />
-        <PricingSection />
+        <Hero />
+        <AgentStrip />
+        <Features />
+        <HowItWorks />
+        <Protocol />
+        <Security />
+        <FinalCta />
         <Footer />
       </div>
-
-    </div>
+    </main>
   );
 }
-
-function LiveFeedTicker() {
-  const [logs, setLogs] = useState<string[]>([]);
-  const logEntries = [
-    "FETCH: IEEE Xplore - Neural Networks Architecture",
-    "SCRAPE: Wikipedia.org/wiki/Artificial_Intelligence",
-    "ANALYZE: Global Market Trends 2025",
-    "CROSS-REF: Source A & Source B",
-    "GENERATE: Executive Summary",
-    "VALIDATE: Accuracy 98.4%",
-    "INGEST: Local Research Documents",
-    "QUERY: Advanced Vector Database"
-  ];
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setLogs((prev) => [logEntries[Math.floor(Math.random() * logEntries.length)], ...prev].slice(0, 3));
-    }, 3000);
-    return () => clearInterval(interval);
-  }, []);
-
-  return (
-    <div className="container mx-auto px-6 py-12 pointer-events-none">
-      <div className="flex flex-col items-center gap-2 opacity-30 lowercase font-mono text-[10px] tracking-widest uppercase">
-        {logs.map((log, i) => (
-          <motion.div
-            key={i}
-            initial={{ opacity: 0, x: -10 }}
-            animate={{ opacity: 1 - i * 0.3, x: 0 }}
-            className="flex items-center gap-2"
-          >
-            <span className="h-1 w-1 bg-blue-500 rounded-full" />
-            {log}
-          </motion.div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-
-
-function StarField() {
-  return (
-    <div className="starfield-container opacity-40">
-      <div className="stars-layer stars-1" />
-      <div className="stars-layer stars-2" />
-      <div className="stars-layer stars-3 twinkle" />
-    </div>
-  );
-}
-
 
 function Navbar() {
   return (
-    <nav className="fixed top-0 left-0 right-0 z-50 border-b border-white/5 bg-neutral-950/20 backdrop-blur-2xl">
-      <div className="container mx-auto flex h-20 items-center justify-between px-6">
-        <div className="flex items-center gap-2 group cursor-pointer">
-          <Image src="/icon.png" alt="NoteClaw" width={32} height={32} className="rounded-lg group-hover:scale-110 transition-all duration-500" />
-          <span className="text-xl font-bold tracking-tighter text-white">NoteClaw</span>
-        </div>
-        <div className="hidden items-center gap-10 text-xs font-semibold uppercase tracking-widest text-neutral-400 md:flex">
-          <a href="#" className="hover:text-blue-400 transition-colors">Features</a>
-          <a href="#" className="hover:text-blue-400 transition-colors">Technology</a>
-          <a href="#pricing" className="hover:text-blue-400 transition-colors">Pricing</a>
-          <Link href="/docs" className="hover:text-blue-400 transition-colors">Docs</Link>
-        </div>
-        <div className="flex items-center gap-6">
-          <a href="/login" className="text-sm font-semibold text-neutral-400 hover:text-white transition-colors">
-            Log In
+    <header className="fixed inset-x-0 top-0 z-50 border-b border-white/[0.07] bg-[#07080c]/82 backdrop-blur-xl">
+      <nav
+        className="mx-auto flex h-18 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8"
+        aria-label="Main navigation"
+      >
+        <Link href="/" className="flex min-w-0 items-center gap-2.5">
+          <Image
+            src="/icon.png"
+            alt=""
+            width={34}
+            height={34}
+            className="rounded-xl"
+            priority
+          />
+          <span className="truncate text-[15px] font-semibold tracking-[-0.02em]">
+            NoteClaw
+          </span>
+          <span className="hidden rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.18em] text-white/45 sm:inline">
+            Memory
+          </span>
+        </Link>
+
+        <div className="hidden items-center gap-8 text-sm text-white/55 lg:flex">
+          <a href="#product" className="transition-colors hover:text-white">
+            Product
           </a>
-          <Magnetic>
-            <button className="rounded-full bg-white px-6 py-2.5 text-sm font-bold text-neutral-950 hover:bg-blue-400 hover:text-white transition-all">
-              Join Waitlist
-            </button>
-          </Magnetic>
+          <a href="#how-it-works" className="transition-colors hover:text-white">
+            How it works
+          </a>
+          <a href="#protocol" className="transition-colors hover:text-white">
+            Protocol
+          </a>
+          <a href="#security" className="transition-colors hover:text-white">
+            Security
+          </a>
+          <Link href="/plans" className="transition-colors hover:text-white">
+            Plans
+          </Link>
         </div>
-      </div>
-    </nav>
+
+        <div className="flex shrink-0 items-center gap-2">
+          <Link
+            href="/login"
+            className="hidden px-3 py-2 text-sm text-white/60 transition-colors hover:text-white sm:block"
+          >
+            Sign in
+          </Link>
+          <Link
+            href="/signup"
+            className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2.5 text-sm font-semibold text-[#090a0f] transition hover:bg-[#62d3d0] sm:px-5"
+          >
+            <span className="hidden sm:inline">Open memory bank</span>
+            <span className="sm:hidden">Get started</span>
+            <ArrowRight size={15} aria-hidden="true" />
+          </Link>
+        </div>
+      </nav>
+    </header>
   );
 }
 
-
-function HeroSection() {
+function Hero() {
   return (
-    <section className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden px-6 pt-20">
-      {/* Background Gradients */}
-      <div className="absolute top-1/4 -left-1/4 h-[500px] w-[500px] rounded-full bg-blue-600/20 blur-[120px]" />
-      <div className="absolute bottom-1/4 -right-1/4 h-[500px] w-[500px] rounded-full bg-purple-600/10 blur-[120px]" />
+    <section className="relative px-4 pb-20 pt-36 sm:px-6 sm:pb-24 sm:pt-40 lg:px-8 lg:pb-32">
+      <div className="mx-auto grid max-w-7xl items-center gap-14 lg:grid-cols-[0.88fr_1.12fr] lg:gap-16">
+        <div className="min-w-0">
+          <div className="inline-flex items-center gap-2 rounded-full border border-[#62d3d0]/25 bg-[#62d3d0]/[0.07] px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-[#a8ebe7]">
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#62d3d0] opacity-60" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-[#62d3d0]" />
+            </span>
+            MCP-native · WebSocket live
+          </div>
 
-      <div className="container relative mx-auto grid lg:grid-cols-2 gap-12 items-center">
-        <div className="text-center lg:text-left">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6 }}
-          >
-            <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium backdrop-blur-md">
-              <span className="flex h-2 w-2 rounded-full bg-green-500 animate-pulse" />
-              New: Deep Research v2.0
-            </div>
-            <h1 className="mt-6 text-5xl font-bold tracking-tight sm:text-7xl bg-gradient-to-b from-white to-white/60 bg-clip-text text-transparent">
-              Research at the <br /> speed of thought.
-            </h1>
-            <p className="mt-6 text-lg text-neutral-400 max-w-2xl mx-auto lg:mx-0">
-              Transform how you gather information. Our autonomous AI agent dives deep into the web, analyzing thousands of sources to generate comprehensive reports in minutes.
-            </p>
-            <div className="mt-8 flex flex-col sm:flex-row items-center gap-4 justify-center lg:justify-start">
-              <Magnetic>
-                <button className="group flex items-center gap-2 rounded-full bg-blue-600 px-8 py-4 font-semibold text-white hover:bg-blue-500 hover:shadow-lg hover:shadow-blue-500/20 transition-all">
-                  Download for iOS
-                  <ArrowRight size={18} className="transition-transform group-hover:translate-x-1" />
-                </button>
-              </Magnetic>
-              <Magnetic>
-                <button className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-8 py-4 font-semibold text-white hover:bg-white/10 transition-colors backdrop-blur-md">
-                  <Search size={18} />
-                  View Demo
-                </button>
-              </Magnetic>
-            </div>
+          <h1 className="mt-7 max-w-3xl text-[clamp(3rem,8vw,6.4rem)] font-semibold leading-[0.93] tracking-[-0.065em] text-balance">
+            Memory that
+            <span className="block text-white/38">survives the session.</span>
+          </h1>
 
-          </motion.div>
+          <p className="mt-7 max-w-xl text-base leading-7 text-white/55 sm:text-lg sm:leading-8">
+            Give Codex, Claude, OpenClaw, and any MCP-compatible agent a
+            durable place to restore identity, keep project context, and carry
+            knowledge between runs.
+          </p>
+
+          <div className="mt-9 flex flex-col gap-3 sm:flex-row">
+            <Link
+              href="/signup"
+              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-[#62d3d0] px-6 py-3 text-sm font-semibold text-[#101307] transition hover:bg-[#a8ebe7]"
+            >
+              Start with MCP
+              <ArrowRight size={17} aria-hidden="true" />
+            </Link>
+            <a
+              href="#protocol"
+              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full border border-white/12 bg-white/[0.035] px-6 py-3 text-sm font-medium text-white/78 transition hover:border-white/25 hover:bg-white/[0.07]"
+            >
+              See the MCP tools
+              <ChevronRight size={16} aria-hidden="true" />
+            </a>
+          </div>
+
+          <div className="mt-9 flex flex-wrap gap-x-5 gap-y-3 text-xs text-white/42">
+            {["No model lock-in", "Revocable access", "Structured JSON"].map(
+              (item) => (
+                <span key={item} className="inline-flex items-center gap-1.5">
+                  <Check size={13} className="text-[#62d3d0]" aria-hidden="true" />
+                  {item}
+                </span>
+              ),
+            )}
+          </div>
         </div>
 
-        {/* 3D Core Demo */}
-        <div className="relative flex items-center justify-center">
-          <Magnetic>
-            <DeepResearchVisualizer />
-          </Magnetic>
-        </div>
-
+        <MemoryPreview />
       </div>
     </section>
   );
 }
 
-function DeepResearchVisualizer() {
-  const [status, setStatus] = useState("Initializing...");
-  const [source, setSource] = useState<string | null>(null);
-
-  useEffect(() => {
-    const states = [
-      { text: "Scanning academic sources...", domain: null },
-      { text: "Found data on wikipedia.org", domain: "wikipedia.org" },
-      { text: "Analyzing trends...", domain: null },
-      { text: "Cross-referencing nature.com", domain: "nature.com" },
-      { text: "Synthesizing report...", domain: null },
-      { text: "Deep Research Active", domain: null },
-    ];
-    let i = 0;
-    const interval = setInterval(() => {
-      setStatus(states[i].text);
-      setSource(states[i].domain);
-      i = (i + 1) % states.length;
-    }, 2500);
-    return () => clearInterval(interval);
-  }, []);
-
+function MemoryPreview() {
   return (
-    <div className="relative h-[400px] w-[400px] flex items-center justify-center">
-      {/* Rings */}
-      <motion.div
-        animate={{ rotateX: 360, rotateY: 180 }}
-        transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
-        className="absolute h-64 w-64 rounded-full border border-blue-500/30 border-t-blue-400"
-        style={{ transformStyle: "preserve-3d" }}
-      />
-      <motion.div
-        animate={{ rotateX: -360, rotateY: -90 }}
-        transition={{ duration: 15, repeat: Infinity, ease: "linear" }}
-        className="absolute h-48 w-48 rounded-full border border-purple-500/30 border-b-purple-400"
-        style={{ transformStyle: "preserve-3d" }}
-      />
+    <div className="relative min-w-0">
+      <div className="preview-aura" aria-hidden="true" />
+      <div className="relative overflow-hidden rounded-[26px] border border-white/10 bg-[#0c0e14]/95 shadow-2xl shadow-black/50">
+        <div className="flex min-w-0 items-center justify-between gap-4 border-b border-white/[0.07] px-4 py-3.5 sm:px-5">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex gap-1.5" aria-hidden="true">
+              <span className="h-2 w-2 rounded-full bg-white/15" />
+              <span className="h-2 w-2 rounded-full bg-white/15" />
+              <span className="h-2 w-2 rounded-full bg-white/15" />
+            </div>
+            <span className="truncate font-mono text-[10px] uppercase tracking-[0.16em] text-white/38">
+              NoteClaw / memory bank
+            </span>
+          </div>
+          <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-emerald-400/[0.08] px-2.5 py-1 text-[10px] font-medium text-emerald-300">
+            <CircleDot size={10} aria-hidden="true" />
+            Live
+          </span>
+        </div>
 
-      {/* Core */}
-      <div className="relative h-24 w-24 rounded-full bg-neutral-900 border border-white/10 shadow-[0_0_50px_-12px_rgba(59,130,246,0.5)] flex items-center justify-center z-10 backdrop-blur-xl">
-        {source ? (
-          <Image
-            src={`https://www.google.com/s2/favicons?domain=${source}&sz=64`}
-            width={40}
-            height={40}
-            alt="Source"
-            className="opacity-90 grayscale hover:grayscale-0 transition-all"
-          />
-        ) : (
-          <Globe className="text-blue-400 animate-pulse" size={40} />
-        )}
+        <div className="grid grid-cols-3 border-b border-white/[0.07]">
+          {[
+            ["3", "Agents"],
+            ["8", "Namespaces"],
+            ["2", "WebSocket live"],
+          ].map(([value, label]) => (
+            <div
+              key={label}
+              className="min-w-0 border-r border-white/[0.07] px-3 py-4 last:border-r-0 sm:px-5"
+            >
+              <div className="text-xl font-semibold tracking-tight sm:text-2xl">
+                {value}
+              </div>
+              <div className="mt-1 truncate text-[9px] uppercase tracking-[0.12em] text-white/32 sm:text-[10px]">
+                {label}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="grid min-w-0 xl:grid-cols-[0.78fr_1.22fr]">
+          <div className="min-w-0 border-b border-white/[0.07] p-3 sm:p-4 xl:border-b-0 xl:border-r">
+            <div className="mb-3 flex items-center justify-between px-1">
+              <span className="font-mono text-[9px] uppercase tracking-[0.16em] text-white/30">
+                Agent sessions
+              </span>
+              <Waypoints size={13} className="text-white/25" aria-hidden="true" />
+            </div>
+            <div className="space-y-2">
+              {agents.map((agent, index) => (
+                <div
+                  key={agent.identifier}
+                  className={`min-w-0 rounded-xl border p-3 ${
+                    index === 0
+                      ? "border-[#62d3d0]/20 bg-[#62d3d0]/[0.045]"
+                      : "border-white/[0.06] bg-white/[0.018]"
+                  }`}
+                >
+                  <div className="flex min-w-0 items-start gap-2.5">
+                    <div
+                      className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${
+                        index === 0
+                          ? "bg-[#62d3d0]/10 text-[#62d3d0]"
+                          : "bg-white/[0.05] text-white/40"
+                      }`}
+                    >
+                      <Bot size={14} aria-hidden="true" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-xs font-medium text-white/82">
+                        {agent.name}
+                      </div>
+                      <div className="mt-0.5 truncate font-mono text-[9px] text-white/28">
+                        {agent.identifier}
+                      </div>
+                    </div>
+                    <span
+                      className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${
+                        agent.status === "Live"
+                          ? "bg-emerald-400"
+                          : "bg-white/20"
+                      }`}
+                      title={agent.status}
+                    />
+                  </div>
+                  <div className="mt-2.5 flex items-center gap-1.5 text-[9px] text-white/28">
+                    <Layers3 size={10} aria-hidden="true" />
+                    {agent.namespaces} namespaces
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="min-w-0 p-3 sm:p-4">
+            <div className="flex min-w-0 items-center justify-between gap-3 rounded-xl border border-white/[0.07] bg-black/20 px-3 py-2.5">
+              <div className="flex min-w-0 items-center gap-2">
+                <Database
+                  size={13}
+                  className="shrink-0 text-[#62d3d0]"
+                  aria-hidden="true"
+                />
+                <span className="truncate font-mono text-[10px] text-white/68">
+                  project:launch
+                </span>
+              </div>
+              <span className="shrink-0 font-mono text-[9px] text-white/25">
+                v12
+              </span>
+            </div>
+
+            <div className="mt-3 overflow-x-auto rounded-xl border border-white/[0.07] bg-[#08090d] p-3.5 font-mono text-[10px] leading-5 sm:p-4 sm:text-[11px]">
+              <pre className="min-w-[330px] text-white/42">
+                <code>
+                  <span className="text-white/22">{"{"}</span>
+                  {"\n  "}
+                  <span className="text-sky-300">&quot;goal&quot;</span>
+                  <span className="text-white/24">: </span>
+                  <span className="text-[#dfff9e]">
+                    &quot;Ship the memory API&quot;
+                  </span>
+                  <span className="text-white/24">,</span>
+                  {"\n  "}
+                  <span className="text-sky-300">&quot;decisions&quot;</span>
+                  <span className="text-white/24">: [</span>
+                  {"\n    "}
+                  <span className="text-[#dfff9e]">
+                    &quot;MCP is the command surface&quot;
+                  </span>
+                  <span className="text-white/24">,</span>
+                  {"\n    "}
+                  <span className="text-[#dfff9e]">
+                    &quot;WebSocket sends live events&quot;
+                  </span>
+                  {"\n  "}
+                  <span className="text-white/24">],</span>
+                  {"\n  "}
+                  <span className="text-sky-300">&quot;next&quot;</span>
+                  <span className="text-white/24">: </span>
+                  <span className="text-[#dfff9e]">
+                    &quot;Run integration checks&quot;
+                  </span>
+                  {"\n"}
+                  <span className="text-white/22">{"}"}</span>
+                </code>
+              </pre>
+            </div>
+
+            <div className="mt-3 min-w-0 rounded-xl border border-emerald-400/12 bg-emerald-400/[0.035] p-3">
+              <div className="flex min-w-0 items-center gap-2 text-[10px] text-emerald-300/85">
+                <Radio size={12} className="shrink-0" aria-hidden="true" />
+                <span className="truncate font-mono">
+                  wss://api.noteclaw.com/ws/agent
+                </span>
+              </div>
+              <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[9px] text-white/28">
+                <span>memory_ready</span>
+                <span>memory_changed</span>
+                <span>memory_compacted</span>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
-      {/* Floating Status Card */}
-      <motion.div
-        key={status}
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0 }}
-        className="absolute bottom-0 w-64 rounded-xl border border-white/10 bg-neutral-900/80 p-4 backdrop-blur-md shadow-xl"
-      >
-        <div className="flex items-center gap-3">
-          <div className="flex h-2 w-2 relative">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
-          </div>
-          <span className="text-sm font-medium text-neutral-200">{status}</span>
-        </div>
-        <div className="mt-3 h-1 w-full rounded-full bg-neutral-800 overflow-hidden">
-          <motion.div
-            className="h-full bg-blue-500"
-            initial={{ width: "0%" }}
-            animate={{ width: "100%" }}
-            transition={{ duration: 2.5, ease: "linear", repeat: Infinity }}
-          />
-        </div>
-      </motion.div>
+      <div className="absolute -bottom-5 left-1/2 hidden -translate-x-1/2 items-center gap-2 whitespace-nowrap rounded-full border border-white/10 bg-[#101217] px-4 py-2 text-[10px] text-white/42 shadow-xl sm:flex">
+        <Clock3 size={12} className="text-[#62d3d0]" aria-hidden="true" />
+        Context restored in 84 ms
+      </div>
     </div>
   );
 }
 
-function FeaturesSection() {
-  const features = [
-    {
-      icon: <Globe className="text-blue-400" />,
-      title: "Deep Research Agent",
-      desc: "Our autonomous browser agent dives deep into the web, analyzing thousands of sources to generate comprehensive, cited reports in minutes."
-    },
-    {
-      icon: <Plug className="text-cyan-400" />,
-      title: "MCP Server Integration",
-      desc: "Connect your favorite AI coding agents like Kiro, Claude, or Cursor directly to your notebooks via Model Context Protocol for seamless knowledge access."
-    },
-    {
-      icon: <Mic className="text-purple-400" />,
-      title: "Voice-First Research",
-      desc: "Interact with your data using our advanced Narrator mode. Get instant voice feedback and control your research entirely through speech."
-    },
-    {
-      icon: <Headphones className="text-green-400" />,
-      title: "AI Podcast Studio",
-      desc: "Transform your notebooks into high-quality audio discussions. Generate podcast-style overviews with life-like AI hosts in seconds."
-    },
-    {
-      icon: <Book className="text-amber-400" />,
-      title: "Ebook Generator",
-      desc: "Instantly turn research threads and notebook collections into beautifully structured PDF ebooks ready for sharing or publication."
-    },
-    {
-      icon: <GraduationCap className="text-red-400" />,
-      title: "Smart AI Tutor",
-      desc: "Master any subject with gamified learning. Generate quizzes, track your XP streaks, and get personalized teaching from your data."
-    },
-    {
-      icon: <Youtube className="text-rose-500" />,
-      title: "Multimedia Analysis",
-      desc: "Analyze more than just text. Ingest YouTube videos, academic PDFs, and live web pages for a truly 360-degree understanding."
-    },
-    {
-      icon: <Sparkles className="text-orange-400" />,
-      title: "Custom Agent Skills",
-      desc: "Teach your AI Agent specialized capabilities. Define custom prompts, workflows, and rules that persist across sessions."
-    }
-  ];
-
+function AgentStrip() {
   return (
-    <section className="py-24 relative overflow-hidden">
-      <div className="container mx-auto px-6">
-        <div className="grid md:grid-cols-3 gap-8">
-          {features.map((feature, i) => (
-            <motion.div
-              key={i}
-              initial={{ opacity: 0, y: 30 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.5, delay: i * 0.1 }}
-              className="group glass-card p-8 rounded-3xl"
+    <section className="border-y border-white/[0.06] bg-white/[0.015] px-4 py-8 sm:px-6">
+      <div className="mx-auto flex max-w-7xl flex-col items-center gap-6 lg:flex-row lg:justify-between">
+        <p className="text-center text-[10px] font-medium uppercase tracking-[0.2em] text-white/25 lg:text-left">
+          Built for the agents you already use
+        </p>
+        <div className="flex flex-wrap items-center justify-center gap-x-8 gap-y-4 font-mono text-xs text-white/38 sm:gap-x-12">
+          {["Codex", "Claude", "OpenClaw", "Cursor", "Kiro", "Any MCP client"].map(
+            (agent) => (
+              <span key={agent} className="whitespace-nowrap">
+                {agent}
+              </span>
+            ),
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function Features() {
+  return (
+    <section id="product" className="scroll-mt-20 px-4 py-24 sm:px-6 lg:px-8 lg:py-32">
+      <div className="mx-auto max-w-7xl">
+        <SectionIntro
+          eyebrow="The product"
+          title="Memory first. Review included."
+          description="A deliberately small surface for agents that need durable context, a focused code check, and a live connection."
+        />
+
+        <div className="mt-14 grid gap-px overflow-hidden rounded-[26px] border border-white/[0.07] bg-white/[0.07] md:grid-cols-2 lg:grid-cols-3">
+          {features.map((feature) => (
+            <article
+              key={feature.title}
+              className="group min-w-0 bg-[#0a0b10] p-6 transition-colors hover:bg-[#0d0f15] sm:p-8"
             >
-              <div className="mb-6 inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-600/10 group-hover:bg-blue-600/20 transition-colors">
-                {feature.icon}
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-white/[0.07] bg-white/[0.035] text-[#62d3d0] transition-transform group-hover:-translate-y-1">
+                <feature.icon size={20} aria-hidden="true" />
               </div>
-              <h3 className="text-2xl font-bold text-white">{feature.title}</h3>
-              <p className="mt-4 text-neutral-400 leading-relaxed text-lg">{feature.desc}</p>
-            </motion.div>
+              <h3 className="mt-7 text-lg font-semibold tracking-[-0.02em]">
+                {feature.title}
+              </h3>
+              <p className="mt-3 text-sm leading-6 text-white/42">
+                {feature.description}
+              </p>
+            </article>
           ))}
         </div>
       </div>
@@ -493,134 +481,253 @@ function FeaturesSection() {
   );
 }
 
-function PricingSection() {
-  const [plans, setPlans] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    api.getPlans().then(data => {
-      setPlans(data);
-      setLoading(false);
-    }).catch(err => {
-      console.error("Failed to load plans:", err);
-      setLoading(false);
-    });
-  }, []);
-
-  const getPlanIcon = (name: string) => {
-    switch (name.toLowerCase()) {
-      case 'pro': return <Crown className="text-blue-400" size={24} />;
-      case 'ultra': return <Rocket className="text-purple-400" size={24} />;
-      default: return <Zap className="text-amber-400" size={24} />;
-    }
-  };
-
+function HowItWorks() {
   return (
-    <section className="py-24 relative overflow-hidden" id="pricing">
-      <div className="container mx-auto px-6">
-        <div className="text-center mb-16">
-          <h2 className="text-4xl font-bold tracking-tight mb-4">Simple, Transparent Pricing</h2>
-          <p className="text-neutral-400 text-lg">Choose the plan that fits your research needs.</p>
+    <section
+      id="how-it-works"
+      className="scroll-mt-20 border-y border-white/[0.06] bg-white/[0.012] px-4 py-24 sm:px-6 lg:px-8 lg:py-32"
+    >
+      <div className="mx-auto max-w-7xl">
+        <SectionIntro
+          eyebrow="Three steps"
+          title="Connect once. Remember continuously."
+          description="NoteClaw keeps the integration focused: durable memory, live collaboration, code review, and cited research through one MCP connection."
+        />
+
+        <div className="mt-14 grid gap-5 lg:grid-cols-3">
+          {steps.map((step) => (
+            <article
+              key={step.number}
+              className="relative min-w-0 overflow-hidden rounded-2xl border border-white/[0.07] bg-[#0b0d12] p-6 sm:p-8"
+            >
+              <span className="absolute right-5 top-4 font-mono text-5xl font-semibold tracking-[-0.08em] text-white/[0.035]">
+                {step.number}
+              </span>
+              <step.icon size={22} className="text-[#62d3d0]" aria-hidden="true" />
+              <h3 className="mt-10 text-lg font-semibold">{step.title}</h3>
+              <p className="mt-3 text-sm leading-6 text-white/42">
+                {step.description}
+              </p>
+            </article>
+          ))}
         </div>
-
-        {loading ? (
-          <div className="flex justify-center py-20">
-            <Loader2 className="animate-spin text-blue-500" size={40} />
-          </div>
-        ) : (
-          <div className="grid md:grid-cols-3 gap-8 max-w-6xl mx-auto">
-            {plans.map((plan, i) => (
-              <motion.div
-                key={plan.id}
-                initial={{ opacity: 0, scale: 0.95 }}
-                whileInView={{ opacity: 1, scale: 1 }}
-                viewport={{ once: true }}
-                transition={{ duration: 0.5, delay: i * 0.1 }}
-                className={`group glass-card p-10 rounded-3xl relative flex flex-col ${plan.name.toLowerCase() === 'pro' ? 'border-blue-500/30 ring-1 ring-blue-500/20' : ''}`}
-              >
-                {plan.name.toLowerCase() === 'pro' && (
-                  <div className="absolute -top-4 left-10 px-4 py-1 bg-blue-600 text-xs font-bold rounded-full uppercase tracking-tighter">
-                    Most Popular
-                  </div>
-                )}
-                <div className="mb-8 flex items-center gap-4">
-                  <div className="h-12 w-12 rounded-2xl bg-white/5 flex items-center justify-center shrink-0">
-                    {getPlanIcon(plan.name)}
-                  </div>
-                  <div>
-                    <h3 className="text-2xl font-bold">{plan.name}</h3>
-                    <p className="text-sm text-neutral-400 line-clamp-1">{plan.description}</p>
-                  </div>
-                </div>
-
-                <div className="mb-8">
-                  <span className="text-5xl font-bold">${parseFloat(plan.price).toFixed(0)}</span>
-                  <span className="text-neutral-500 text-lg">/month</span>
-                </div>
-
-                <ul className="space-y-4 mb-10 flex-grow">
-                  <li className="flex items-center gap-3 text-neutral-200">
-                    <Check size={20} className="text-blue-400" />
-                    <span className="text-sm font-medium">{plan.credits_per_month.toLocaleString()} Credits / mo</span>
-                  </li>
-                  <li className="flex items-center gap-3 text-neutral-200">
-                    <Check size={20} className="text-blue-400" />
-                    <span className="text-sm">{plan.is_free_plan ? 'Up to 5 Notebooks' : 'Unlimited Notebooks'}</span>
-                  </li>
-                  {plan.name.toLowerCase() === 'free' && (
-                    <li className="flex items-center gap-3 text-neutral-200">
-                      <Check size={20} className="text-blue-400" />
-                      <span className="text-sm">Standard AI Search</span>
-                    </li>
-                  )}
-                  {plan.name.toLowerCase() === 'pro' && (
-                    <>
-                      <li className="flex items-center gap-3 text-neutral-200">
-                        <Check size={20} className="text-blue-400" />
-                        <span className="text-sm">Autonomous Deep Research</span>
-                      </li>
-                      <li className="flex items-center gap-3 text-neutral-200">
-                        <Check size={20} className="text-blue-400" />
-                        <span className="text-sm">AI Podcast Studio</span>
-                      </li>
-                    </>
-                  )}
-                  {plan.name.toLowerCase() === 'ultra' && (
-                    <>
-                      <li className="flex items-center gap-3 text-neutral-200">
-                        <Check size={20} className="text-blue-400" />
-                        <span className="text-sm">Unlimited Ebook Creator</span>
-                      </li>
-                      <li className="flex items-center gap-3 text-neutral-200">
-                        <Check size={20} className="text-blue-400" />
-                        <span className="text-sm">Priority Voice Narrator</span>
-                      </li>
-                    </>
-                  )}
-                  <li className="flex items-center gap-3 text-neutral-200">
-                    <Check size={20} className="text-blue-400" />
-                    <span className="text-sm">Gamified Learning & Quizzes</span>
-                  </li>
-                </ul>
-
-                <Link href="/login" className="block w-full text-center py-4 rounded-2xl font-bold bg-white text-neutral-950 hover:bg-blue-400 hover:text-white transition-all duration-300">
-                  {plan.is_free_plan ? 'Start for Free' : 'Get Started'}
-                </Link>
-              </motion.div>
-            ))}
-          </div>
-        )}
       </div>
     </section>
   );
 }
 
+function Protocol() {
+  const tools = [
+    "memory_session_open",
+    "memory_sessions_list",
+    "memory_topics_list",
+    "memory_topic_get",
+    "memory_get",
+    "memory_put",
+    "memory_compact",
+    "get_websocket_info",
+    "review_code",
+    "web_search",
+    "deep_research_start",
+    "deep_research_status",
+    "deep_research_result",
+    "research_save_to_notebook",
+  ];
+
+  return (
+    <section
+      id="protocol"
+      className="scroll-mt-20 px-4 py-24 sm:px-6 lg:px-8 lg:py-32"
+    >
+      <div className="mx-auto grid max-w-7xl items-center gap-14 lg:grid-cols-2 lg:gap-20">
+        <div>
+          <SectionIntro
+            eyebrow="The protocol"
+            title="Twelve tools. One clear contract."
+            description="Durable memory stays central, with paid web search, cited deep research, notebook saving, live collaboration, and focused code review."
+          />
+          <div className="mt-9 flex flex-wrap gap-2">
+            {tools.map((tool) => (
+              <span
+                key={tool}
+                className="max-w-full break-all rounded-lg border border-white/[0.07] bg-white/[0.025] px-3 py-2 font-mono text-[10px] text-white/55"
+              >
+                {tool}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        <div className="min-w-0 overflow-hidden rounded-[22px] border border-white/[0.08] bg-[#090a0e]">
+          <div className="flex items-center justify-between border-b border-white/[0.07] px-4 py-3">
+            <div className="flex items-center gap-2">
+              <div className="h-2 w-2 rounded-full bg-[#62d3d0]" />
+              <span className="font-mono text-[10px] uppercase tracking-[0.15em] text-white/35">
+                mcp configuration
+              </span>
+            </div>
+            <span className="font-mono text-[9px] text-white/20">json</span>
+          </div>
+          <div className="overflow-x-auto p-4 sm:p-6">
+            <pre className="min-w-[520px] font-mono text-[11px] leading-6 text-white/42">
+              <code>{`{
+  "mcpServers": {
+    "noteclaw-memory": {
+      "command": "node",
+      "args": ["/path/to/noteclaw-memory.js"],
+      "env": {
+        "BACKEND_URL": "https://api.noteclaw.com",
+        "NOTECLAW_API_TOKEN": "nclaw_••••••••"
+      }
+    }
+  }
+}`}</code>
+            </pre>
+          </div>
+          <div className="border-t border-white/[0.07] px-4 py-3 font-mono text-[9px] text-white/25 sm:px-6">
+            Legacy CODING_AGENT_API_KEY is still accepted.
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function Security() {
+  const points = [
+    {
+      icon: Fingerprint,
+      title: "Session ownership",
+      description: "Every memory read and write is checked against its owner.",
+    },
+    {
+      icon: LockKeyhole,
+      title: "Revocable secrets",
+      description: "Disable a token without deleting the memory it created.",
+    },
+    {
+      icon: Unplug,
+      title: "Explicit disconnect",
+      description: "End live delivery while durable context stays intact.",
+    },
+  ];
+
+  return (
+    <section
+      id="security"
+      className="scroll-mt-20 border-y border-white/[0.06] bg-[#0a0b0f] px-4 py-24 sm:px-6 lg:px-8 lg:py-32"
+    >
+      <div className="mx-auto grid max-w-7xl gap-14 lg:grid-cols-[0.72fr_1.28fr] lg:items-start">
+        <SectionIntro
+          eyebrow="Security"
+          title="Your agents do not share a brain."
+          description="Memory is isolated by account and session, with authentication applied to both MCP commands and the live socket."
+        />
+
+        <div className="grid gap-4 sm:grid-cols-3">
+          {points.map((point) => (
+            <article
+              key={point.title}
+              className="min-w-0 rounded-2xl border border-white/[0.07] bg-white/[0.018] p-5"
+            >
+              <point.icon size={19} className="text-[#62d3d0]" aria-hidden="true" />
+              <h3 className="mt-6 text-sm font-semibold">{point.title}</h3>
+              <p className="mt-2 text-xs leading-5 text-white/38">
+                {point.description}
+              </p>
+            </article>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function FinalCta() {
+  return (
+    <section className="px-4 py-24 sm:px-6 lg:px-8 lg:py-32">
+      <div className="cta-panel relative mx-auto max-w-7xl overflow-hidden rounded-[28px] border border-[#62d3d0]/15 px-6 py-16 text-center sm:px-10 sm:py-20">
+        <Sparkles
+          size={24}
+          className="mx-auto text-[#62d3d0]"
+          aria-hidden="true"
+        />
+        <h2 className="mx-auto mt-6 max-w-3xl text-3xl font-semibold tracking-[-0.045em] text-balance sm:text-5xl">
+          Let the next session begin where the last one ended.
+        </h2>
+        <p className="mx-auto mt-5 max-w-xl text-sm leading-6 text-white/48 sm:text-base">
+          Open your memory bank, create an MCP token, and connect the agent you
+          already use.
+        </p>
+        <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
+          <Link
+            href="/signup"
+            className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-full bg-[#62d3d0] px-6 py-3 text-sm font-semibold text-[#101307] transition hover:bg-[#a8ebe7] sm:w-auto"
+          >
+            Create your memory bank
+            <ArrowRight size={17} aria-hidden="true" />
+          </Link>
+          <Link
+            href="/login"
+            className="inline-flex min-h-12 w-full items-center justify-center rounded-full border border-white/12 px-6 py-3 text-sm font-medium text-white/70 transition hover:border-white/25 hover:text-white sm:w-auto"
+          >
+            Sign in
+          </Link>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function SectionIntro({
+  eyebrow,
+  title,
+  description,
+}: {
+  eyebrow: string;
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className="max-w-2xl">
+      <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#62d3d0]/75">
+        {eyebrow}
+      </div>
+      <h2 className="mt-5 text-3xl font-semibold tracking-[-0.045em] text-balance sm:text-5xl">
+        {title}
+      </h2>
+      <p className="mt-5 text-sm leading-6 text-white/45 sm:text-base sm:leading-7">
+        {description}
+      </p>
+    </div>
+  );
+}
 
 function Footer() {
   return (
-    <footer className="border-t border-white/5 bg-neutral-950 py-12">
-      <div className="container mx-auto px-6 text-center text-neutral-500 text-sm">
-        <p>© 2025 NoteClaw. Built for the future of research.</p>
+    <footer className="border-t border-white/[0.06] px-4 py-8 sm:px-6 lg:px-8">
+      <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-5 sm:flex-row">
+        <div className="flex items-center gap-2.5">
+          <Image src="/icon.png" alt="" width={26} height={26} className="rounded-lg" />
+          <span className="text-sm font-semibold">NoteClaw Memory</span>
+        </div>
+        <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-xs text-white/35">
+          <a href="#product" className="transition-colors hover:text-white">
+            Product
+          </a>
+          <a href="#protocol" className="transition-colors hover:text-white">
+            Protocol
+          </a>
+          <Link href="/login" className="transition-colors hover:text-white">
+            Sign in
+          </Link>
+          <Link href="/plans" className="transition-colors hover:text-white">
+            Plans
+          </Link>
+        </div>
+        <p className="text-xs text-white/25">
+          © {new Date().getFullYear()} NoteClaw
+        </p>
       </div>
     </footer>
   );

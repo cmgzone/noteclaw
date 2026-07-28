@@ -31,8 +31,6 @@ class PremiumInput extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-
     return TextFormField(
       controller: controller,
       obscureText: obscureText,
@@ -48,34 +46,32 @@ class PremiumInput extends StatelessWidget {
         prefixIcon: icon != null ? Icon(icon) : null,
         suffixIcon: suffixIcon,
         filled: true,
-        fillColor: isDark
-            ? const Color(0xFF0F172A).withValues(alpha: 0.5)
-            : const Color(0xFFF1F5F9).withValues(alpha: 0.8),
+        fillColor: theme.colorScheme.surfaceContainerHighest,
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide.none,
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide(
-            color: theme.colorScheme.outline.withValues(alpha: 0.2),
+            color: theme.colorScheme.outlineVariant,
           ),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide(
             color: theme.colorScheme.primary,
             width: 2,
           ),
         ),
         errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide(
             color: theme.colorScheme.error.withValues(alpha: 0.5),
           ),
         ),
         contentPadding:
-            const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
       ),
       validator: validator,
     );
