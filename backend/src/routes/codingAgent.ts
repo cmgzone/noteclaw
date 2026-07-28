@@ -3001,7 +3001,7 @@ router.get('/memory/sessions', authenticateToken, async (req: Request, res: Resp
     const sessionsResult = await pool.query(
       `SELECT a.*, n.title as notebook_title
        FROM agent_sessions a
-       LEFT JOIN notebooks n ON a.notebook_id = n.id
+       LEFT JOIN notebooks n ON a.notebook_id = n.id::text
        WHERE a.user_id = $1
          AND ($2::text IS NULL OR a.id = $2)
        ORDER BY a.last_activity DESC`,
