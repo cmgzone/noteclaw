@@ -28,9 +28,9 @@ let featureSchemaPromise: Promise<void> | null = null;
 export function defaultPlanFeatureAccess(isFreePlan: boolean): PlanFeatureAccess {
   const enabled = !isFreePlan;
   return {
-    memory_bank: enabled,
-    notebook_chat: enabled,
-    websocket_collaboration: enabled,
+    memory_bank: true,
+    notebook_chat: true,
+    websocket_collaboration: true,
     code_review: enabled,
     web_search: enabled,
     deep_research: enabled,

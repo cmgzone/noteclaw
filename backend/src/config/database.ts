@@ -206,6 +206,7 @@ export async function initializeDatabase() {
             CREATE TABLE IF NOT EXISTS subscription_plans (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                 name TEXT NOT NULL,
+                description TEXT,
                 credits_per_month INTEGER NOT NULL,
                 price DECIMAL NOT NULL,
                 google_play_product_id TEXT,
@@ -259,11 +260,72 @@ export async function initializeDatabase() {
                 name TEXT NOT NULL,
                 credits INTEGER NOT NULL,
                 price DECIMAL NOT NULL,
+                description TEXT,
                 google_play_product_id TEXT,
                 is_active BOOLEAN DEFAULT true,
                 created_at TIMESTAMPTZ DEFAULT NOW()
             );
         `);
+
+        await client.query(`
+            ALTER TABLE subscription_plans
+                ADD COLUMN IF NOT EXISTS description TEXT;
+            ALTER TABLE credit_packages
+                ADD COLUMN IF NOT EXISTS description TEXT;
+        `);
+
+        const freePlanFeatures = JSON.stringify({
+            memory_bank: true,
+            notebook_chat: true,
+            websocket_collaboration: true,
+            code_review: false,
+            web_search: false,
+            deep_research: false,
+            research_save_to_notebook: false,
+        });
+        const paidPlanFeatures = JSON.stringify({
+            memory_bank: true,
+            notebook_chat: true,
+            websocket_collaboration: true,
+            code_review: true,
+            web_search: true,
+            deep_research: true,
+            research_save_to_notebook: true,
+        });
+        const planCount = await client.query(
+            'SELECT COUNT(*)::int AS count FROM subscription_plans',
+        );
+        if (planCount.rows[0].count === 0) {
+            await client.query(
+                `INSERT INTO subscription_plans (
+                    name, description, credits_per_month, price, is_free_plan,
+                    google_play_product_id, notes_limit, mcp_sources_limit,
+                    mcp_tokens_limit, mcp_api_calls_per_day, feature_access
+                 ) VALUES
+                    ('Free', 'Core memory and agent collaboration', 50, 0, TRUE,
+                     NULL, 100, 10, 3, 100, $1::jsonb),
+                    ('Pro', 'Advanced agent tools and research', 1000, 9.99, FALSE,
+                     'noteclaw_pro_monthly', 1000, 200, 10, 2000, $2::jsonb),
+                    ('Ultra', 'Highest limits for agent teams', 5000, 29.99, FALSE,
+                     'noteclaw_ultra_monthly', 10000, 1000, 25, 10000, $2::jsonb)`,
+                [freePlanFeatures, paidPlanFeatures],
+            );
+        }
+
+        const packageCount = await client.query(
+            'SELECT COUNT(*)::int AS count FROM credit_packages',
+        );
+        if (packageCount.rows[0].count === 0) {
+            await client.query(`
+                INSERT INTO credit_packages (
+                    name, credits, price, google_play_product_id
+                ) VALUES
+                    ('Starter Pack', 100, 1.99, 'noteclaw_credits_starter'),
+                    ('Value Pack', 500, 7.99, 'noteclaw_credits_value'),
+                    ('Pro Pack', 2000, 24.99, 'noteclaw_credits_pro'),
+                    ('Ultimate Pack', 10000, 99.99, 'noteclaw_credits_ultimate')
+            `);
+        }
 
         // Admin-managed catalog and settings tables.
         await client.query(`
