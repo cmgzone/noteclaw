@@ -44,7 +44,7 @@ export default function Layout() {
             {/* Sidebar */}
             <div className="hidden w-64 flex-col bg-white border-r border-gray-200 md:flex">
                 <div className="flex h-16 items-center justify-center border-b border-gray-200 px-4">
-                    <h1 className="text-xl font-bold text-gray-900">Notebook Admin</h1>
+                    <h1 className="text-xl font-bold text-gray-900">NoteClaw Admin</h1>
                 </div>
                 <div className="flex flex-1 flex-col overflow-y-auto pt-5 pb-4">
                     <nav className="mt-5 flex-1 space-y-1 px-2">
