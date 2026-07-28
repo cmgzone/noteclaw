@@ -5,7 +5,7 @@
 set -euo pipefail
 
 GITHUB_REPO="cmgzone/noteclaw"
-BACKEND_URL="https://noteclaw.onrender.com"
+BACKEND_URL="https://notebackend.pikpam.com"
 MCP_DIR="$HOME/.noteclaw-mcp"
 DOWNLOAD_URL="https://raw.githubusercontent.com/$GITHUB_REPO/HEAD/backend/mcp-server/github-install/index.cjs"
 TARGET_FILE="$MCP_DIR/index.cjs"
@@ -38,7 +38,7 @@ cat <<EOF
       "args": ["$MCP_DIR/index.cjs"],
       "env": {
         "BACKEND_URL": "$BACKEND_URL",
-        "CODING_AGENT_API_KEY": "YOUR_API_TOKEN_HERE"
+        "NOTECLAW_API_TOKEN": "YOUR_API_TOKEN_HERE"
       }
     }
   }

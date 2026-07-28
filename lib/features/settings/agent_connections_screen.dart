@@ -6,6 +6,7 @@ import 'package:lucide_icons/lucide_icons.dart';
 
 import '../../core/api/api_service.dart';
 import '../../core/auth/custom_auth_service.dart';
+import '../../core/config/env_config.dart';
 import '../memory/memory_models.dart';
 import 'api_tokens_section.dart';
 
@@ -602,7 +603,8 @@ class _TopicAccessPanelState extends ConsumerState<_TopicAccessPanel> {
       final topicId = topic['id']?.toString() ?? '';
       if (topicId.isEmpty) throw Exception('The topic was not created.');
       final nextIds = {..._selectedTopicIds, topicId};
-      await api.updateAgentTopicAccess(agentId, nextIds.toList(growable: false));
+      await api.updateAgentTopicAccess(
+          agentId, nextIds.toList(growable: false));
       _selectedTopicIds = nextIds;
       await ref.read(memoryWorkspaceProvider.notifier).refresh();
       if (mounted) {
@@ -1087,12 +1089,26 @@ class _ToolRow extends StatelessWidget {
 class _ConnectionCard extends StatelessWidget {
   const _ConnectionCard();
 
-  Future<void> _copy(BuildContext context) async {
-    const command = 'npx -y @noteclaw/mcp-server';
-    await Clipboard.setData(const ClipboardData(text: command));
+  static const _remoteConfiguration = '''{
+  "mcpServers": {
+    "noteclaw-memory": {
+      "url": "${EnvConfig.hostedMcpUrl}",
+      "headers": {
+        "Authorization": "Bearer nclaw_your-token-here"
+      }
+    }
+  }
+}''';
+
+  Future<void> _copy(
+    BuildContext context,
+    String value,
+    String label,
+  ) async {
+    await Clipboard.setData(ClipboardData(text: value));
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('MCP command copied')),
+        SnackBar(content: Text('$label copied')),
       );
     }
   }
@@ -1106,9 +1122,24 @@ class _ConnectionCard extends StatelessWidget {
         children: [
           const _SectionHeader(
             title: 'Connect an agent',
-            subtitle: 'Use one account token in any MCP-compatible client.',
+            subtitle:
+                'Connect directly to hosted MCP—no server installation required.',
           ),
-          const SizedBox(height: 15),
+          const SizedBox(height: 16),
+          const _ConnectionStep(
+            number: '1',
+            title: 'Create an agent token',
+            description:
+                'Generate a revocable token in MCP access below. Each agent should use its own token.',
+          ),
+          const SizedBox(height: 12),
+          const _ConnectionStep(
+            number: '2',
+            title: 'Add this remote MCP configuration',
+            description:
+                'Paste it into Codex, Claude, Cursor, or another client that supports Streamable HTTP.',
+          ),
+          const SizedBox(height: 12),
           Container(
             padding: const EdgeInsets.all(13),
             decoration: BoxDecoration(
@@ -1116,35 +1147,158 @@ class _ConnectionCard extends StatelessWidget {
               borderRadius: BorderRadius.circular(11),
               border: Border.all(color: scheme.outlineVariant),
             ),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Expanded(
-                  child: Text(
-                    'npx -y @noteclaw/mcp-server',
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontFamily: 'monospace', fontSize: 12),
+                const SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: SelectableText(
+                    _remoteConfiguration,
+                    style: TextStyle(
+                      fontFamily: 'monospace',
+                      fontSize: 11,
+                      height: 1.5,
+                    ),
                   ),
                 ),
-                IconButton(
-                  onPressed: () => _copy(context),
-                  tooltip: 'Copy MCP command',
-                  visualDensity: VisualDensity.compact,
-                  icon: const Icon(LucideIcons.copy, size: 17),
+                const SizedBox(height: 10),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    onPressed: () => _copy(
+                      context,
+                      _remoteConfiguration,
+                      'Remote MCP configuration',
+                    ),
+                    icon: const Icon(LucideIcons.copy, size: 16),
+                    label: const Text('Copy configuration'),
+                  ),
                 ),
               ],
             ),
           ),
           const SizedBox(height: 12),
-          Text(
-            'Set NOTECLAW_API_TOKEN, then use the same project identifier on '
-            'every agent that should share memory.',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: scheme.onSurfaceVariant,
-                  height: 1.5,
+          const _ConnectionStep(
+            number: '3',
+            title: 'Open the memory session',
+            description:
+                'Ask the agent to call memory_session_open with a stable project identifier.',
+          ),
+          const SizedBox(height: 16),
+          ExpansionTile(
+            tilePadding: EdgeInsets.zero,
+            childrenPadding: EdgeInsets.zero,
+            leading: Icon(
+              LucideIcons.terminalSquare,
+              color: scheme.onSurfaceVariant,
+              size: 19,
+            ),
+            title: const Text(
+              'Client only supports local stdio?',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+            ),
+            subtitle: const Text(
+              'Use the lightweight local bridge as a fallback.',
+              style: TextStyle(fontSize: 12),
+            ),
+            children: [
+              Container(
+                margin: const EdgeInsets.only(top: 6),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: scheme.surfaceContainerHighest.withValues(alpha: 0.45),
+                  borderRadius: BorderRadius.circular(10),
                 ),
+                child: Row(
+                  children: [
+                    const Expanded(
+                      child: SelectableText(
+                        'npx -y @noteclaw/mcp-server',
+                        style: TextStyle(
+                          fontFamily: 'monospace',
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => _copy(
+                        context,
+                        'npx -y @noteclaw/mcp-server',
+                        'Local MCP command',
+                      ),
+                      tooltip: 'Copy local command',
+                      visualDensity: VisualDensity.compact,
+                      icon: const Icon(LucideIcons.copy, size: 17),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ],
       ),
+    );
+  }
+}
+
+class _ConnectionStep extends StatelessWidget {
+  const _ConnectionStep({
+    required this.number,
+    required this.title,
+    required this.description,
+  });
+
+  final String number;
+  final String title;
+  final String description;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 26,
+          height: 26,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: scheme.primary.withValues(alpha: 0.13),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Text(
+            number,
+            style: TextStyle(
+              color: scheme.primary,
+              fontWeight: FontWeight.w900,
+              fontSize: 12,
+            ),
+          ),
+        ),
+        const SizedBox(width: 11),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 13,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                description,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                      height: 1.45,
+                    ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

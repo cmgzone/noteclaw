@@ -12,7 +12,7 @@ RUN npm install
 COPY . .
 
 # Build TypeScript
-RUN npm run build
+RUN npm run build:mcp && npm run build
 
 # Expose port
 EXPOSE 3000

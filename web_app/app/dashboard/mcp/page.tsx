@@ -44,6 +44,11 @@ import api, {
 } from "@/lib/api";
 import SubscriptionFeatureGate from "@/components/subscription-feature-gate";
 
+const REMOTE_MCP_URL = `${
+    process.env.NEXT_PUBLIC_API_URL?.replace(/\/api\/?$/, "") ||
+    "https://notebackend.pikpam.com"
+}/mcp`;
+
 export default function McpDashboardPage() {
     return (
         <SubscriptionFeatureGate feature="memory_bank">
@@ -149,7 +154,7 @@ function McpDashboardContent() {
                             <li>403: MCP disabled or insufficient permissions. Check MCP is enabled and your token permissions.</li>
                             <li>429: Rate limit exceeded. Call get_quota and retry later.</li>
                             <li>503: Service unavailable. Wait briefly and retry.</li>
-                            <li>Network: Verify BACKEND_URL and CODING_AGENT_API_KEY in your .env.</li>
+                            <li>Network: Verify the hosted MCP URL and Authorization bearer token.</li>
                         </ul>
                     </div>
                 </header>
@@ -453,6 +458,39 @@ function TokensTab({ tokens, quota, onRefresh }: { tokens: ApiToken[]; quota: Mc
                                 <code className="flex-1 break-all">{newToken}</code>
                                 <button onClick={() => copyToClipboard(newToken)} className="p-2 hover:bg-white/10 rounded transition-colors">
                                     {copied ? <Check size={16} className="text-green-400" /> : <Copy size={16} />}
+                                </button>
+                            </div>
+                            <div className="mt-4 rounded-xl border border-[#62d3d0]/20 bg-black/25 p-4">
+                                <div className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-[#62d3d0]">
+                                    Hosted MCP · no local server required
+                                </div>
+                                <pre className="max-w-full overflow-x-auto whitespace-pre-wrap break-all text-xs leading-5 text-neutral-300">
+{`{
+  "mcpServers": {
+    "noteclaw-memory": {
+      "url": "${REMOTE_MCP_URL}",
+      "headers": {
+        "Authorization": "Bearer ${newToken}"
+      }
+    }
+  }
+}`}
+                                </pre>
+                                <button
+                                    onClick={() => copyToClipboard(JSON.stringify({
+                                        mcpServers: {
+                                            "noteclaw-memory": {
+                                                url: REMOTE_MCP_URL,
+                                                headers: {
+                                                    Authorization: `Bearer ${newToken}`,
+                                                },
+                                            },
+                                        },
+                                    }, null, 2))}
+                                    className="mt-3 inline-flex items-center gap-2 rounded-lg bg-[#62d3d0] px-3 py-2 text-xs font-semibold text-black transition hover:bg-[#91e2df]"
+                                >
+                                    {copied ? <Check size={14} /> : <Copy size={14} />}
+                                    Copy remote configuration
                                 </button>
                             </div>
                             <button onClick={() => setNewToken(null)} className="mt-4 text-sm text-neutral-400 hover:text-white">

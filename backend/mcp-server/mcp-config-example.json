@@ -4,8 +4,8 @@
       "command": "node",
       "args": ["~/.noteclaw-mcp/index.cjs"],
       "env": {
-        "BACKEND_URL": "https://noteclaw.onrender.com",
-        "CODING_AGENT_API_KEY": "nclaw_your-personal-api-token-here"
+        "BACKEND_URL": "https://notebackend.pikpam.com",
+        "NOTECLAW_API_TOKEN": "nclaw_your-personal-api-token-here"
       },
       "disabled": false,
       "autoApprove": [
@@ -16,7 +16,7 @@
     }
   },
   "_comments": {
-    "CODING_AGENT_API_KEY": "Generate from NoteClaw app: Settings -> Agent Connections -> Generate New Token",
+    "NOTECLAW_API_TOKEN": "Generate from NoteClaw app: Settings -> Agent Connections -> Generate New Token",
     "communication": "Use get_followup_messages to check for user messages, respond_to_followup to reply"
   }
 }

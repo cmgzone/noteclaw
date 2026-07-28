@@ -29,7 +29,32 @@ backend uses Serper for search and Gemini or OpenRouter for synthesis.
 
 ## Configuration
 
-Requires Node.js 20 or newer.
+### Hosted Streamable HTTP (recommended)
+
+Users do not need to install or host the MCP server when their client supports
+remote Streamable HTTP:
+
+```json
+{
+  "mcpServers": {
+    "noteclaw-memory": {
+      "url": "https://notebackend.pikpam.com/mcp",
+      "headers": {
+        "Authorization": "Bearer nclaw_your_token"
+      }
+    }
+  }
+}
+```
+
+The endpoint is stateless and requires a revocable NoteClaw API token on every
+request. The token is still permanently bound to the first agent session it
+opens.
+
+### Local stdio fallback
+
+Clients that only support local MCP processes can continue using the stdio
+connector. It requires Node.js 20 or newer.
 
 ```env
 BACKEND_URL=https://your-noteclaw-backend.example

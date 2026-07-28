@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import '../config/env_config.dart';
 import '../security/credentials_service.dart';
 
 // Custom exception for insufficient credits
@@ -46,7 +47,7 @@ final apiServiceProvider = Provider<ApiService>((ref) {
 
 class ApiService {
   final Ref ref;
-  static const String _defaultApiBaseUrl = 'https://noteclaw.onrender.com/api/';
+  static const String _defaultApiBaseUrl = EnvConfig.productionApiBaseUrl;
   static const Duration _defaultChatTimeout = Duration(seconds: 120);
 
   static String _normalizeBaseUrl(String url) {

@@ -64,22 +64,23 @@ npm install
 npm run build
 ```
 
-Configure an MCP client with the token created in the app:
+Connect a modern MCP client directly to the hosted server with the token
+created in the app:
 
 ```json
 {
   "mcpServers": {
     "noteclaw-memory": {
-      "command": "node",
-      "args": ["/absolute/path/to/noteclaw/backend/mcp-server/dist/index.js"],
-      "env": {
-        "BACKEND_URL": "http://localhost:3000",
-        "NOTECLAW_API_TOKEN": "nclaw_your_token"
+      "url": "https://notebackend.pikpam.com/mcp",
+      "headers": {
+        "Authorization": "Bearer nclaw_your_token"
       }
     }
   }
 }
 ```
 
-The legacy `CODING_AGENT_API_KEY` environment variable is still accepted.
-See `backend/mcp-server/README.md` for the memory tools and WebSocket protocol.
+Users do not need to host the MCP server. A local stdio connector remains
+available for clients that do not yet support remote Streamable HTTP. See
+`backend/mcp-server/README.md` for the fallback, memory tools, and WebSocket
+protocol.

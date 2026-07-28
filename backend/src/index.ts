@@ -13,6 +13,7 @@ import aiRoutes from './routes/ai.js';
 import adminRoutes from './routes/admin.js';
 import codingAgentRoutes from './routes/codingAgent.js';
 import mcpDownloadRoutes from './routes/mcpDownload.js';
+import remoteMcpRoutes from './routes/remoteMcp.js';
 import subscriptionRoutes from './routes/subscriptions.js';
 
 import { agentWebSocketService } from './services/agentWebSocketService.js';
@@ -46,7 +47,16 @@ app.use(compression());
 app.use(cors({
     origin: true, // Allow all origins (reflects the request origin)
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-User-Api-Key'],
+    allowedHeaders: [
+        'Content-Type',
+        'Authorization',
+        'X-Requested-With',
+        'X-User-Api-Key',
+        'Mcp-Session-Id',
+        'MCP-Protocol-Version',
+        'Last-Event-ID',
+    ],
+    exposedHeaders: ['Mcp-Session-Id'],
     credentials: true,
 }));
 
@@ -87,6 +97,7 @@ const healthHandler = (req: express.Request, res: express.Response) => {
 
 app.get('/health', healthHandler);
 app.get('/api/health', healthHandler);
+app.use('/mcp', remoteMcpRoutes);
 
 // Memory-bank, account, subscription, and administration surfaces.
 app.use('/api/auth', authRoutes);

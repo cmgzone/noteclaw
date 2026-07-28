@@ -4,6 +4,7 @@
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
+    "build:mcp": "tsc -p mcp-server/tsconfig.json",
     "build": "tsc",
     "start": "node --max-old-space-size=6144 dist/index.js",
     "dev": "tsx src/index.ts",

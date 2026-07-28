@@ -4,7 +4,7 @@
 $ErrorActionPreference = "Stop"
 
 $GitHubRepo = "cmgzone/noteclaw"
-$BackendUrl = "https://noteclaw.onrender.com"
+$BackendUrl = "https://notebackend.pikpam.com"
 $McpDir = "$env:USERPROFILE\.noteclaw-mcp"
 $DownloadUrl = "https://raw.githubusercontent.com/$GitHubRepo/HEAD/backend/mcp-server/github-install/index.cjs"
 $TargetFile = Join-Path $McpDir "index.cjs"
@@ -43,7 +43,7 @@ $config = @"
       "args": ["$escapedPath\\index.cjs"],
       "env": {
         "BACKEND_URL": "$BackendUrl",
-        "CODING_AGENT_API_KEY": "YOUR_API_TOKEN_HERE"
+        "NOTECLAW_API_TOKEN": "YOUR_API_TOKEN_HERE"
       }
     }
   }

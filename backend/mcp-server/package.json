@@ -1,8 +1,8 @@
 {
   "name": "@noteclaw/mcp-server",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "type": "module",
-  "description": "Durable MCP memory bank with live WebSocket events for third-party AI agents",
+  "description": "Durable MCP memory bank with hosted Streamable HTTP, local stdio, and live WebSocket events",
   "main": "dist/index.js",
   "bin": {
     "noteclaw-mcp": "./dist/index.js"
@@ -17,6 +17,7 @@
     "build": "tsc",
     "build:standalone": "node ./scripts/build-standalone.cjs",
     "check:contract": "node ./scripts/check-contract.mjs",
+    "check:remote": "npm run build && node ./scripts/check-remote-contract.mjs",
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts"
   },

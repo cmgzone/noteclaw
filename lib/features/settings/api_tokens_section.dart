@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 
 import '../../core/api/api_service.dart';
+import '../../core/config/env_config.dart';
 
 class ApiToken {
   const ApiToken({
@@ -155,6 +156,7 @@ class _TokenGenerationDialogState extends State<TokenGenerationDialog> {
   String? _error;
   bool _isGenerating = false;
   bool _copied = false;
+  bool _copiedConfiguration = false;
 
   @override
   void dispose() {
@@ -194,6 +196,28 @@ class _TokenGenerationDialogState extends State<TokenGenerationDialog> {
     await Clipboard.setData(ClipboardData(text: token));
     if (mounted) {
       setState(() => _copied = true);
+    }
+  }
+
+  String _remoteConfiguration(String token) => '''{
+  "mcpServers": {
+    "noteclaw-memory": {
+      "url": "${EnvConfig.hostedMcpUrl}",
+      "headers": {
+        "Authorization": "Bearer $token"
+      }
+    }
+  }
+}''';
+
+  Future<void> _copyConfiguration() async {
+    final token = _generatedToken;
+    if (token == null) return;
+    await Clipboard.setData(
+      ClipboardData(text: _remoteConfiguration(token)),
+    );
+    if (mounted) {
+      setState(() => _copiedConfiguration = true);
     }
   }
 
@@ -284,6 +308,40 @@ class _TokenGenerationDialogState extends State<TokenGenerationDialog> {
                       ),
                     ),
                   ),
+                  const SizedBox(height: 14),
+                  Text(
+                    'Hosted MCP configuration',
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                  ),
+                  const SizedBox(height: 7),
+                  Text(
+                    'Paste this into a client that supports remote Streamable HTTP.',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                  ),
+                  const SizedBox(height: 9),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color:
+                          scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: SelectableText(
+                        _remoteConfiguration(generatedToken),
+                        style: const TextStyle(
+                          fontFamily: 'monospace',
+                          fontSize: 11,
+                          height: 1.5,
+                        ),
+                      ),
+                    ),
+                  ),
                 ],
               ),
       ),
@@ -313,8 +371,20 @@ class _TokenGenerationDialogState extends State<TokenGenerationDialog> {
                 ),
                 label: Text(_copied ? 'Copied' : 'Copy'),
               ),
+              TextButton.icon(
+                onPressed: _copyConfiguration,
+                icon: Icon(
+                  _copiedConfiguration ? LucideIcons.check : LucideIcons.plug,
+                  size: 17,
+                ),
+                label: Text(
+                  _copiedConfiguration ? 'Config copied' : 'Copy MCP config',
+                ),
+              ),
               FilledButton(
-                onPressed: _copied ? () => Navigator.pop(context) : null,
+                onPressed: _copied || _copiedConfiguration
+                    ? () => Navigator.pop(context)
+                    : null,
                 child: const Text('Done'),
               ),
             ],

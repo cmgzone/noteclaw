@@ -14,7 +14,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:record/record.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
-const String _defaultApiBaseUrl = 'https://noteclaw.onrender.com/api/';
+const String _defaultApiBaseUrl = 'https://notebackend.pikpam.com/api/';
 const String _accessTokenKey = 'auth_token';
 const String _accessTokenBackupKey = 'auth_token_backup';
 const String _refreshTokenKey = 'refresh_token';

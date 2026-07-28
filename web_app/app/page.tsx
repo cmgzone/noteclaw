@@ -573,11 +573,9 @@ function Protocol() {
               <code>{`{
   "mcpServers": {
     "noteclaw-memory": {
-      "command": "node",
-      "args": ["/path/to/noteclaw-memory.js"],
-      "env": {
-        "BACKEND_URL": "https://api.noteclaw.com",
-        "NOTECLAW_API_TOKEN": "nclaw_••••••••"
+      "url": "https://notebackend.pikpam.com/mcp",
+      "headers": {
+        "Authorization": "Bearer nclaw_••••••••"
       }
     }
   }
@@ -585,7 +583,7 @@ function Protocol() {
             </pre>
           </div>
           <div className="border-t border-white/[0.07] px-4 py-3 font-mono text-[9px] text-white/25 sm:px-6">
-            Legacy CODING_AGENT_API_KEY is still accepted.
+            Hosted Streamable HTTP. Local stdio remains available as a fallback.
           </div>
         </div>
       </div>

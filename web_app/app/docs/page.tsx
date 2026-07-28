@@ -190,62 +190,61 @@ function QuickStartSection() {
           </div>
         </Step>
 
-        <Step number={2} title="Install the MCP Server">
+        <Step number={2} title="Connect to Hosted MCP">
           <p className="text-neutral-400 mb-4">
-            Run the install script for your platform:
-          </p>
-          <div className="space-y-3 mb-4">
-            <div>
-              <span className="text-xs text-neutral-500">Windows (PowerShell):</span>
-              <CodeBlock
-                language="powershell"
-                code={`irm https://raw.githubusercontent.com/cmgzone/notebookllmmcp/main/install.ps1 | iex`}
-              />
-            </div>
-            <div>
-              <span className="text-xs text-neutral-500">Mac/Linux:</span>
-              <CodeBlock
-                language="bash"
-                code={`curl -fsSL https://raw.githubusercontent.com/cmgzone/notebookllmmcp/main/install.sh | bash`}
-              />
-            </div>
-          </div>
-          <p className="text-neutral-400 text-sm">
-            The script will download the MCP server and show you the configuration to add.
-          </p>
-          <div className="mt-3 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-200 text-sm">
-            <strong>GitHub Repository:</strong>{" "}
-            <a href="https://github.com/cmgzone/notebookllmmcp" target="_blank" rel="noopener noreferrer" className="underline hover:text-white">
-              github.com/cmgzone/notebookllmmcp
-            </a>
-          </div>
-        </Step>
-
-        <Step number={3} title="Configure Your MCP Client">
-          <p className="text-neutral-400 mb-4">
-            Add the configuration shown by the install script to your MCP config file:
+            Modern MCP clients can connect directly to NoteClaw over Streamable HTTP.
+            No server installation or self-hosting is required.
           </p>
           <CodeBlock
             language="json"
             code={`{
   "mcpServers": {
-    "notebookllm": {
-      "command": "node",
-      "args": ["~/.notebookllm-mcp/index.js"],
-      "env": {
-        "BACKEND_URL": "http://localhost:3000",
-        "CODING_AGENT_API_KEY": "nllm_your-token-here"
+    "noteclaw-memory": {
+      "url": "https://notebackend.pikpam.com/mcp",
+      "headers": {
+        "Authorization": "Bearer nclaw_your-token-here"
       }
     }
   }
 }`}
           />
+          <div className="mt-3 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-200 text-sm">
+            The API, database, WebSocket service, search, and research providers remain
+            hosted by NoteClaw.
+          </div>
+        </Step>
+
+        <Step number={3} title="Local stdio Fallback">
+          <p className="text-neutral-400 mb-4">
+            If your MCP client only supports local stdio servers, run the lightweight
+            NoteClaw connector locally:
+          </p>
+          <CodeBlock
+            language="json"
+            code={`{
+  "mcpServers": {
+    "noteclaw-memory": {
+      "command": "node",
+      "args": ["/absolute/path/to/noteclaw-mcp/dist/index.js"],
+      "env": {
+        "BACKEND_URL": "https://notebackend.pikpam.com",
+        "NOTECLAW_API_TOKEN": "nclaw_your-token-here"
+      }
+    }
+  }
+}`}
+          />
+          <p className="mt-3 text-sm text-neutral-500">
+            This local process is only a bridge. Your durable memory stays in the
+            hosted NoteClaw account.
+          </p>
         </Step>
 
         <Step number={4} title="Start Using the Tools">
           <p className="text-neutral-400 mb-4">
             Once configured, your coding agent can use the MCP tools to verify code and save it to your notebooks.
-            The server will automatically connect to the NoteClaw backend.
+            The remote endpoint or local bridge will automatically connect to the
+            NoteClaw memory backend.
           </p>
         </Step>
 
@@ -255,7 +254,7 @@ function QuickStartSection() {
             <li>403: MCP disabled or insufficient permissions. Check MCP is enabled and your token permissions.</li>
             <li>429: Rate limit exceeded. Call get_quota and retry later.</li>
             <li>503: Service unavailable. Wait briefly and retry.</li>
-            <li>Network: Verify BACKEND_URL and CODING_AGENT_API_KEY in your .env.</li>
+            <li>Network: Verify the remote URL and Authorization bearer token.</li>
           </ul>
         </Step>
       </div>
@@ -294,7 +293,7 @@ Example: nclaw_a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2`}
           </p>
           <CodeBlock
             language="bash"
-            code={`curl -X POST http://localhost:3000/api/coding-agent/verify-and-save \\
+            code={`curl -X POST https://notebackend.pikpam.com/api/coding-agent/verify-and-save \\
   -H "Content-Type: application/json" \\
   -H "Authorization: Bearer nclaw_your-token-here" \\
   -d '{
@@ -440,7 +439,7 @@ function ToolsSection() {
           <li>403: MCP disabled or insufficient permissions. Check MCP is enabled and your token permissions.</li>
           <li>429: Rate limit exceeded. Call get_quota and retry later.</li>
           <li>503: Service unavailable. Wait briefly and retry.</li>
-          <li>Network: Verify BACKEND_URL and CODING_AGENT_API_KEY in your .env.</li>
+          <li>Network: Verify the MCP URL and Authorization bearer token in your client config.</li>
         </ul>
       </div>
 
@@ -827,58 +826,40 @@ function ConfigurationSection() {
         <div className="rounded-xl border border-green-500/20 bg-green-500/5 p-6">
           <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
             <Zap className="text-green-400" size={20} />
-            Recommended: Install from GitHub
+            Recommended: Hosted MCP
           </h3>
           <p className="text-neutral-400 mb-4">
-            Install the MCP server directly from our public GitHub repository:
-          </p>
-          
-          <div className="space-y-4">
-            <div>
-              <h4 className="text-sm font-medium text-neutral-300 mb-2">Windows (PowerShell):</h4>
-              <CodeBlock
-                language="powershell"
-                code={`irm https://raw.githubusercontent.com/cmgzone/notebookllmmcp/main/install.ps1 | iex`}
-              />
-            </div>
-            
-            <div>
-              <h4 className="text-sm font-medium text-neutral-300 mb-2">Mac/Linux:</h4>
-              <CodeBlock
-                language="bash"
-                code={`curl -fsSL https://raw.githubusercontent.com/cmgzone/notebookllmmcp/main/install.sh | bash`}
-              />
-            </div>
-          </div>
-          
-          <div className="mt-4 flex items-center gap-4">
-            <a 
-              href="https://github.com/cmgzone/notebookllmmcp" 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors text-sm"
-            >
-              <ExternalLink size={16} />
-              View on GitHub
-            </a>
-          </div>
-        </div>
-
-        <div className="rounded-xl border border-white/5 bg-neutral-900/50 p-6">
-          <h3 className="text-lg font-semibold mb-4">Kiro Configuration</h3>
-          <p className="text-neutral-400 mb-4">
-            Add to <code className="text-blue-400">.kiro/settings/mcp.json</code> (after running the install script):
+            Connect your agent directly to NoteClaw. There is nothing to install
+            or host.
           </p>
           <CodeBlock
             language="json"
             code={`{
   "mcpServers": {
-    "notebookllm": {
-      "command": "node",
-      "args": ["C:/Users/YourName/.notebookllm-mcp/index.js"],
-      "env": {
-        "BACKEND_URL": "http://localhost:3000",
-        "CODING_AGENT_API_KEY": "nclaw_your-personal-api-token-here"
+    "noteclaw-memory": {
+      "url": "https://notebackend.pikpam.com/mcp",
+      "headers": {
+        "Authorization": "Bearer nclaw_your-personal-api-token"
+      }
+    }
+  }
+}`}
+          />
+        </div>
+
+        <div className="rounded-xl border border-white/5 bg-neutral-900/50 p-6">
+          <h3 className="text-lg font-semibold mb-4">Kiro Configuration</h3>
+          <p className="text-neutral-400 mb-4">
+            Add the hosted server to <code className="text-blue-400">.kiro/settings/mcp.json</code>:
+          </p>
+          <CodeBlock
+            language="json"
+            code={`{
+  "mcpServers": {
+    "noteclaw-memory": {
+      "url": "https://notebackend.pikpam.com/mcp",
+      "headers": {
+        "Authorization": "Bearer nclaw_your-personal-api-token-here"
       }
     }
   }
@@ -895,12 +876,10 @@ function ConfigurationSection() {
             language="json"
             code={`{
   "mcpServers": {
-    "notebookllm": {
-      "command": "node",
-      "args": ["~/.notebookllm-mcp/index.js"],
-      "env": {
-        "BACKEND_URL": "http://localhost:3000",
-        "CODING_AGENT_API_KEY": "nclaw_your-personal-api-token-here"
+    "noteclaw-memory": {
+      "url": "https://notebackend.pikpam.com/mcp",
+      "headers": {
+        "Authorization": "Bearer nclaw_your-personal-api-token-here"
       }
     }
   }
@@ -909,36 +888,28 @@ function ConfigurationSection() {
         </div>
 
         <div className="rounded-xl border border-white/5 bg-neutral-900/50 p-6">
-          <h3 className="text-lg font-semibold mb-4">Manual Download</h3>
+          <h3 className="text-lg font-semibold mb-4">Local stdio Fallback</h3>
           <p className="text-neutral-400 mb-4">
-            If you prefer to download manually from GitHub:
+            Only use the local connector when your MCP client does not support a
+            remote URL:
           </p>
           <CodeBlock
-            language="bash"
-            code={`git clone https://github.com/cmgzone/notebookllmmcp.git ~/.notebookllm-mcp
-cd ~/.notebookllm-mcp
-npm install --production`}
-          />
-          <p className="text-neutral-400 mt-4 text-sm">
-            Then configure your MCP client with the path to <code className="text-blue-400">~/.notebookllm-mcp/dist/index.js</code>
-          </p>
-        </div>
-
-        <div className="rounded-xl border border-white/5 bg-neutral-900/50 p-6">
-          <h3 className="text-lg font-semibold mb-4">Alternative: Backend API Install</h3>
-          <p className="text-neutral-400 mb-4">
-            You can also install from our backend API:
-          </p>
-          <CodeBlock
-            language="bash"
-            code={`# Get configuration template
-curl http://localhost:3000/api/mcp/config
-
-# Or use the backend install scripts
-# Windows: irm http://localhost:3000/api/mcp/install.ps1 | iex
-# Mac/Linux: curl -fsSL http://localhost:3000/api/mcp/install.sh | bash`}
+            language="json"
+            code={`{
+  "mcpServers": {
+    "noteclaw-memory": {
+      "command": "npx",
+      "args": ["-y", "@noteclaw/mcp-server"],
+      "env": {
+        "BACKEND_URL": "https://notebackend.pikpam.com",
+        "NOTECLAW_API_TOKEN": "nclaw_your-personal-api-token-here"
+      }
+    }
+  }
+}`}
           />
         </div>
+
       </div>
     </section>
   );
@@ -1185,7 +1156,7 @@ function Footer() {
             <Link href="/" className="hover:text-white transition-colors">Home</Link>
             <Link href="/login" className="hover:text-white transition-colors">Login</Link>
             <a
-              href="https://github.com/cmgzone/notebookllmmcp"
+              href="https://github.com/cmgzone/noteclaw"
               target="_blank"
               rel="noopener noreferrer"
               className="hover:text-white transition-colors flex items-center gap-1"
