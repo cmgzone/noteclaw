@@ -4,7 +4,7 @@
 -- Create mcp_user_settings table
 CREATE TABLE IF NOT EXISTS mcp_user_settings (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     
     -- Code Analysis Settings
     code_analysis_model_id TEXT,  -- The model_id from ai_models table

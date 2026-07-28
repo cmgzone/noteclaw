@@ -267,6 +267,71 @@ export async function initializeDatabase() {
             );
         `);
 
+        // MCP quota and preference tables must be part of the normal startup
+        // schema. A fresh installation can receive an MCP request before any
+        // standalone migration script has been run.
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS mcp_settings (
+                id TEXT PRIMARY KEY DEFAULT 'default',
+                free_sources_limit INTEGER NOT NULL DEFAULT 10,
+                free_tokens_limit INTEGER NOT NULL DEFAULT 3,
+                free_api_calls_per_day INTEGER NOT NULL DEFAULT 100,
+                premium_sources_limit INTEGER NOT NULL DEFAULT 1000,
+                premium_tokens_limit INTEGER NOT NULL DEFAULT 10,
+                premium_api_calls_per_day INTEGER NOT NULL DEFAULT 10000,
+                is_mcp_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+                updated_at TIMESTAMPTZ DEFAULT NOW(),
+                updated_by UUID REFERENCES users(id) ON DELETE SET NULL
+            );
+
+            INSERT INTO mcp_settings (
+                id,
+                free_sources_limit,
+                free_tokens_limit,
+                free_api_calls_per_day,
+                premium_sources_limit,
+                premium_tokens_limit,
+                premium_api_calls_per_day
+            )
+            VALUES ('default', 10, 3, 100, 1000, 10, 10000)
+            ON CONFLICT (id) DO NOTHING;
+
+            CREATE TABLE IF NOT EXISTS user_mcp_usage (
+                user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+                sources_count INTEGER NOT NULL DEFAULT 0,
+                api_calls_today INTEGER NOT NULL DEFAULT 0,
+                last_api_call_date DATE DEFAULT CURRENT_DATE,
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                updated_at TIMESTAMPTZ DEFAULT NOW()
+            );
+
+            CREATE TABLE IF NOT EXISTS mcp_user_limits (
+                user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+                sources_limit_override INTEGER,
+                tokens_limit_override INTEGER,
+                api_calls_per_day_override INTEGER,
+                is_mcp_enabled_override BOOLEAN,
+                updated_at TIMESTAMPTZ DEFAULT NOW(),
+                updated_by UUID REFERENCES users(id) ON DELETE SET NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS mcp_user_settings (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                user_id UUID NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+                code_analysis_model_id TEXT,
+                code_analysis_enabled BOOLEAN DEFAULT TRUE,
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                updated_at TIMESTAMPTZ DEFAULT NOW()
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_user_mcp_usage_user
+                ON user_mcp_usage(user_id);
+            CREATE INDEX IF NOT EXISTS idx_mcp_user_limits_updated_at
+                ON mcp_user_limits(updated_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_mcp_user_settings_user_id
+                ON mcp_user_settings(user_id);
+        `);
+
         await client.query(`
             ALTER TABLE subscription_plans
                 ADD COLUMN IF NOT EXISTS description TEXT;
