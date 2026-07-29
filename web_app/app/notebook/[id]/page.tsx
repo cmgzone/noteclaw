@@ -364,10 +364,7 @@ function SourceStat({
 }
 
 function MemoryField({ name, value }: { name: string; value: unknown }) {
-    const label = name
-        .replace(/([a-z])([A-Z])/g, "$1 $2")
-        .replace(/[_-]+/g, " ")
-        .replace(/\b\w/g, (character) => character.toUpperCase());
+    const label = readableMemoryLabel(name);
 
     return (
         <div className="min-w-0 px-4 py-5 sm:px-5">
@@ -376,7 +373,7 @@ function MemoryField({ name, value }: { name: string; value: unknown }) {
                     {label}
                 </h4>
                 <span className="shrink-0 font-mono text-[9px] text-neutral-700">
-                    {getValueType(value)}
+                    {getValueType(normalizeMemoryValue(value))}
                 </span>
             </div>
             <MemoryValue value={value} />
@@ -384,63 +381,124 @@ function MemoryField({ name, value }: { name: string; value: unknown }) {
     );
 }
 
-function MemoryValue({ value }: { value: unknown }) {
-    if (value == null) {
+function MemoryValue({ value, depth = 0 }: { value: unknown; depth?: number }) {
+    const normalized = normalizeMemoryValue(value);
+
+    if (normalized == null) {
         return <span className="text-sm italic text-neutral-600">No value</span>;
     }
 
-    if (typeof value === "boolean") {
+    if (typeof normalized === "boolean") {
         return (
             <span
                 className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${
-                    value
+                    normalized
                         ? "bg-emerald-400/10 text-emerald-300"
                         : "bg-white/5 text-neutral-500"
                 }`}
             >
-                {String(value)}
+                {normalized ? "Yes" : "No"}
             </span>
         );
     }
 
-    if (typeof value === "string" || typeof value === "number") {
+    if (typeof normalized === "string" || typeof normalized === "number") {
         return (
-            <div className="break-words text-sm leading-6 text-neutral-300">
-                {String(value)}
+            <div className="whitespace-pre-wrap break-words text-sm leading-6 text-neutral-300">
+                {String(normalized)}
             </div>
         );
     }
 
-    if (Array.isArray(value)) {
-        const visibleItems = value.slice(0, 50);
+    if (depth >= 4) {
+        return (
+            <pre className="max-w-full overflow-x-auto whitespace-pre-wrap break-words rounded-xl border border-white/7 bg-black/25 p-4 font-mono text-xs leading-6 text-neutral-400">
+                {JSON.stringify(normalized, null, 2)}
+            </pre>
+        );
+    }
+
+    if (Array.isArray(normalized)) {
+        const visibleItems = normalized.slice(0, 50);
         return (
             <div className="space-y-2">
                 {visibleItems.map((item, index) => (
                     <div
                         key={index}
-                        className="min-w-0 rounded-xl border border-white/7 bg-black/20 px-3 py-2.5"
+                        className="flex min-w-0 items-start gap-3 rounded-xl border border-white/7 bg-black/20 px-3 py-3"
                     >
-                        <pre className="overflow-x-auto whitespace-pre-wrap break-words font-mono text-xs leading-5 text-neutral-400">
-                            {typeof item === "string"
-                                ? item
-                                : JSON.stringify(item, null, 2)}
-                        </pre>
+                        <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-md bg-[#62d3d0]/10 px-1 text-[10px] font-bold text-[#8ce4df]">
+                            {index + 1}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                            <MemoryValue value={item} depth={depth + 1} />
+                        </div>
                     </div>
                 ))}
-                {value.length > visibleItems.length && (
+                {normalized.length > visibleItems.length && (
                     <div className="text-xs text-neutral-600">
-                        {value.length - visibleItems.length} additional items are hidden.
+                        {normalized.length - visibleItems.length} additional items are hidden.
                     </div>
                 )}
             </div>
         );
     }
 
+    const entries = Object.entries(normalized as Record<string, unknown>);
     return (
-        <pre className="max-w-full overflow-x-auto whitespace-pre-wrap break-words rounded-xl border border-white/7 bg-black/25 p-4 font-mono text-xs leading-6 text-neutral-400">
-            {JSON.stringify(value, null, 2)}
-        </pre>
+        <div className="grid gap-2 sm:grid-cols-2">
+            {entries.map(([key, item]) => {
+                const itemValue = normalizeMemoryValue(item);
+                const spansGrid =
+                    Array.isArray(itemValue) ||
+                    (typeof itemValue === "object" && itemValue !== null);
+                return (
+                    <div
+                        key={key}
+                        className={`min-w-0 rounded-xl border border-white/7 bg-black/20 px-3 py-3 ${
+                            spansGrid ? "sm:col-span-2" : ""
+                        }`}
+                    >
+                        <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-neutral-600">
+                            {readableMemoryLabel(key)}
+                        </div>
+                        <MemoryValue value={itemValue} depth={depth + 1} />
+                    </div>
+                );
+            })}
+        </div>
     );
+}
+
+function normalizeMemoryValue(value: unknown): unknown {
+    let current = value;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+        if (typeof current !== "string") {
+            break;
+        }
+        const trimmed = current.trim();
+        if (
+            !(
+                (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
+                (trimmed.startsWith("[") && trimmed.endsWith("]"))
+            )
+        ) {
+            break;
+        }
+        try {
+            current = JSON.parse(trimmed);
+        } catch {
+            break;
+        }
+    }
+    return current;
+}
+
+function readableMemoryLabel(value: string): string {
+    return value
+        .replace(/([a-z])([A-Z])/g, "$1 $2")
+        .replace(/[_-]+/g, " ")
+        .replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
 function EmptyNotebook({ notebook }: { notebook: Notebook }) {
@@ -468,6 +526,9 @@ function getValueType(value: unknown): string {
     }
     if (value == null) {
         return "null";
+    }
+    if (typeof value === "object") {
+        return `${Object.keys(value as Record<string, unknown>).length} fields`;
     }
     return typeof value;
 }

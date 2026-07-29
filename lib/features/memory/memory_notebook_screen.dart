@@ -480,9 +480,7 @@ class _SourceViewer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final formatted = source.content.isNotEmpty
-        ? source.content
-        : const JsonEncoder.withIndent('  ').convert(source.memory);
+    final memory = _memoryPayload(source);
 
     return _Panel(
       padding: EdgeInsets.zero,
@@ -531,21 +529,337 @@ class _SourceViewer extends StatelessWidget {
           Container(
             constraints: const BoxConstraints(minHeight: 320, maxHeight: 570),
             color: scheme.surfaceContainerHighest.withValues(alpha: 0.33),
-            child: Scrollbar(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(17),
-                child: SelectableText(
-                  formatted,
+            child: memory.isEmpty
+                ? Center(
+                    child: Text(
+                      'This source does not contain any memory fields yet.',
+                      style: TextStyle(color: scheme.onSurfaceVariant),
+                    ),
+                  )
+                : Scrollbar(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.all(14),
+                      child: _StructuredMemoryView(memory: memory),
+                    ),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+Map<String, dynamic> _memoryPayload(MemorySource source) {
+  if (source.memory.isNotEmpty) return source.memory;
+  final content = source.content.trim();
+  if (content.isEmpty) return const {};
+  try {
+    final decoded = jsonDecode(content);
+    if (decoded is Map) {
+      return decoded.map((key, value) => MapEntry(key.toString(), value));
+    }
+  } catch (_) {
+    // Plain text sources are wrapped below so they still render readably.
+  }
+  return {'content': source.content};
+}
+
+dynamic _normalizeMemoryValue(dynamic value) {
+  dynamic current = value;
+  for (var attempt = 0; attempt < 2; attempt++) {
+    if (current is! String) break;
+    final trimmed = current.trim();
+    final looksLikeJson = (trimmed.startsWith('{') && trimmed.endsWith('}')) ||
+        (trimmed.startsWith('[') && trimmed.endsWith(']'));
+    if (!looksLikeJson) break;
+    try {
+      current = jsonDecode(trimmed);
+    } catch (_) {
+      break;
+    }
+  }
+  return current;
+}
+
+String _readableMemoryLabel(String value) {
+  return value
+      .replaceAllMapped(
+        RegExp(r'([a-z])([A-Z])'),
+        (match) => '${match.group(1)} ${match.group(2)}',
+      )
+      .replaceAll(RegExp(r'[_-]+'), ' ')
+      .split(' ')
+      .where((part) => part.isNotEmpty)
+      .map(
+        (part) => '${part.substring(0, 1).toUpperCase()}${part.substring(1)}',
+      )
+      .join(' ');
+}
+
+String _memoryValueType(dynamic value) {
+  final normalized = _normalizeMemoryValue(value);
+  if (normalized == null) return 'empty';
+  if (normalized is List) return '${normalized.length} items';
+  if (normalized is Map) return '${normalized.length} fields';
+  if (normalized is bool) return 'yes / no';
+  if (normalized is num) return 'number';
+  return 'text';
+}
+
+class _StructuredMemoryView extends StatelessWidget {
+  const _StructuredMemoryView({required this.memory});
+
+  final Map<String, dynamic> memory;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (var index = 0; index < memory.entries.length; index++) ...[
+          _MemoryFieldCard(
+            name: memory.entries.elementAt(index).key,
+            value: memory.entries.elementAt(index).value,
+          ),
+          if (index < memory.entries.length - 1) const SizedBox(height: 10),
+        ],
+      ],
+    );
+  }
+}
+
+class _MemoryFieldCard extends StatelessWidget {
+  const _MemoryFieldCard({
+    required this.name,
+    required this.value,
+  });
+
+  final String name;
+  final dynamic value;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: scheme.surface.withValues(alpha: 0.74),
+        borderRadius: BorderRadius.circular(13),
+        border: Border.all(color: scheme.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  _readableMemoryLabel(name),
                   style: TextStyle(
-                    fontFamily: 'monospace',
-                    fontSize: 12,
-                    height: 1.55,
-                    color: scheme.onSurface.withValues(alpha: 0.88),
+                    color: scheme.onSurfaceVariant,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.65,
                   ),
                 ),
               ),
+              Text(
+                _memoryValueType(value),
+                style: TextStyle(
+                  color: scheme.onSurfaceVariant.withValues(alpha: 0.72),
+                  fontFamily: 'monospace',
+                  fontSize: 9,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          _MemoryValueView(value: value),
+        ],
+      ),
+    );
+  }
+}
+
+class _MemoryValueView extends StatelessWidget {
+  const _MemoryValueView({
+    required this.value,
+    this.depth = 0,
+  });
+
+  final dynamic value;
+  final int depth;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final normalized = _normalizeMemoryValue(value);
+
+    if (normalized == null) {
+      return Text(
+        'No value',
+        style: TextStyle(
+          color: scheme.onSurfaceVariant,
+          fontStyle: FontStyle.italic,
+        ),
+      );
+    }
+
+    if (normalized is bool) {
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+          decoration: BoxDecoration(
+            color: normalized
+                ? scheme.primary.withValues(alpha: 0.12)
+                : scheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Text(
+            normalized ? 'Yes' : 'No',
+            style: TextStyle(
+              color: normalized ? scheme.primary : scheme.onSurfaceVariant,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
             ),
           ),
+        ),
+      );
+    }
+
+    if (normalized is String || normalized is num) {
+      return SelectableText(
+        normalized.toString(),
+        style: TextStyle(
+          color: scheme.onSurface.withValues(alpha: 0.9),
+          fontSize: 13,
+          height: 1.5,
+        ),
+      );
+    }
+
+    if (depth >= 4) {
+      return SelectableText(
+        const JsonEncoder.withIndent('  ').convert(normalized),
+        style: TextStyle(
+          color: scheme.onSurfaceVariant,
+          fontFamily: 'monospace',
+          fontSize: 11,
+          height: 1.45,
+        ),
+      );
+    }
+
+    if (normalized is List) {
+      if (normalized.isEmpty) {
+        return Text(
+          'No items',
+          style: TextStyle(color: scheme.onSurfaceVariant),
+        );
+      }
+      final visibleItems = normalized.take(50).toList(growable: false);
+      return Column(
+        children: [
+          for (var index = 0; index < visibleItems.length; index++) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(11),
+              decoration: BoxDecoration(
+                color: scheme.surfaceContainerHighest.withValues(alpha: 0.42),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: scheme.outlineVariant.withValues(alpha: 0.78),
+                ),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    constraints: const BoxConstraints(minWidth: 22),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 5, vertical: 3),
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: scheme.primary.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      '${index + 1}',
+                      style: TextStyle(
+                        color: scheme.primary,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _MemoryValueView(
+                      value: visibleItems[index],
+                      depth: depth + 1,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (index < visibleItems.length - 1) const SizedBox(height: 7),
+          ],
+          if (normalized.length > visibleItems.length) ...[
+            const SizedBox(height: 8),
+            Text(
+              '${normalized.length - visibleItems.length} additional items are hidden.',
+              style: TextStyle(
+                color: scheme.onSurfaceVariant,
+                fontSize: 11,
+              ),
+            ),
+          ],
+        ],
+      );
+    }
+
+    final map =
+        (normalized as Map).map((key, item) => MapEntry(key.toString(), item));
+    if (map.isEmpty) {
+      return Text(
+        'No fields',
+        style: TextStyle(color: scheme.onSurfaceVariant),
+      );
+    }
+    return Container(
+      padding: const EdgeInsets.all(11),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.32),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: scheme.outlineVariant.withValues(alpha: 0.72),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (var index = 0; index < map.entries.length; index++) ...[
+            Text(
+              _readableMemoryLabel(map.entries.elementAt(index).key),
+              style: TextStyle(
+                color: scheme.onSurfaceVariant,
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.45,
+              ),
+            ),
+            const SizedBox(height: 5),
+            _MemoryValueView(
+              value: map.entries.elementAt(index).value,
+              depth: depth + 1,
+            ),
+            if (index < map.entries.length - 1)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 9),
+                child: Divider(height: 1, color: scheme.outlineVariant),
+              ),
+          ],
         ],
       ),
     );
