@@ -183,89 +183,86 @@ class _MemoryChatScreenState extends ConsumerState<MemoryChatScreen> {
       );
     }
 
-    return FutureBuilder<MemoryNotebookDetail>(
-      future: _detail,
-      builder: (context, snapshot) {
-        return RefreshIndicator(
-          onRefresh: () async {
-            if (selectedId != null) _select(selectedId);
-            await _detail;
-          },
-          child: ListView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(16, 18, 16, 32),
-            children: [
-              Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 920),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      const TechnicalLabel('Conversation context'),
-                      const SizedBox(height: 8),
-                      DropdownButtonFormField<String>(
-                        initialValue: selectedId,
-                        decoration: const InputDecoration(
-                          prefixIcon: Icon(LucideIcons.bookOpen, size: 18),
-                          labelText: 'Memory notebook',
-                        ),
-                        items: notebooks
-                            .map(
-                              (notebook) => DropdownMenuItem(
-                                value: notebook.id,
-                                child: Text(
-                                  notebook.title,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            )
-                            .toList(growable: false),
-                        onChanged: (value) {
-                          if (value != null) _select(value);
-                        },
-                      ),
-                      const SizedBox(height: 16),
-                      if (snapshot.connectionState == ConnectionState.waiting)
-                        const SizedBox(
-                          height: 430,
-                          child: Center(
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          ),
-                        )
-                      else if (snapshot.hasError || !snapshot.hasData)
-                        DigitalLibrarianPanel(
-                          child: Column(
-                            children: [
-                              const Icon(
-                                LucideIcons.alertCircle,
-                                color: Color(0xFFFFB4AB),
-                              ),
-                              const SizedBox(height: 8),
-                              const Text(
-                                'Could not open this memory',
-                                style: TextStyle(fontWeight: FontWeight.w700),
-                              ),
-                              const SizedBox(height: 5),
-                              Text(
-                                snapshot.error.toString(),
-                                textAlign: TextAlign.center,
-                              ),
-                            ],
-                          ),
-                        )
-                      else
-                        MemoryChatPanel(
-                          notebook: snapshot.data!.notebook,
-                          sources: snapshot.data!.sources,
-                        ),
-                    ],
-                  ),
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 920),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
+              child: DropdownButtonFormField<String>(
+                initialValue: selectedId,
+                decoration: const InputDecoration(
+                  prefixIcon: Icon(LucideIcons.bookOpen, size: 18),
+                  labelText: 'Notebook',
                 ),
+                items: notebooks
+                    .map(
+                      (notebook) => DropdownMenuItem(
+                        value: notebook.id,
+                        child: Text(
+                          notebook.title,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    )
+                    .toList(growable: false),
+                onChanged: (value) {
+                  if (value != null) _select(value);
+                },
               ),
-            ],
-          ),
-        );
-      },
+            ),
+            Divider(
+              height: 1,
+              color: Theme.of(context).colorScheme.outlineVariant,
+            ),
+            Expanded(
+              child: FutureBuilder<MemoryNotebookDetail>(
+                future: _detail,
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    );
+                  }
+                  if (snapshot.hasError || !snapshot.hasData) {
+                    return Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              LucideIcons.alertCircle,
+                              color: Color(0xFFFFB4AB),
+                            ),
+                            const SizedBox(height: 8),
+                            const Text(
+                              'Could not open this memory',
+                              style: TextStyle(fontWeight: FontWeight.w700),
+                            ),
+                            const SizedBox(height: 5),
+                            Text(
+                              snapshot.error.toString(),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }
+                  return MemoryChatPanel(
+                    key: ValueKey(snapshot.data!.notebook.id),
+                    notebook: snapshot.data!.notebook,
+                    sources: snapshot.data!.sources,
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

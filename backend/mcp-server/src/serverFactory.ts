@@ -50,6 +50,23 @@ const MemoryTopicGetSchema = z.object({
   agentSessionId: z.string().min(1).optional(),
 });
 
+const MemoryChatSchema = z.object({
+  notebookId: z.string().min(1),
+  message: z.string().min(1).max(16_000),
+  history: z
+    .array(
+      z.object({
+        role: z.enum(['user', 'assistant']),
+        content: z.string().min(1).max(8_000),
+      }),
+    )
+    .max(12)
+    .optional()
+    .default([]),
+  provider: z.enum(['gemini', 'openrouter']).optional().default('gemini'),
+  model: z.string().min(1).optional(),
+});
+
 const MemoryPutSchema = requireMemoryTarget({
   namespace: z.string().min(1).optional().default('default'),
   mode: z.enum(['merge', 'replace', 'append']).optional().default('merge'),
@@ -239,6 +256,53 @@ const tools: Tool[] = [
         },
       },
       required: ['notebookId'],
+    },
+  },
+  {
+    name: 'memory_chat',
+    description:
+      'Ask a question grounded in one notebook topic and its durable agent memories. ' +
+      'The topic must be granted to this token-bound agent. The response includes ' +
+      'the answer, source count, and credit usage.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        notebookId: {
+          type: 'string',
+          description: 'Topic notebook ID returned by memory_topics_list.',
+        },
+        message: {
+          type: 'string',
+          description: 'Question to answer from the granted topic memory.',
+        },
+        history: {
+          type: 'array',
+          description: 'Optional recent conversation turns.',
+          maxItems: 12,
+          items: {
+            type: 'object',
+            properties: {
+              role: {
+                type: 'string',
+                enum: ['user', 'assistant'],
+              },
+              content: { type: 'string' },
+            },
+            required: ['role', 'content'],
+          },
+        },
+        provider: {
+          type: 'string',
+          enum: ['gemini', 'openrouter'],
+          default: 'gemini',
+        },
+        model: {
+          type: 'string',
+          description:
+            'Optional active model ID configured for the NoteClaw account.',
+        },
+      },
+      required: ['notebookId', 'message'],
     },
   },
   {
@@ -648,7 +712,7 @@ export function createNoteClawMcpServer(
   const server = new Server(
     {
       name: 'noteclaw-memory',
-      version: '2.2.0',
+      version: '2.3.0',
     },
     {
       capabilities: {
@@ -763,6 +827,21 @@ export function createNoteClawMcpServer(
         const suffix = query.size > 0 ? `?${query.toString()}` : '';
         const response = await api.get(
           `/memory/topics/${encodeURIComponent(input.notebookId)}/context${suffix}`,
+        );
+        return textResult(response.data);
+      }
+
+      case 'memory_chat': {
+        const input = MemoryChatSchema.parse(args);
+        const response = await api.post(
+          `/memory/notebooks/${encodeURIComponent(input.notebookId)}/chat`,
+          {
+            message: input.message,
+            history: input.history,
+            provider: input.provider,
+            model: input.model,
+          },
+          { timeout: 120_000 },
         );
         return textResult(response.data);
       }

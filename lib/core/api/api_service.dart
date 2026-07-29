@@ -733,6 +733,31 @@ class ApiService {
     );
   }
 
+  Future<Map<String, dynamic>> createCompatibleNotebookAgentChat({
+    required String notebookId,
+    required String agentSessionId,
+    required String agentName,
+  }) async {
+    return await post<Map<String, dynamic>>(
+      '/coding-agent/sources/with-context',
+      {
+        'notebookId': notebookId,
+        'agentSessionId': agentSessionId,
+        'title': 'Live agent conversation',
+        'description': 'Realtime NoteClaw coding-agent conversation',
+        'language': 'text',
+        'code': 'NoteClaw realtime coding-agent collaboration channel.',
+        'conversationContext':
+            'Dedicated realtime chat between the user and $agentName.',
+        'verification': {
+          'isValid': true,
+          'issues': const [],
+          'suggestions': const [],
+        },
+      },
+    );
+  }
+
   Future<void> disconnectAgent(String sessionId) async {
     await post('/coding-agent/sessions/$sessionId/disconnect', {});
   }

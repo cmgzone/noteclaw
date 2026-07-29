@@ -121,9 +121,37 @@ class _MemoryChatPanelState extends ConsumerState<MemoryChatPanel> {
       _error = null;
     });
     try {
-      final response = await ref
-          .read(apiServiceProvider)
-          .getOrCreateNotebookLiveAgentChat(widget.notebook.id);
+      Map<String, dynamic> response;
+      try {
+        response = await ref
+            .read(apiServiceProvider)
+            .getOrCreateNotebookLiveAgentChat(widget.notebook.id);
+      } catch (error) {
+        final message = error.toString().toLowerCase();
+        if (!message.contains('route not found')) rethrow;
+
+        final existingSource = widget.sources.cast<MemorySource?>().firstWhere(
+              (source) =>
+                  source != null &&
+                  !source.isMemorySource &&
+                  (source.sourceType == 'agent_chat' ||
+                      source.title == 'Live agent conversation'),
+              orElse: () => null,
+            );
+        if (existingSource != null) {
+          response = {
+            'source': {'id': existingSource.id},
+          };
+        } else {
+          response = await ref
+              .read(apiServiceProvider)
+              .createCompatibleNotebookAgentChat(
+                notebookId: widget.notebook.id,
+                agentSessionId: widget.notebook.session.id,
+                agentName: widget.notebook.session.displayAgentName,
+              );
+        }
+      }
       final source = response['source'];
       final sourceId =
           source is Map ? source['id']?.toString().trim() ?? '' : '';
@@ -286,207 +314,138 @@ class _MemoryChatPanelState extends ConsumerState<MemoryChatPanel> {
     final isLive = _mode == _MemoryChatMode.codingAgent &&
         (liveConversation?.isConnected ??
             widget.notebook.session.websocketConnected);
-    final subtitle = switch (_mode) {
-      _MemoryChatMode.assistant =>
-        'Grounded in ${widget.sources.length} source${widget.sources.length == 1 ? '' : 's'}',
-      _MemoryChatMode.deepResearch => 'Deep research with notebook context',
-      _MemoryChatMode.codingAgent => isLive
-          ? '${widget.notebook.session.displayAgentName} · realtime'
-          : '${widget.notebook.session.displayAgentName} · waiting for agent',
-    };
-
-    return Container(
-      decoration: BoxDecoration(
-        color: scheme.surface,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: scheme.outlineVariant),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                Container(
-                  width: 38,
-                  height: 38,
-                  decoration: BoxDecoration(
-                    color: scheme.primary.withValues(alpha: 0.11),
-                    borderRadius: BorderRadius.circular(8),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(
+          child: displayedMessages.isEmpty &&
+                  !(liveConversation?.isLoading ?? false)
+              ? _ChatEmpty(
+                  onPrompt: _send,
+                  mode: _mode,
+                  agentName: widget.notebook.session.displayAgentName,
+                )
+              : ListView.separated(
+                  controller: _scrollController,
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  itemCount: displayedMessages.length + (isBusy ? 1 : 0),
+                  separatorBuilder: (_, __) => Divider(
+                    height: 1,
+                    color: scheme.outlineVariant.withValues(alpha: 0.55),
                   ),
-                  child: Icon(
-                    _mode == _MemoryChatMode.codingAgent
-                        ? LucideIcons.terminal
-                        : _mode == _MemoryChatMode.deepResearch
-                            ? LucideIcons.search
-                            : LucideIcons.messageSquare,
-                    size: 18,
-                    color: scheme.primary,
-                  ),
+                  itemBuilder: (context, index) {
+                    if (index == displayedMessages.length) {
+                      return _ThinkingBubble(
+                        label: _isOpeningAgent
+                            ? 'Opening realtime channel…'
+                            : _researchStatus,
+                      );
+                    }
+                    return _MessageEntry(message: displayedMessages[index]);
+                  },
                 ),
-                const SizedBox(width: 11),
+        ),
+        if (_error != null || liveConversation?.error != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(LucideIcons.alertCircle, size: 15, color: scheme.error),
+                const SizedBox(width: 7),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        switch (_mode) {
-                          _MemoryChatMode.assistant => 'Ask this memory',
-                          _MemoryChatMode.deepResearch => 'Deep research',
-                          _MemoryChatMode.codingAgent => 'Coding agent chat',
-                        },
-                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                              fontWeight: FontWeight.w800,
-                            ),
-                      ),
-                      Text(
-                        subtitle,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: isLive
-                                  ? DigitalLibrarian.secondary
-                                  : scheme.onSurfaceVariant,
-                            ),
-                      ),
-                    ],
+                  child: Text(
+                    _error ?? liveConversation!.error!,
+                    style: TextStyle(color: scheme.error, fontSize: 11),
                   ),
                 ),
               ],
             ),
           ),
-          Divider(height: 1, color: scheme.outlineVariant),
-          SizedBox(
-            height: 420,
-            child: displayedMessages.isEmpty &&
-                    !(liveConversation?.isLoading ?? false)
-                ? _ChatEmpty(
-                    onPrompt: _send,
+        Divider(height: 1, color: scheme.outlineVariant),
+        Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  _ChatModeModelDropdown(
                     mode: _mode,
+                    model: selectedModel,
+                    models: _allModels(groupedModels),
                     agentName: widget.notebook.session.displayAgentName,
-                  )
-                : ListView.separated(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.all(14),
-                    itemCount: displayedMessages.length + (isBusy ? 1 : 0),
-                    separatorBuilder: (_, __) => const SizedBox(height: 10),
-                    itemBuilder: (context, index) {
-                      if (index == displayedMessages.length) {
-                        return _ThinkingBubble(
-                          label: _isOpeningAgent
-                              ? 'Opening realtime channel…'
-                              : _researchStatus,
-                        );
-                      }
-                      return _MessageBubble(message: displayedMessages[index]);
+                    agentAvailable: widget.notebook.session.id.isNotEmpty,
+                    agentLive: isLive,
+                    onModeSelected: _switchMode,
+                    onModelSelected: (model) {
+                      setState(() {
+                        _selectedModelId = model.id;
+                        _error = null;
+                      });
                     },
                   ),
-          ),
-          if (_error != null || liveConversation?.error != null)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(LucideIcons.alertCircle, size: 15, color: scheme.error),
-                  const SizedBox(width: 7),
-                  Expanded(
-                    child: Text(
-                      _error ?? liveConversation!.error!,
-                      style: TextStyle(color: scheme.error, fontSize: 11),
+                  const Spacer(),
+                  if (_mode == _MemoryChatMode.codingAgent)
+                    LiveStatus(
+                      label: isLive ? 'LIVE' : 'OFFLINE',
+                      active: isLive,
+                      compact: true,
+                    )
+                  else if (selectedModel != null)
+                    Flexible(
+                      child: Text(
+                        selectedModel.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                              fontSize: 9,
+                            ),
+                      ),
                     ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _controller,
+                      enabled: !isBusy,
+                      minLines: 1,
+                      maxLines: 4,
+                      textInputAction: TextInputAction.newline,
+                      decoration: InputDecoration(
+                        hintText: switch (_mode) {
+                          _MemoryChatMode.assistant =>
+                            'Ask about this project memory…',
+                          _MemoryChatMode.deepResearch =>
+                            'Research with this notebook…',
+                          _MemoryChatMode.codingAgent =>
+                            'Message the coding agent…',
+                        },
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 12,
+                        ),
+                      ),
+                      onSubmitted: (_) => _send(),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton.filled(
+                    onPressed: isBusy ? null : _send,
+                    tooltip: 'Send',
+                    icon: const Icon(LucideIcons.arrowUp, size: 18),
                   ),
                 ],
               ),
-            ),
-          Divider(height: 1, color: scheme.outlineVariant),
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    _ChatModeModelDropdown(
-                      mode: _mode,
-                      model: selectedModel,
-                      models: _allModels(groupedModels),
-                      agentName: widget.notebook.session.displayAgentName,
-                      agentAvailable: widget.notebook.session.id.isNotEmpty,
-                      agentLive: isLive,
-                      onModeSelected: _switchMode,
-                      onModelSelected: (model) {
-                        setState(() {
-                          _selectedModelId = model.id;
-                          _error = null;
-                        });
-                      },
-                    ),
-                    const Spacer(),
-                    if (_mode == _MemoryChatMode.codingAgent)
-                      LiveStatus(
-                        label: isLive ? 'LIVE' : 'OFFLINE',
-                        active: isLive,
-                        compact: true,
-                      )
-                    else if (selectedModel != null)
-                      Flexible(
-                        child: Text(
-                          selectedModel.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style:
-                              Theme.of(context).textTheme.labelSmall?.copyWith(
-                                    color: scheme.onSurfaceVariant,
-                                    fontSize: 9,
-                                  ),
-                        ),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _controller,
-                        enabled: !isBusy,
-                        minLines: 1,
-                        maxLines: 4,
-                        textInputAction: TextInputAction.newline,
-                        decoration: InputDecoration(
-                          hintText: switch (_mode) {
-                            _MemoryChatMode.assistant =>
-                              'Ask about this project memory…',
-                            _MemoryChatMode.deepResearch =>
-                              'Research with this notebook…',
-                            _MemoryChatMode.codingAgent =>
-                              'Message the coding agent…',
-                          },
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 12,
-                          ),
-                        ),
-                        onSubmitted: (_) => _send(),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    IconButton.filled(
-                      onPressed: isBusy ? null : _send,
-                      tooltip: 'Send',
-                      icon: const Icon(LucideIcons.arrowUp, size: 18),
-                    ),
-                  ],
-                ),
-              ],
-            ),
+            ],
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -575,7 +534,7 @@ class _ChatModeModelDropdown extends StatelessWidget {
         const PopupMenuItem<String>(
           enabled: false,
           height: 28,
-          child: _MenuHeading('ADMIN AI MODELS'),
+          child: _MenuHeading('MODELS'),
         ),
         if (models.isEmpty)
           const PopupMenuItem<String>(
@@ -797,37 +756,39 @@ class _ChatEmpty extends StatelessWidget {
   }
 }
 
-class _MessageBubble extends StatelessWidget {
-  const _MessageBubble({required this.message});
+class _MessageEntry extends StatelessWidget {
+  const _MessageEntry({required this.message});
 
   final MemoryChatMessage message;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Align(
-      alignment: message.isUser ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        constraints: const BoxConstraints(maxWidth: 520),
-        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
-        decoration: BoxDecoration(
-          color:
-              message.isUser ? scheme.primary : scheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.only(
-            topLeft: const Radius.circular(8),
-            topRight: const Radius.circular(8),
-            bottomLeft: Radius.circular(message.isUser ? 8 : 2),
-            bottomRight: Radius.circular(message.isUser ? 2 : 8),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            message.isUser ? 'YOU' : 'RESPONSE',
+            style: TextStyle(
+              color: message.isUser ? scheme.primary : scheme.onSurfaceVariant,
+              fontFamily: 'JetBrains Mono',
+              fontSize: 9,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.85,
+            ),
           ),
-        ),
-        child: SelectableText(
-          message.content,
-          style: TextStyle(
-            color: message.isUser ? scheme.onPrimary : scheme.onSurface,
-            fontSize: 13,
-            height: 1.45,
+          const SizedBox(height: 7),
+          SelectableText(
+            message.content,
+            style: TextStyle(
+              color: scheme.onSurface,
+              fontSize: 14,
+              height: 1.55,
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -841,36 +802,29 @@ class _ThinkingBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
-        decoration: BoxDecoration(
-          color: scheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(
-              width: 15,
-              height: 15,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
-            if (label?.isNotEmpty == true) ...[
-              const SizedBox(width: 9),
-              Flexible(
-                child: Text(
-                  label!,
-                  style: TextStyle(
-                    color: scheme.onSurfaceVariant,
-                    fontSize: 11,
-                  ),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(
+            width: 15,
+            height: 15,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          if (label?.isNotEmpty == true) ...[
+            const SizedBox(width: 9),
+            Flexible(
+              child: Text(
+                label!,
+                style: TextStyle(
+                  color: scheme.onSurfaceVariant,
+                  fontSize: 11,
                 ),
               ),
-            ],
+            ),
           ],
-        ),
+        ],
       ),
     );
   }
@@ -879,7 +833,7 @@ class _ThinkingBubble extends StatelessWidget {
 String _friendlyError(Object error) {
   final message = error.toString().replaceFirst('Exception: ', '').trim();
   if (message.contains('404') || message.toLowerCase().contains('not found')) {
-    return 'The chat context was not found. Refresh the notebook and try again.';
+    return 'The live coding-agent channel could not open. Refresh the notebook or reconnect the agent.';
   }
   if (message.contains('401') || message.contains('403')) {
     return 'Your account cannot use this chat mode.';

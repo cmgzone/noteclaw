@@ -12,6 +12,7 @@ const expectedTools = [
   'memory_sessions_list',
   'memory_topics_list',
   'memory_topic_get',
+  'memory_chat',
   'memory_get',
   'memory_put',
   'memory_compact',

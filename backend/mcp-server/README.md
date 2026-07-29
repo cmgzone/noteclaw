@@ -9,6 +9,7 @@ by NoteClaw.
 - `memory_sessions_list` — list the current token-bound session and memory health
 - `memory_topics_list` — list only the notebook topics granted to this agent
 - `memory_topic_get` — read a granted topic's sources and memory namespaces
+- `memory_chat` — ask a question grounded in a granted notebook topic
 - `memory_get` — read a named memory namespace
 - `memory_put` — merge, replace, or append durable memory
 - `memory_compact` — roll older history into checkpoint summaries
@@ -97,19 +98,21 @@ Example MCP client configuration:
    Reconnecting with that token resumes the same session.
 3. Call `memory_topics_list`, then `memory_topic_get` for the notebook topics
    the account owner allowed this agent to read.
-4. Call `memory_get` at startup to restore the agent's own settings and context.
-5. Call `memory_put` as work progresses. Include the returned namespace version
+4. Call `memory_chat` when the agent needs a synthesized answer grounded in a
+   granted notebook and its durable memory sources.
+5. Call `memory_get` at startup to restore the agent's own settings and context.
+6. Call `memory_put` as work progresses. Include the returned namespace version
    as `expectedVersion` and identify the writer with `actorIdentifier`.
-6. Call `memory_compact` when history becomes large.
-7. Call `get_websocket_info`, connect with the same token, and reply to every
+7. Call `memory_compact` when history becomes large.
+8. Call `get_websocket_info`, connect with the same token, and reply to every
    `ping` event with `{"type":"pong"}`.
-8. Call `review_code` when the agent needs a focused quality check before
+9. Call `review_code` when the agent needs a focused quality check before
    shipping a change.
-9. Call `web_search` for a quick current-information lookup, `fact_check` to
+10. Call `web_search` for a quick current-information lookup, `fact_check` to
    verify a specific claim, or start a longer run with `deep_research_start`.
-10. Use the GitHub tools only after the account owner has connected GitHub in
+11. Use the GitHub tools only after the account owner has connected GitHub in
    the NoteClaw app. Imported files become notebook sources.
-11. Poll `deep_research_status`, retrieve the cited report with
+12. Poll `deep_research_status`, retrieve the cited report with
    `deep_research_result`, then persist it with `research_save_to_notebook`.
 
 ## Research configuration
