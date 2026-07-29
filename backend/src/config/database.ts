@@ -781,6 +781,135 @@ export async function initializeDatabase() {
                 WHERE revoked_at IS NULL AND can_read = TRUE;
         `);
 
+        // GitHub integration is part of the normal application surface. Keep
+        // its schema in startup initialization so fresh installations do not
+        // depend on manually running legacy migration scripts.
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS github_connections (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                user_id TEXT NOT NULL UNIQUE,
+                github_user_id TEXT NOT NULL,
+                github_username TEXT NOT NULL,
+                github_email TEXT,
+                github_avatar_url TEXT,
+                access_token_encrypted TEXT NOT NULL,
+                refresh_token_encrypted TEXT,
+                token_expires_at TIMESTAMPTZ,
+                scopes TEXT[] DEFAULT ARRAY['repo', 'read:user'],
+                is_active BOOLEAN DEFAULT TRUE,
+                last_used_at TIMESTAMPTZ,
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                updated_at TIMESTAMPTZ DEFAULT NOW()
+            );
+
+            CREATE TABLE IF NOT EXISTS github_repos (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                connection_id UUID NOT NULL
+                    REFERENCES github_connections(id) ON DELETE CASCADE,
+                github_repo_id BIGINT NOT NULL,
+                full_name TEXT NOT NULL,
+                name TEXT NOT NULL,
+                owner TEXT NOT NULL,
+                description TEXT,
+                default_branch TEXT DEFAULT 'main',
+                is_private BOOLEAN DEFAULT FALSE,
+                is_fork BOOLEAN DEFAULT FALSE,
+                language TEXT,
+                stars_count INTEGER DEFAULT 0,
+                forks_count INTEGER DEFAULT 0,
+                size_kb INTEGER DEFAULT 0,
+                html_url TEXT,
+                clone_url TEXT,
+                last_synced_at TIMESTAMPTZ,
+                metadata JSONB DEFAULT '{}',
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                updated_at TIMESTAMPTZ DEFAULT NOW(),
+                UNIQUE(connection_id, github_repo_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS github_sources (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                source_id UUID NOT NULL
+                    REFERENCES sources(id) ON DELETE CASCADE,
+                repo_id UUID NOT NULL
+                    REFERENCES github_repos(id) ON DELETE CASCADE,
+                file_path TEXT NOT NULL,
+                branch TEXT DEFAULT 'main',
+                commit_sha TEXT,
+                file_size INTEGER,
+                language TEXT,
+                last_synced_at TIMESTAMPTZ,
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                updated_at TIMESTAMPTZ DEFAULT NOW(),
+                UNIQUE(source_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS github_rate_limits (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                connection_id UUID NOT NULL
+                    REFERENCES github_connections(id) ON DELETE CASCADE,
+                resource TEXT NOT NULL,
+                limit_value INTEGER NOT NULL,
+                remaining INTEGER NOT NULL,
+                reset_at TIMESTAMPTZ NOT NULL,
+                updated_at TIMESTAMPTZ DEFAULT NOW(),
+                UNIQUE(connection_id, resource)
+            );
+
+            CREATE TABLE IF NOT EXISTS github_audit_logs (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                user_id TEXT NOT NULL,
+                action TEXT NOT NULL,
+                owner TEXT,
+                repo TEXT,
+                path TEXT,
+                agent_session_id TEXT
+                    REFERENCES agent_sessions(id) ON DELETE SET NULL,
+                success BOOLEAN DEFAULT TRUE,
+                error_message TEXT,
+                request_metadata JSONB DEFAULT '{}',
+                created_at TIMESTAMPTZ DEFAULT NOW()
+            );
+
+            CREATE TABLE IF NOT EXISTS github_source_cache (
+                source_id UUID PRIMARY KEY
+                    REFERENCES sources(id) ON DELETE CASCADE,
+                owner TEXT NOT NULL,
+                repo TEXT NOT NULL,
+                path TEXT NOT NULL,
+                branch TEXT NOT NULL,
+                commit_sha TEXT NOT NULL,
+                content_hash TEXT NOT NULL,
+                last_checked_at TIMESTAMPTZ DEFAULT NOW(),
+                last_modified_at TIMESTAMPTZ,
+                UNIQUE(owner, repo, path, branch)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_github_connections_user
+                ON github_connections(user_id);
+            CREATE INDEX IF NOT EXISTS idx_github_repos_connection
+                ON github_repos(connection_id);
+            CREATE INDEX IF NOT EXISTS idx_github_repos_full_name
+                ON github_repos(full_name);
+            CREATE INDEX IF NOT EXISTS idx_github_sources_source
+                ON github_sources(source_id);
+            CREATE INDEX IF NOT EXISTS idx_github_sources_repo
+                ON github_sources(repo_id);
+            CREATE INDEX IF NOT EXISTS idx_github_audit_user
+                ON github_audit_logs(user_id, created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_github_audit_repo
+                ON github_audit_logs(owner, repo);
+            CREATE INDEX IF NOT EXISTS idx_github_audit_action
+                ON github_audit_logs(action);
+            CREATE INDEX IF NOT EXISTS idx_github_audit_agent_session
+                ON github_audit_logs(agent_session_id)
+                WHERE agent_session_id IS NOT NULL;
+            CREATE INDEX IF NOT EXISTS idx_github_cache_stale
+                ON github_source_cache(last_checked_at);
+            CREATE INDEX IF NOT EXISTS idx_github_cache_repo
+                ON github_source_cache(owner, repo);
+        `);
+
         const initialAdminEmail = process.env.INITIAL_ADMIN_EMAIL?.trim().toLowerCase();
         const initialAdminPasswordHash = process.env.INITIAL_ADMIN_PASSWORD_HASH?.trim();
         if (initialAdminEmail && initialAdminPasswordHash) {
