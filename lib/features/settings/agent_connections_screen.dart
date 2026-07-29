@@ -8,7 +8,10 @@ import '../../core/api/api_service.dart';
 import '../../core/auth/custom_auth_service.dart';
 import '../../core/config/env_config.dart';
 import '../memory/memory_models.dart';
+import '../subscription/widgets/subscription_overview.dart';
 import 'api_tokens_section.dart';
+
+enum _WorkspaceMenuAction { account, refresh, signOut }
 
 class MemoryWorkspaceState {
   const MemoryWorkspaceState({
@@ -124,30 +127,59 @@ class AgentConnectionsScreen extends ConsumerWidget {
         titleSpacing: 20,
         title: const _Brand(),
         actions: [
-          IconButton(
-            onPressed: () => context.push('/settings/account'),
-            tooltip: 'Account settings',
-            icon: const Icon(LucideIcons.settings, size: 19),
+          const SubscriptionBalanceButton(),
+          PopupMenuButton<_WorkspaceMenuAction>(
+            tooltip: 'Workspace menu',
+            icon: const Icon(LucideIcons.moreVertical, size: 20),
+            onSelected: (action) async {
+              switch (action) {
+                case _WorkspaceMenuAction.account:
+                  context.push('/settings/account');
+                  break;
+                case _WorkspaceMenuAction.refresh:
+                  await Future.wait([
+                    ref.read(memoryWorkspaceProvider.notifier).refresh(),
+                    ref.read(apiTokensProvider.notifier).refresh(),
+                  ]);
+                  break;
+                case _WorkspaceMenuAction.signOut:
+                  await _signOut(context, ref);
+                  break;
+              }
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: _WorkspaceMenuAction.account,
+                child: ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(LucideIcons.settings, size: 18),
+                  title: Text('Account settings'),
+                ),
+              ),
+              PopupMenuItem(
+                value: _WorkspaceMenuAction.refresh,
+                enabled: !workspace.isLoading,
+                child: const ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(LucideIcons.refreshCw, size: 18),
+                  title: Text('Refresh workspace'),
+                ),
+              ),
+              const PopupMenuDivider(),
+              const PopupMenuItem(
+                value: _WorkspaceMenuAction.signOut,
+                child: ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(LucideIcons.logOut, size: 18),
+                  title: Text('Sign out'),
+                ),
+              ),
+            ],
           ),
-          IconButton(
-            onPressed: workspace.isLoading
-                ? null
-                : () async {
-                    await Future.wait([
-                      ref.read(memoryWorkspaceProvider.notifier).refresh(),
-                      ref.read(apiTokensProvider.notifier).refresh(),
-                    ]);
-                  },
-            tooltip: 'Refresh workspace',
-            icon: const Icon(LucideIcons.refreshCw, size: 19),
-          ),
-          const SizedBox(width: 4),
-          IconButton(
-            onPressed: () => _signOut(context, ref),
-            tooltip: 'Sign out',
-            icon: const Icon(LucideIcons.logOut, size: 19),
-          ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 8),
         ],
       ),
       body: RefreshIndicator(
@@ -165,6 +197,8 @@ class AgentConnectionsScreen extends ConsumerWidget {
                     _WorkspaceHeader(state: workspace),
                     const SizedBox(height: 16),
                     _MetricStrip(state: workspace),
+                    const SizedBox(height: 18),
+                    const SubscriptionOverviewCard(),
                     const SizedBox(height: 18),
                     LayoutBuilder(
                       builder: (context, constraints) {

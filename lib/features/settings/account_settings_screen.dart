@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 
 import '../../core/auth/custom_auth_service.dart';
+import '../subscription/widgets/subscription_overview.dart';
 
 class AccountSettingsScreen extends ConsumerStatefulWidget {
   const AccountSettingsScreen({super.key});
@@ -13,8 +14,7 @@ class AccountSettingsScreen extends ConsumerStatefulWidget {
       _AccountSettingsScreenState();
 }
 
-class _AccountSettingsScreenState
-    extends ConsumerState<AccountSettingsScreen> {
+class _AccountSettingsScreenState extends ConsumerState<AccountSettingsScreen> {
   final _passwordController = TextEditingController();
   final _confirmationController = TextEditingController();
   bool _deleting = false;
@@ -51,7 +51,8 @@ class _AccountSettingsScreenState
       }
     } catch (error) {
       if (mounted) {
-        setState(() => _error = error.toString().replaceFirst('Exception: ', ''));
+        setState(
+            () => _error = error.toString().replaceFirst('Exception: ', ''));
       }
     } finally {
       if (mounted) setState(() => _deleting = false);
@@ -124,6 +125,8 @@ class _AccountSettingsScreenState
                       ],
                     ),
                   ),
+                  const SizedBox(height: 18),
+                  const SubscriptionOverviewCard(),
                   const SizedBox(height: 18),
                   Container(
                     padding: const EdgeInsets.all(20),

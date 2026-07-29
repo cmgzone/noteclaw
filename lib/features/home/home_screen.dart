@@ -38,10 +38,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     required bool notebooksLoaded,
     required List<Notebook> notebooks,
   }) {
-    if (!isLoggedIn || userId == null || !notebooksLoaded || notebooks.isNotEmpty) {
+    if (!isLoggedIn ||
+        userId == null ||
+        !notebooksLoaded ||
+        notebooks.isNotEmpty) {
       return;
     }
-    if (_promptHandledForUserId == userId || _promptInFlightForUserId == userId) {
+    if (_promptHandledForUserId == userId ||
+        _promptInFlightForUserId == userId) {
       return;
     }
 
@@ -154,7 +158,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             actions: [
               // Credit Balance
               Consumer(builder: (context, ref, _) {
-                final credits = ref.watch(creditBalanceProvider);
+                final subscription = ref.watch(userSubscriptionProvider);
+                final credits = subscription.when(
+                  data: (value) => value?.currentCredits.toString() ?? 'Plans',
+                  loading: () => '—',
+                  error: (_, __) => 'Plans',
+                );
                 return GestureDetector(
                   onTap: () => context.push('/subscription'),
                   child: Container(
@@ -172,7 +181,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             size: 14, color: Colors.white),
                         const SizedBox(width: 6),
                         Text(
-                          '$credits',
+                          credits,
                           style: const TextStyle(
                             color: Colors.white,
                             fontWeight: FontWeight.w700,
@@ -299,8 +308,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ],
 
           // ── Empty state ────────────────────────────────────────────────
-          if (notebooks.isEmpty)
-            const SliverToBoxAdapter(child: _EmptyState()),
+          if (notebooks.isEmpty) const SliverToBoxAdapter(child: _EmptyState()),
 
           // ── Categories ─────────────────────────────────────────────────
           ..._buildCategories(context, ref),
