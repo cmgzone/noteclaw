@@ -170,10 +170,69 @@ class McpLimitsService {
     values.push(adminUserId);
     values.push('default');
 
-    await pool.query(
-      `UPDATE mcp_settings SET ${updates.join(', ')} WHERE id = $${paramIndex}`,
-      values
-    );
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        `UPDATE mcp_settings SET ${updates.join(', ')} WHERE id = $${paramIndex}`,
+        values
+      );
+
+      const syncPlanLimits = async (
+        isFreePlan: boolean,
+        planSettings: {
+          sourcesLimit?: number;
+          tokensLimit?: number;
+          apiCallsPerDay?: number;
+        },
+      ) => {
+        const planUpdates: string[] = [];
+        const planValues: number[] = [];
+
+        if (planSettings.sourcesLimit !== undefined) {
+          planValues.push(planSettings.sourcesLimit);
+          planUpdates.push(`mcp_sources_limit = $${planValues.length}`);
+        }
+        if (planSettings.tokensLimit !== undefined) {
+          planValues.push(planSettings.tokensLimit);
+          planUpdates.push(`mcp_tokens_limit = $${planValues.length}`);
+        }
+        if (planSettings.apiCallsPerDay !== undefined) {
+          planValues.push(planSettings.apiCallsPerDay);
+          planUpdates.push(`mcp_api_calls_per_day = $${planValues.length}`);
+        }
+        if (planUpdates.length === 0) return;
+
+        planValues.push(isFreePlan ? 1 : 0);
+        await client.query(
+          `UPDATE subscription_plans
+           SET ${planUpdates.join(', ')}, updated_at = NOW()
+           WHERE is_free_plan = ($${planValues.length} = 1)`,
+          planValues,
+        );
+      };
+
+      // The admin screen labels these as Free and Premium plan limits. Keep
+      // the plan rows in sync so the effective quota changes immediately
+      // instead of being hidden behind older per-plan values.
+      await syncPlanLimits(true, {
+        sourcesLimit: settings.freeSourcesLimit,
+        tokensLimit: settings.freeTokensLimit,
+        apiCallsPerDay: settings.freeApiCallsPerDay,
+      });
+      await syncPlanLimits(false, {
+        sourcesLimit: settings.premiumSourcesLimit,
+        tokensLimit: settings.premiumTokensLimit,
+        apiCallsPerDay: settings.premiumApiCallsPerDay,
+      });
+
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
 
     return this.getSettings();
   }

@@ -14,6 +14,14 @@ class SubscriptionModel {
   final double planPrice;
   final bool isFreePlan;
   final Map<String, bool> featureAccess;
+  final int? notesLimit;
+  final int? mcpSourcesLimit;
+  final int mcpSourcesUsed;
+  final int? mcpTokensLimit;
+  final int mcpTokensUsed;
+  final int? mcpApiCallsPerDay;
+  final int mcpApiCallsUsedToday;
+  final bool mcpEnabled;
 
   SubscriptionModel({
     required this.id,
@@ -29,6 +37,14 @@ class SubscriptionModel {
     required this.planPrice,
     required this.isFreePlan,
     required this.featureAccess,
+    this.notesLimit,
+    this.mcpSourcesLimit,
+    this.mcpSourcesUsed = 0,
+    this.mcpTokensLimit,
+    this.mcpTokensUsed = 0,
+    this.mcpApiCallsPerDay,
+    this.mcpApiCallsUsedToday = 0,
+    this.mcpEnabled = true,
   });
 
   factory SubscriptionModel.fromJson(Map<String, dynamic> json) {
@@ -54,6 +70,14 @@ class SubscriptionModel {
           json['feature_access'],
           isFreePlan: isFreePlan,
         ),
+        notesLimit: _parseInt(json['notes_limit']),
+        mcpSourcesLimit: _parseInt(json['mcp_sources_limit']),
+        mcpSourcesUsed: _parseInt(json['mcp_sources_used']) ?? 0,
+        mcpTokensLimit: _parseInt(json['mcp_tokens_limit']),
+        mcpTokensUsed: _parseInt(json['mcp_tokens_used']) ?? 0,
+        mcpApiCallsPerDay: _parseInt(json['mcp_api_calls_per_day']),
+        mcpApiCallsUsedToday: _parseInt(json['mcp_api_calls_used_today']) ?? 0,
+        mcpEnabled: _parseBool(json['mcp_enabled']) ?? true,
       );
 
       developer.log(
@@ -141,6 +165,14 @@ class SubscriptionModel {
       'plan_price': planPrice,
       'is_free_plan': isFreePlan,
       'feature_access': featureAccess,
+      'notes_limit': notesLimit,
+      'mcp_sources_limit': mcpSourcesLimit,
+      'mcp_sources_used': mcpSourcesUsed,
+      'mcp_tokens_limit': mcpTokensLimit,
+      'mcp_tokens_used': mcpTokensUsed,
+      'mcp_api_calls_per_day': mcpApiCallsPerDay,
+      'mcp_api_calls_used_today': mcpApiCallsUsedToday,
+      'mcp_enabled': mcpEnabled,
     };
   }
 
@@ -158,6 +190,14 @@ class SubscriptionModel {
     double? planPrice,
     bool? isFreePlan,
     Map<String, bool>? featureAccess,
+    int? notesLimit,
+    int? mcpSourcesLimit,
+    int? mcpSourcesUsed,
+    int? mcpTokensLimit,
+    int? mcpTokensUsed,
+    int? mcpApiCallsPerDay,
+    int? mcpApiCallsUsedToday,
+    bool? mcpEnabled,
   }) {
     return SubscriptionModel(
       id: id ?? this.id,
@@ -174,6 +214,14 @@ class SubscriptionModel {
       planPrice: planPrice ?? this.planPrice,
       isFreePlan: isFreePlan ?? this.isFreePlan,
       featureAccess: featureAccess ?? this.featureAccess,
+      notesLimit: notesLimit ?? this.notesLimit,
+      mcpSourcesLimit: mcpSourcesLimit ?? this.mcpSourcesLimit,
+      mcpSourcesUsed: mcpSourcesUsed ?? this.mcpSourcesUsed,
+      mcpTokensLimit: mcpTokensLimit ?? this.mcpTokensLimit,
+      mcpTokensUsed: mcpTokensUsed ?? this.mcpTokensUsed,
+      mcpApiCallsPerDay: mcpApiCallsPerDay ?? this.mcpApiCallsPerDay,
+      mcpApiCallsUsedToday: mcpApiCallsUsedToday ?? this.mcpApiCallsUsedToday,
+      mcpEnabled: mcpEnabled ?? this.mcpEnabled,
     );
   }
 }

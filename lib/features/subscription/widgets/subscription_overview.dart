@@ -115,6 +115,18 @@ class _SubscriptionDataCard extends StatelessWidget {
                         height: 1.4,
                       ),
                     ),
+                    if (value != null) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        '${_limitLabel(value.mcpApiCallsPerDay)} tool calls/day'
+                        ' · ${_limitLabel(value.mcpTokensLimit)} agent tokens',
+                        style: TextStyle(
+                          color: scheme.onSurfaceVariant,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -154,6 +166,8 @@ class _SubscriptionDataCard extends StatelessWidget {
       ),
     );
   }
+
+  static String _limitLabel(int? value) => value == null ? 'Managed' : '$value';
 }
 
 class _SubscriptionLoadingCard extends StatelessWidget {

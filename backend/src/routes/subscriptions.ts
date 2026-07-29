@@ -17,6 +17,7 @@ import {
     ensurePlanFeatureAccessReady,
     normalizePlanFeatureAccess,
 } from '../services/planFeatureService.js';
+import { mcpLimitsService } from '../services/mcpLimitsService.js';
 
 const router: Router = express.Router();
 
@@ -32,6 +33,23 @@ class PaymentVerificationError extends Error {
 
 async function ensureGooglePlayCatalogReady(): Promise<void> {
     await ensureGooglePlayCatalogColumns((sql, params) => pool.query(sql, params));
+}
+
+async function attachEffectivePlanLimits(userId: string, subscription: any) {
+    const quota = await mcpLimitsService.getUserQuota(userId);
+    return {
+        ...subscription,
+        mcp_sources_limit: quota.sourcesLimit,
+        mcp_sources_used: quota.sourcesUsed,
+        mcp_sources_remaining: quota.sourcesRemaining,
+        mcp_tokens_limit: quota.tokensLimit,
+        mcp_tokens_used: quota.tokensUsed,
+        mcp_tokens_remaining: quota.tokensRemaining,
+        mcp_api_calls_per_day: quota.apiCallsLimit,
+        mcp_api_calls_used_today: quota.apiCallsUsed,
+        mcp_api_calls_remaining_today: quota.apiCallsRemaining,
+        mcp_enabled: quota.isMcpEnabled,
+    };
 }
 
 function parseTimestamp(value: string | null | undefined): Date | null {
@@ -679,6 +697,7 @@ router.get('/seed-defaults', async (req: Request, res: Response) => {
 // Get all active subscription plans - PUBLIC
 router.get('/plans', async (req: Request, res: Response) => {
     try {
+        res.set('Cache-Control', 'no-store');
         await Promise.all([
             ensureGooglePlayCatalogReady(),
             ensurePlanFeatureAccessReady(),
@@ -995,6 +1014,7 @@ router.use(authenticateToken);
 // Get current user's subscription
 router.get('/me', async (req: AuthRequest, res: Response) => {
     try {
+        res.set('Cache-Control', 'no-store');
         await ensurePlanFeatureAccessReady();
         const userId = req.userId!;
         console.log(`[SUB] Fetching subscription for user: ${userId}`);
@@ -1007,7 +1027,11 @@ router.get('/me', async (req: AuthRequest, res: Response) => {
                 sp.credits_per_month,
                 sp.price as plan_price,
                 sp.is_free_plan,
-                sp.feature_access
+                sp.feature_access,
+                sp.notes_limit,
+                sp.mcp_sources_limit,
+                sp.mcp_tokens_limit,
+                sp.mcp_api_calls_per_day
             FROM user_subscriptions us
             JOIN subscription_plans sp ON us.plan_id = sp.id
             WHERE us.user_id = $1
@@ -1069,33 +1093,45 @@ router.get('/me', async (req: AuthRequest, res: Response) => {
                     sp.credits_per_month,
                     sp.price as plan_price,
                     sp.is_free_plan,
-                    sp.feature_access
+                    sp.feature_access,
+                    sp.notes_limit,
+                    sp.mcp_sources_limit,
+                    sp.mcp_tokens_limit,
+                    sp.mcp_api_calls_per_day
                 FROM user_subscriptions us
                 JOIN subscription_plans sp ON us.plan_id = sp.id
                 WHERE us.user_id = $1
             `, [userId]);
 
             console.log(`[SUB] Returning subscription:`, newResult.rows[0]);
-            return res.json({
-                subscription: {
+            const enrichedSubscription = await attachEffectivePlanLimits(
+                userId,
+                {
                     ...newResult.rows[0],
                     feature_access: normalizePlanFeatureAccess(
                         newResult.rows[0]?.feature_access,
                         newResult.rows[0]?.is_free_plan === true,
                     ),
                 },
+            );
+            return res.json({
+                subscription: enrichedSubscription,
             });
         }
 
         console.log(`[SUB] Found existing subscription for user ${userId}:`, result.rows[0]);
-        res.json({
-            subscription: {
+        const enrichedSubscription = await attachEffectivePlanLimits(
+            userId,
+            {
                 ...result.rows[0],
                 feature_access: normalizePlanFeatureAccess(
                     result.rows[0]?.feature_access,
                     result.rows[0]?.is_free_plan === true,
                 ),
             },
+        );
+        res.json({
+            subscription: enrichedSubscription,
         });
     } catch (error: any) {
         console.error('Error fetching subscription:', error.message, error.stack);

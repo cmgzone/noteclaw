@@ -11,6 +11,7 @@ import '../services/paypal_service.dart';
 import '../services/stripe_service.dart';
 import '../services/credit_manager.dart';
 import '../models/credit_package_model.dart';
+import '../models/subscription_model.dart';
 
 // PayPal Service Provider
 final paypalServiceProvider = Provider<PayPalService>((ref) {
@@ -32,7 +33,8 @@ class SubscriptionScreen extends ConsumerStatefulWidget {
   ConsumerState<SubscriptionScreen> createState() => _SubscriptionScreenState();
 }
 
-class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
+class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen>
+    with WidgetsBindingObserver {
   bool _paypalInitialized = false;
   bool _stripeInitialized = false;
   bool _googlePlayInitialized = false;
@@ -43,7 +45,34 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _initPaymentServices();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _refreshSubscriptionData();
+    }
+  }
+
+  Future<void> _refreshSubscriptionData() async {
+    ref.invalidate(userSubscriptionProvider);
+    ref.invalidate(subscriptionPlansProvider);
+    ref.invalidate(creditPackagesProvider);
+    ref.invalidate(googlePlayCatalogProvider);
+
+    await Future.wait([
+      ref.read(userSubscriptionProvider.future),
+      ref.read(subscriptionPlansProvider.future),
+      ref.read(creditPackagesProvider.future),
+    ]);
   }
 
   Future<void> _initPaymentServices() async {
@@ -112,10 +141,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
           }
 
           return RefreshIndicator(
-            onRefresh: () async {
-              ref.invalidate(userSubscriptionProvider);
-              ref.invalidate(creditPackagesProvider);
-            },
+            onRefresh: _refreshSubscriptionData,
             child: SingleChildScrollView(
               physics: const AlwaysScrollableScrollPhysics(),
               child: Column(
@@ -139,11 +165,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: _CurrentPlanCard(
-                      planName: subscriptionData.planName,
-                      planPrice: subscriptionData.planPrice,
-                      creditsPerMonth: subscriptionData.creditsPerMonth,
-                      status: subscriptionData.status,
-                      isFreePlan: subscriptionData.isFreePlan,
+                      subscription: subscriptionData,
                     ),
                   ),
 
@@ -433,7 +455,8 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
                     _processStripePayment(context, package, userId);
                   },
                 ),
-              if (stripeAvailable && paypalAvailable) const SizedBox(height: 12),
+              if (stripeAvailable && paypalAvailable)
+                const SizedBox(height: 12),
               if (paypalAvailable)
                 _PaymentMethodTile(
                   icon: Icons.account_balance_wallet,
@@ -792,24 +815,20 @@ class _CreditBalanceCard extends StatelessWidget {
 }
 
 class _CurrentPlanCard extends StatelessWidget {
-  final String planName;
-  final double planPrice;
-  final int creditsPerMonth;
-  final String status;
-  final bool isFreePlan;
+  final SubscriptionModel subscription;
 
   const _CurrentPlanCard({
-    required this.planName,
-    required this.planPrice,
-    required this.creditsPerMonth,
-    required this.status,
-    required this.isFreePlan,
+    required this.subscription,
   });
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final isFree = isFreePlan;
+    final isFree = subscription.isFreePlan;
+    final enabledFeatures = subscription.featureAccess.entries
+        .where((entry) => entry.value)
+        .map((entry) => _featureLabel(entry.key))
+        .toList(growable: false);
 
     return Card(
       elevation: 0,
@@ -836,15 +855,15 @@ class _CurrentPlanCard extends StatelessWidget {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color:
-                        isFree ? Colors.green.shade100 : Colors.blue.shade100,
+                    color: isFree
+                        ? Colors.green.withValues(alpha: 0.12)
+                        : scheme.primary.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
                     isFree ? 'FREE' : 'PREMIUM',
                     style: TextStyle(
-                      color:
-                          isFree ? Colors.green.shade700 : Colors.blue.shade700,
+                      color: isFree ? Colors.green.shade700 : scheme.primary,
                       fontSize: 10,
                       fontWeight: FontWeight.bold,
                     ),
@@ -854,7 +873,7 @@ class _CurrentPlanCard extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              planName,
+              subscription.planName,
               style: const TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
@@ -865,7 +884,7 @@ class _CurrentPlanCard extends StatelessWidget {
               children: [
                 if (!isFree) ...[
                   Text(
-                    '\$${planPrice.toStringAsFixed(2)}',
+                    '\$${subscription.planPrice.toStringAsFixed(2)}',
                     style: const TextStyle(
                       fontSize: 24,
                       fontWeight: FontWeight.bold,
@@ -880,7 +899,7 @@ class _CurrentPlanCard extends StatelessWidget {
                 ],
                 const Spacer(),
                 Text(
-                  '$creditsPerMonth credits/mo',
+                  '${subscription.creditsPerMonth} credits/mo',
                   style: TextStyle(
                     color: scheme.primary,
                     fontWeight: FontWeight.w600,
@@ -888,8 +907,193 @@ class _CurrentPlanCard extends StatelessWidget {
                 ),
               ],
             ),
+            const SizedBox(height: 18),
+            Divider(color: scheme.outlineVariant),
+            const SizedBox(height: 12),
+            Text(
+              'Live plan limits',
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+            ),
+            const SizedBox(height: 10),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final tileWidth = constraints.maxWidth >= 620
+                    ? (constraints.maxWidth - 24) / 4
+                    : constraints.maxWidth >= 360
+                        ? (constraints.maxWidth - 8) / 2
+                        : constraints.maxWidth;
+                return Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _PlanLimitTile(
+                      width: tileWidth,
+                      icon: Icons.note_alt_outlined,
+                      label: 'Memory notes',
+                      value: _limitLabel(subscription.notesLimit),
+                    ),
+                    _PlanLimitTile(
+                      width: tileWidth,
+                      icon: Icons.source_outlined,
+                      label: 'MCP sources',
+                      value: _usageLabel(
+                        subscription.mcpSourcesUsed,
+                        subscription.mcpSourcesLimit,
+                      ),
+                    ),
+                    _PlanLimitTile(
+                      width: tileWidth,
+                      icon: Icons.key_outlined,
+                      label: 'Agent tokens',
+                      value: _usageLabel(
+                        subscription.mcpTokensUsed,
+                        subscription.mcpTokensLimit,
+                      ),
+                    ),
+                    _PlanLimitTile(
+                      width: tileWidth,
+                      icon: Icons.bolt_outlined,
+                      label: 'Tool calls today',
+                      value: _usageLabel(
+                        subscription.mcpApiCallsUsedToday,
+                        subscription.mcpApiCallsPerDay,
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+            if (!subscription.mcpEnabled) ...[
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: scheme.errorContainer,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  'MCP access is currently disabled by the administrator.',
+                  style: TextStyle(
+                    color: scheme.onErrorContainer,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+            const SizedBox(height: 16),
+            Text(
+              'Enabled agent tools',
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+            ),
+            const SizedBox(height: 8),
+            if (enabledFeatures.isEmpty)
+              Text(
+                'No agent tools are enabled for this plan.',
+                style: TextStyle(color: scheme.onSurfaceVariant),
+              )
+            else
+              Wrap(
+                spacing: 7,
+                runSpacing: 7,
+                children: enabledFeatures
+                    .map(
+                      (feature) => Chip(
+                        avatar: Icon(
+                          Icons.check_circle_outline,
+                          size: 16,
+                          color: scheme.primary,
+                        ),
+                        label: Text(feature),
+                        visualDensity: VisualDensity.compact,
+                        side: BorderSide(
+                          color: scheme.primary.withValues(alpha: 0.2),
+                        ),
+                        backgroundColor: scheme.primary.withValues(alpha: 0.06),
+                      ),
+                    )
+                    .toList(growable: false),
+              ),
           ],
         ),
+      ),
+    );
+  }
+
+  static String _limitLabel(int? limit) => limit == null ? 'Managed' : '$limit';
+
+  static String _usageLabel(int used, int? limit) =>
+      limit == null ? '$used used' : '$used / $limit';
+
+  static String _featureLabel(String key) {
+    const labels = {
+      'memory_bank': 'Memory bank',
+      'notebook_chat': 'Notebook chat',
+      'websocket_collaboration': 'Live collaboration',
+      'code_review': 'Code review',
+      'web_search': 'Web search',
+      'deep_research': 'Deep research',
+      'research_save_to_notebook': 'Save research',
+    };
+    return labels[key] ?? key.replaceAll('_', ' ');
+  }
+}
+
+class _PlanLimitTile extends StatelessWidget {
+  const _PlanLimitTile({
+    required this.width,
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final double width;
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      width: width,
+      padding: const EdgeInsets.all(11),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(11),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: scheme.primary),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  value,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 13,
+                  ),
+                ),
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: scheme.onSurfaceVariant,
+                    fontSize: 10,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1137,6 +1341,44 @@ class _NoSubscriptionViewState extends State<_NoSubscriptionView> {
   }
 }
 
+class _PlanComparisonLine extends StatelessWidget {
+  const _PlanComparisonLine({
+    required this.label,
+    required this.value,
+  });
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 3),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                color: scheme.onSurfaceVariant,
+                fontSize: 10,
+              ),
+            ),
+          ),
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _AvailablePlansSection extends ConsumerWidget {
   final String currentPlanId;
   final String? userId;
@@ -1213,7 +1455,7 @@ class _AvailablePlansSection extends ConsumerWidget {
                 !supportsGooglePlayBilling || playCatalog?.canPurchase == true;
 
             return SizedBox(
-              height: 220,
+              height: 340,
               child: ListView.builder(
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -1248,9 +1490,20 @@ class _AvailablePlansSection extends ConsumerWidget {
                   final displayPrice = supportsGooglePlayBilling
                       ? playStorePrice ?? '\$${price.toStringAsFixed(2)}/mo'
                       : '\$${price.toStringAsFixed(2)}/mo';
+                  final notesLimit = _parsePlanInt(plan['notes_limit']);
+                  final sourcesLimit = _parsePlanInt(plan['mcp_sources_limit']);
+                  final tokensLimit = _parsePlanInt(plan['mcp_tokens_limit']);
+                  final callsLimit =
+                      _parsePlanInt(plan['mcp_api_calls_per_day']);
+                  final featureAccess = plan['feature_access'];
+                  final enabledFeatureCount = featureAccess is Map
+                      ? featureAccess.values
+                          .where((value) => value == true)
+                          .length
+                      : 0;
 
                   return Container(
-                    width: 180,
+                    width: 238,
                     margin: const EdgeInsets.only(right: 12),
                     child: Card(
                       elevation: isCurrentPlan ? 4 : 1,
@@ -1304,6 +1557,39 @@ class _AvailablePlansSection extends ConsumerWidget {
                                 fontSize: 12,
                                 color: scheme.onSurface.withValues(alpha: 0.6),
                               ),
+                            ),
+                            const SizedBox(height: 10),
+                            Text(
+                              plan['description'] as String? ??
+                                  'Agent memory subscription',
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                height: 1.35,
+                                fontSize: 11,
+                                color: scheme.onSurfaceVariant,
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            _PlanComparisonLine(
+                              label: 'Tool calls / day',
+                              value: _formatPlanLimit(callsLimit),
+                            ),
+                            _PlanComparisonLine(
+                              label: 'Agent tokens',
+                              value: _formatPlanLimit(tokensLimit),
+                            ),
+                            _PlanComparisonLine(
+                              label: 'MCP sources',
+                              value: _formatPlanLimit(sourcesLimit),
+                            ),
+                            _PlanComparisonLine(
+                              label: 'Memory notes',
+                              value: _formatPlanLimit(notesLimit),
+                            ),
+                            _PlanComparisonLine(
+                              label: 'Enabled tools',
+                              value: '$enabledFeatureCount',
                             ),
                             const Spacer(),
                             Text(
@@ -1373,6 +1659,16 @@ class _AvailablePlansSection extends ConsumerWidget {
       ],
     );
   }
+
+  static int? _parsePlanInt(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value is String) return int.tryParse(value);
+    return null;
+  }
+
+  static String _formatPlanLimit(int? value) =>
+      value == null ? 'Managed' : '$value';
 
   void _showUpgradeDialog(
     BuildContext context,
@@ -1466,8 +1762,7 @@ class _AvailablePlansSection extends ConsumerWidget {
                 _PaymentMethodTile(
                   icon: Icons.play_circle_fill_rounded,
                   title: 'Google Play',
-                  subtitle:
-                      'Purchase and manage this plan through Google Play',
+                  subtitle: 'Purchase and manage this plan through Google Play',
                   color: const Color(0xFF34A853),
                   onTap: () {
                     Navigator.pop(ctx);

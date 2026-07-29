@@ -69,6 +69,10 @@ export default function McpSettings() {
                 <p className="text-muted-foreground">
                     Configure MCP (Model Context Protocol) limits and monitor usage across plans.
                 </p>
+                <div className="mt-3 rounded-lg border border-primary/20 bg-primary/5 p-3 text-sm text-muted-foreground">
+                    Saving these limits updates the matching Free or Premium subscription plans.
+                    You can fine-tune an individual plan from Subscription Plans.
+                </div>
                 <div className="mt-4 rounded-lg border border-amber-500/20 bg-amber-500/10 p-4 text-amber-700">
                     <div className="font-semibold mb-2">Common Errors</div>
                     <ul className="list-disc list-inside space-y-1 text-sm">
@@ -354,7 +358,7 @@ function UsageTab({ users, settings, onRefresh }) {
                                         ? (settings?.premiumApiCallsPerDay ?? null)
                                         : (settings?.freeApiCallsPerDay ?? null);
                                     const override = user?.limitsOverride?.apiCallsPerDayOverride;
-                                    const effectiveLimit = override ?? baseLimit;
+                                    const effectiveLimit = user.apiCallsLimit ?? override ?? baseLimit;
                                     const hasOverride = override !== null && override !== undefined;
                                     return (
                                 <tr key={user.id} className="hover:bg-muted/30">
@@ -371,8 +375,12 @@ function UsageTab({ users, settings, onRefresh }) {
                                             {user.planName || 'Free'}
                                         </span>
                                     </td>
-                                    <td className="py-3 px-4 text-center font-mono">{user.sourcesCount}</td>
-                                    <td className="py-3 px-4 text-center font-mono">{user.activeTokens}</td>
+                                    <td className="py-3 px-4 text-center font-mono">
+                                        {user.sourcesCount} / {user.sourcesLimit ?? 'Managed'}
+                                    </td>
+                                    <td className="py-3 px-4 text-center font-mono">
+                                        {user.activeTokens} / {user.tokensLimit ?? 'Managed'}
+                                    </td>
                                     <td className="py-3 px-4 text-center font-mono">{user.apiCallsToday}</td>
                                     <td className="py-3 px-4 text-center font-mono">
                                         <span className={hasOverride ? 'text-amber-500' : ''}>

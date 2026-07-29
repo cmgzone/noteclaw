@@ -32,6 +32,23 @@ import {
 const router = express.Router();
 const SUPPORTED_ADMIN_NOTIFICATION_TYPES = new Set<NotificationType>(['system']);
 
+function parsePlanLimit(
+    value: unknown,
+    fieldName: string,
+): number | null | undefined {
+    if (value === undefined) return undefined;
+    if (value === null || value === '') return null;
+    const parsed = typeof value === 'number' ? value : Number(value);
+    if (!Number.isInteger(parsed) || parsed < 0) {
+        throw new Error(`INVALID_PLAN_LIMIT:${fieldName}`);
+    }
+    return parsed;
+}
+
+function firstDefined(primary: unknown, fallback: unknown): unknown {
+    return primary !== undefined ? primary : fallback;
+}
+
 function normalizeAdminNotificationType(rawType: unknown): NotificationType {
     if (typeof rawType !== 'string') {
         return 'system';
@@ -568,6 +585,14 @@ router.put('/plans/:id', async (req: AuthRequest, res: Response) => {
             feature_access,
             googlePlayProductId,
             google_play_product_id,
+            notesLimit,
+            notes_limit,
+            mcpSourcesLimit,
+            mcp_sources_limit,
+            mcpTokensLimit,
+            mcp_tokens_limit,
+            mcpApiCallsPerDay,
+            mcp_api_calls_per_day,
         } = req.body;
 
         const updates: string[] = [];
@@ -581,6 +606,19 @@ router.put('/plans/:id', async (req: AuthRequest, res: Response) => {
         if (isActive !== undefined) { updates.push(`is_active = $${paramIndex++}`); values.push(isActive); }
         if (isFreePlan !== undefined) { updates.push(`is_free_plan = $${paramIndex++}`); values.push(isFreePlan); }
         if (features !== undefined) { updates.push(`features = $${paramIndex++}`); values.push(JSON.stringify(features)); }
+        const requestedLimits = [
+            ['notes_limit', firstDefined(notesLimit, notes_limit)],
+            ['mcp_sources_limit', firstDefined(mcpSourcesLimit, mcp_sources_limit)],
+            ['mcp_tokens_limit', firstDefined(mcpTokensLimit, mcp_tokens_limit)],
+            ['mcp_api_calls_per_day', firstDefined(mcpApiCallsPerDay, mcp_api_calls_per_day)],
+        ] as const;
+        for (const [column, rawValue] of requestedLimits) {
+            const parsed = parsePlanLimit(rawValue, column);
+            if (parsed !== undefined) {
+                updates.push(`${column} = $${paramIndex++}`);
+                values.push(parsed);
+            }
+        }
         const requestedFeatureAccess = featureAccess ?? feature_access;
         if (requestedFeatureAccess !== undefined) {
             const currentPlan = await pool.query(
@@ -602,7 +640,10 @@ router.put('/plans/:id', async (req: AuthRequest, res: Response) => {
                 ),
             ));
         }
-        const playProductId = googlePlayProductId ?? google_play_product_id;
+        const playProductId = firstDefined(
+            googlePlayProductId,
+            google_play_product_id,
+        );
         if (playProductId !== undefined) {
             updates.push(`google_play_product_id = $${paramIndex++}`);
             values.push(
@@ -629,7 +670,13 @@ router.put('/plans/:id', async (req: AuthRequest, res: Response) => {
         }
 
         res.json({ plan: result.rows[0] });
-    } catch (error) {
+    } catch (error: any) {
+        if (String(error?.message || '').startsWith('INVALID_PLAN_LIMIT:')) {
+            const field = String(error.message).split(':')[1] || 'limit';
+            return res.status(400).json({
+                error: `${field} must be a non-negative whole number or null`,
+            });
+        }
         console.error('Error updating plan:', error);
         res.status(500).json({ error: 'Failed to update plan' });
     }
@@ -653,19 +700,51 @@ router.post('/plans', async (req: AuthRequest, res: Response) => {
             feature_access,
             googlePlayProductId,
             google_play_product_id,
+            notesLimit,
+            notes_limit,
+            mcpSourcesLimit,
+            mcp_sources_limit,
+            mcpTokensLimit,
+            mcp_tokens_limit,
+            mcpApiCallsPerDay,
+            mcp_api_calls_per_day,
         } = req.body;
-        const playProductId = googlePlayProductId ?? google_play_product_id;
+        const playProductId = firstDefined(
+            googlePlayProductId,
+            google_play_product_id,
+        );
         const resolvedIsFreePlan = isFreePlan ?? false;
         const resolvedFeatureAccess = normalizePlanFeatureAccess(
             featureAccess ?? feature_access,
             resolvedIsFreePlan,
         );
+        const resolvedNotesLimit =
+            parsePlanLimit(
+                firstDefined(notesLimit, notes_limit),
+                'notes_limit',
+            ) ?? null;
+        const resolvedMcpSourcesLimit =
+            parsePlanLimit(
+                firstDefined(mcpSourcesLimit, mcp_sources_limit),
+                'mcp_sources_limit',
+            ) ?? null;
+        const resolvedMcpTokensLimit =
+            parsePlanLimit(
+                firstDefined(mcpTokensLimit, mcp_tokens_limit),
+                'mcp_tokens_limit',
+            ) ?? null;
+        const resolvedMcpApiCallsPerDay =
+            parsePlanLimit(
+                firstDefined(mcpApiCallsPerDay, mcp_api_calls_per_day),
+                'mcp_api_calls_per_day',
+            ) ?? null;
 
         const result = await pool.query(`
             INSERT INTO subscription_plans
               (name, description, credits_per_month, price, is_active, is_free_plan,
-               features, feature_access, google_play_product_id)
-            VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9)
+               features, feature_access, google_play_product_id, notes_limit,
+               mcp_sources_limit, mcp_tokens_limit, mcp_api_calls_per_day)
+            VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9, $10, $11, $12, $13)
             RETURNING *
         `, [
             name,
@@ -679,10 +758,20 @@ router.post('/plans', async (req: AuthRequest, res: Response) => {
             typeof playProductId === 'string' && playProductId.trim().length > 0
                 ? playProductId.trim()
                 : null,
+            resolvedNotesLimit,
+            resolvedMcpSourcesLimit,
+            resolvedMcpTokensLimit,
+            resolvedMcpApiCallsPerDay,
         ]);
 
         res.json({ success: true, plan: result.rows[0] });
-    } catch (error) {
+    } catch (error: any) {
+        if (String(error?.message || '').startsWith('INVALID_PLAN_LIMIT:')) {
+            const field = String(error.message).split(':')[1] || 'limit';
+            return res.status(400).json({
+                error: `${field} must be a non-negative whole number or null`,
+            });
+        }
         console.error('Error creating plan:', error);
         res.status(500).json({ error: 'Failed to create plan' });
     }
@@ -1545,6 +1634,9 @@ router.get('/mcp-usage', async (req: AuthRequest, res: Response) => {
                 umu.last_api_call_date,
                 sp.name as plan_name,
                 sp.is_free_plan,
+                sp.mcp_sources_limit,
+                sp.mcp_tokens_limit,
+                sp.mcp_api_calls_per_day,
                 mul.sources_limit_override,
                 mul.tokens_limit_override,
                 mul.api_calls_per_day_override,
@@ -1570,7 +1662,10 @@ router.get('/mcp-usage', async (req: AuthRequest, res: Response) => {
                         COALESCE(umu.api_calls_today, 0) as api_calls_today,
                         umu.last_api_call_date,
                         sp.name as plan_name,
-                        sp.is_free_plan
+                        sp.is_free_plan,
+                        sp.mcp_sources_limit,
+                        sp.mcp_tokens_limit,
+                        sp.mcp_api_calls_per_day
                     FROM users u
                     LEFT JOIN user_mcp_usage umu ON u.id = umu.user_id
                     LEFT JOIN user_subscriptions us ON u.id = us.user_id
@@ -1604,28 +1699,55 @@ router.get('/mcp-usage', async (req: AuthRequest, res: Response) => {
                 // api_tokens table might not exist
             }
         }
+        const mcpSettings = await mcpLimitsService.getSettings();
 
         res.json({
             success: true,
-            users: result.rows.map(row => ({
-                id: row.id,
-                email: row.email,
-                displayName: row.display_name,
-                sourcesCount: parseInt(row.sources_count) || 0,
-                apiCallsToday: parseInt(row.api_calls_today) || 0,
-                lastApiCallDate: row.last_api_call_date,
-                planName: row.plan_name || 'Free',
-                isPremium: !row.is_free_plan,
-                activeTokens: tokenCounts[row.id] || 0,
-                limitsOverride: supportsUserLimits ? {
+            users: result.rows.map(row => {
+                const isPremium = row.is_free_plan === false;
+                const defaultSourcesLimit = isPremium
+                    ? mcpSettings.premiumSourcesLimit
+                    : mcpSettings.freeSourcesLimit;
+                const defaultTokensLimit = isPremium
+                    ? mcpSettings.premiumTokensLimit
+                    : mcpSettings.freeTokensLimit;
+                const defaultApiCallsLimit = isPremium
+                    ? mcpSettings.premiumApiCallsPerDay
+                    : mcpSettings.freeApiCallsPerDay;
+                const limitsOverride = supportsUserLimits ? {
                     sourcesLimitOverride: (row as any).sources_limit_override ?? null,
                     tokensLimitOverride: (row as any).tokens_limit_override ?? null,
                     apiCallsPerDayOverride: (row as any).api_calls_per_day_override ?? null,
                     isMcpEnabledOverride: (row as any).is_mcp_enabled_override ?? null,
                     updatedAt: (row as any).limits_updated_at ?? null,
                     updatedBy: (row as any).limits_updated_by ?? null,
-                } : null
-            })),
+                } : null;
+
+                return {
+                    id: row.id,
+                    email: row.email,
+                    displayName: row.display_name,
+                    sourcesCount: parseInt(row.sources_count) || 0,
+                    apiCallsToday: parseInt(row.api_calls_today) || 0,
+                    lastApiCallDate: row.last_api_call_date,
+                    planName: row.plan_name || 'Free',
+                    isPremium,
+                    activeTokens: tokenCounts[row.id] || 0,
+                    sourcesLimit:
+                        limitsOverride?.sourcesLimitOverride
+                        ?? row.mcp_sources_limit
+                        ?? defaultSourcesLimit,
+                    tokensLimit:
+                        limitsOverride?.tokensLimitOverride
+                        ?? row.mcp_tokens_limit
+                        ?? defaultTokensLimit,
+                    apiCallsLimit:
+                        limitsOverride?.apiCallsPerDayOverride
+                        ?? row.mcp_api_calls_per_day
+                        ?? defaultApiCallsLimit,
+                    limitsOverride,
+                };
+            }),
             total: parseInt(countResult.rows[0].count),
         });
     } catch (error) {

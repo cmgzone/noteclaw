@@ -15,6 +15,20 @@ const PLAN_FEATURES = [
 const defaultFeatureAccess = (isFreePlan = false) =>
     Object.fromEntries(PLAN_FEATURES.map(({ key }) => [key, !isFreePlan]));
 
+const defaultQuotaLimits = (isFreePlan = false) => isFreePlan
+    ? {
+        notes_limit: 100,
+        mcp_sources_limit: 10,
+        mcp_tokens_limit: 3,
+        mcp_api_calls_per_day: 100,
+    }
+    : {
+        notes_limit: 1000,
+        mcp_sources_limit: 200,
+        mcp_tokens_limit: 10,
+        mcp_api_calls_per_day: 2000,
+    };
+
 const normalizeFeatureAccess = (value, isFreePlan = false) => {
     const defaults = defaultFeatureAccess(isFreePlan);
     if (!value || typeof value !== 'object' || Array.isArray(value)) return defaults;
@@ -41,6 +55,7 @@ export default function SubscriptionPlans() {
         is_free_plan: false,
         google_play_product_id: '',
         feature_access: defaultFeatureAccess(false),
+        ...defaultQuotaLimits(false),
     });
 
     useEffect(() => {
@@ -72,6 +87,10 @@ export default function SubscriptionPlans() {
                     isActive: formData.is_active,
                     isFreePlan: formData.is_free_plan,
                     featureAccess: formData.feature_access,
+                    notesLimit: formData.notes_limit,
+                    mcpSourcesLimit: formData.mcp_sources_limit,
+                    mcpTokensLimit: formData.mcp_tokens_limit,
+                    mcpApiCallsPerDay: formData.mcp_api_calls_per_day,
                     googlePlayProductId: formData.is_free_plan
                         ? null
                         : (formData.google_play_product_id?.trim() || null)
@@ -85,6 +104,10 @@ export default function SubscriptionPlans() {
                     isActive: formData.is_active,
                     isFreePlan: formData.is_free_plan,
                     featureAccess: formData.feature_access,
+                    notesLimit: formData.notes_limit,
+                    mcpSourcesLimit: formData.mcp_sources_limit,
+                    mcpTokensLimit: formData.mcp_tokens_limit,
+                    mcpApiCallsPerDay: formData.mcp_api_calls_per_day,
                     googlePlayProductId: formData.is_free_plan
                         ? null
                         : (formData.google_play_product_id?.trim() || null)
@@ -127,6 +150,10 @@ export default function SubscriptionPlans() {
                 plan.feature_access,
                 plan.is_free_plan,
             ),
+            notes_limit: plan.notes_limit ?? defaultQuotaLimits(plan.is_free_plan).notes_limit,
+            mcp_sources_limit: plan.mcp_sources_limit ?? defaultQuotaLimits(plan.is_free_plan).mcp_sources_limit,
+            mcp_tokens_limit: plan.mcp_tokens_limit ?? defaultQuotaLimits(plan.is_free_plan).mcp_tokens_limit,
+            mcp_api_calls_per_day: plan.mcp_api_calls_per_day ?? defaultQuotaLimits(plan.is_free_plan).mcp_api_calls_per_day,
         });
         setShowForm(true);
     };
@@ -141,6 +168,7 @@ export default function SubscriptionPlans() {
             is_free_plan: false,
             google_play_product_id: '',
             feature_access: defaultFeatureAccess(false),
+            ...defaultQuotaLimits(false),
         });
         setEditingPlan(null);
         setShowForm(false);
@@ -242,6 +270,7 @@ export default function SubscriptionPlans() {
                                                 ? ''
                                                 : formData.google_play_product_id,
                                             feature_access: defaultFeatureAccess(e.target.checked),
+                                            ...defaultQuotaLimits(e.target.checked),
                                         })}
                                         className="rounded"
                                     />
@@ -257,6 +286,39 @@ export default function SubscriptionPlans() {
                                 className="w-full rounded-md border border-border bg-background p-2"
                                 rows={3}
                             />
+                        </div>
+                        <div>
+                            <div className="mb-3">
+                                <h3 className="text-sm font-semibold">Plan quotas</h3>
+                                <p className="text-xs text-muted-foreground">
+                                    These limits are enforced by the backend and shown to users in the Flutter subscription screen.
+                                </p>
+                            </div>
+                            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                                {[
+                                    ['notes_limit', 'Memory notes', 'Maximum notes stored'],
+                                    ['mcp_sources_limit', 'MCP sources', 'Maximum connected sources'],
+                                    ['mcp_tokens_limit', 'Agent tokens', 'Maximum active MCP tokens'],
+                                    ['mcp_api_calls_per_day', 'Tool calls / day', 'Daily MCP request limit'],
+                                ].map(([key, label, help]) => (
+                                    <div key={key}>
+                                        <label className="block text-sm font-medium mb-1">{label}</label>
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            step="1"
+                                            value={formData[key]}
+                                            onChange={(event) => setFormData({
+                                                ...formData,
+                                                [key]: Math.max(0, parseInt(event.target.value, 10) || 0),
+                                            })}
+                                            className="w-full rounded-md border border-border bg-background p-2"
+                                            required
+                                        />
+                                        <p className="mt-1 text-xs text-muted-foreground">{help}</p>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
                         <div>
                             <div className="mb-3">
@@ -363,6 +425,12 @@ export default function SubscriptionPlans() {
                             <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
                                 <Calendar className="h-4 w-4" />
                                 <span>{plan.credits_per_month} credits/month</span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+                                <span>{plan.notes_limit ?? 'Unlimited'} notes</span>
+                                <span>{plan.mcp_sources_limit ?? 'Unlimited'} sources</span>
+                                <span>{plan.mcp_tokens_limit ?? 'Unlimited'} tokens</span>
+                                <span>{plan.mcp_api_calls_per_day ?? 'Unlimited'} calls/day</span>
                             </div>
                             {plan.description && (
                                 <p className="text-sm text-muted-foreground">{plan.description}</p>

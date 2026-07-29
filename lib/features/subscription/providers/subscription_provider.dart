@@ -100,11 +100,16 @@ final hasEnoughCreditsProvider =
   return await service.hasEnoughCredits(user.uid, required);
 });
 
-// Available Subscription Plans Provider
+// Available subscription plans. Refresh periodically so pricing, features,
+// and quotas changed by an administrator appear without restarting the app.
 final subscriptionPlansProvider =
-    FutureProvider<List<Map<String, dynamic>>>((ref) async {
+    StreamProvider.autoDispose<List<Map<String, dynamic>>>((ref) async* {
   final service = ref.watch(subscriptionServiceProvider);
-  return await service.getPublicPlans();
+  yield await service.getPublicPlans();
+
+  await for (final _ in Stream.periodic(const Duration(seconds: 30))) {
+    yield await service.getPublicPlans();
+  }
 });
 
 final googlePlayCatalogProvider =
