@@ -12,6 +12,7 @@ import sourcesRoutes from './routes/sources.js';
 import aiRoutes from './routes/ai.js';
 import adminRoutes from './routes/admin.js';
 import codingAgentRoutes from './routes/codingAgent.js';
+import githubRoutes from './routes/github.js';
 import mcpDownloadRoutes from './routes/mcpDownload.js';
 import remoteMcpRoutes from './routes/remoteMcp.js';
 import subscriptionRoutes from './routes/subscriptions.js';
@@ -106,6 +107,7 @@ app.use('/api/sources', sourcesRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/coding-agent', codingAgentRoutes);
+app.use('/api/github', githubRoutes);
 app.use('/api/mcp', mcpDownloadRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
 // 404 handler
