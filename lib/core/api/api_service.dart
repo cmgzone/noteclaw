@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:developer' as developer;
-import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -56,18 +56,14 @@ class ApiService {
   }
 
   static String _resolveBaseUrl() {
-    if (kIsWeb &&
-        (Uri.base.host == 'localhost' || Uri.base.host == '127.0.0.1')) {
-      return 'http://localhost:3001/api/';
-    }
-
     final envUrl = dotenv.env['API_BASE_URL'];
     if (envUrl != null && envUrl.trim().isNotEmpty) {
       return _normalizeBaseUrl(envUrl);
     }
 
-    // Default to the hosted backend so debug builds also work on physical
-    // devices. Local development can still override this via API_BASE_URL.
+    // Local web previews also use the hosted backend by default. Developers
+    // running a local API can opt in explicitly with API_BASE_URL instead of
+    // making every localhost preview fail when port 3001 is not running.
     return _defaultApiBaseUrl;
   }
 
@@ -703,13 +699,37 @@ class ApiService {
     required String notebookId,
     required String message,
     List<Map<String, String>> history = const [],
+    String? provider,
+    String? model,
   }) async {
+    final normalizedProvider = (provider ?? '').trim();
+    final normalizedModel = (model ?? '').trim();
+    final byokKey = normalizedProvider.isNotEmpty
+        ? await _getByokKeyForProvider(
+            provider: normalizedProvider,
+            model: normalizedModel.isEmpty ? null : normalizedModel,
+          )
+        : null;
     return await post<Map<String, dynamic>>(
       '/coding-agent/memory/notebooks/$notebookId/chat',
       {
         'message': message,
         'history': history,
+        if (normalizedProvider.isNotEmpty) 'provider': normalizedProvider,
+        if (normalizedModel.isNotEmpty) 'model': normalizedModel,
       },
+      options: byokKey != null
+          ? Options(headers: {'X-User-Api-Key': byokKey})
+          : null,
+    );
+  }
+
+  Future<Map<String, dynamic>> getOrCreateNotebookLiveAgentChat(
+    String notebookId,
+  ) async {
+    return await post<Map<String, dynamic>>(
+      '/coding-agent/memory/notebooks/$notebookId/live-agent-source',
+      const {},
     );
   }
 

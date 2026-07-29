@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Notebook: Project Phoenix - NoteClaw</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-primary-fixed": "#001a42",
+                        "primary": "#adc6ff",
+                        "tertiary": "#d0bcff",
+                        "on-tertiary-fixed-variant": "#5516be",
+                        "on-secondary-fixed": "#002113",
+                        "on-background": "#dae2fd",
+                        "secondary-fixed-dim": "#4edea3",
+                        "on-tertiary-fixed": "#23005c",
+                        "surface": "#0b1326",
+                        "on-primary-container": "#00285d",
+                        "error": "#ffb4ab",
+                        "outline-variant": "#424754",
+                        "on-tertiary-container": "#340080",
+                        "tertiary-container": "#a078ff",
+                        "on-error-container": "#ffdad6",
+                        "surface-container-high": "#222a3d",
+                        "on-primary": "#002e6a",
+                        "background": "#0b1326",
+                        "on-surface-variant": "#c2c6d6",
+                        "primary-container": "#4d8eff",
+                        "surface-container-highest": "#2d3449",
+                        "surface-bright": "#31394d",
+                        "on-secondary-fixed-variant": "#005236",
+                        "on-surface": "#dae2fd",
+                        "on-error": "#690005",
+                        "tertiary-fixed-dim": "#d0bcff",
+                        "surface-container-lowest": "#060e20",
+                        "on-secondary": "#003824",
+                        "surface-variant": "#2d3449",
+                        "secondary": "#4edea3",
+                        "surface-dim": "#0b1326",
+                        "inverse-surface": "#dae2fd",
+                        "surface-tint": "#adc6ff",
+                        "secondary-container": "#00a572",
+                        "outline": "#8c909f",
+                        "inverse-primary": "#005ac2",
+                        "surface-container": "#171f33",
+                        "primary-fixed": "#d8e2ff",
+                        "tertiary-fixed": "#e9ddff",
+                        "inverse-on-surface": "#283044",
+                        "on-secondary-container": "#00311f",
+                        "on-primary-fixed-variant": "#004395",
+                        "error-container": "#93000a",
+                        "primary-fixed-dim": "#adc6ff",
+                        "surface-container-low": "#131b2e",
+                        "secondary-fixed": "#6ffbbe",
+                        "on-tertiary": "#3c0091"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "gutter": "16px",
+                        "unit": "4px",
+                        "margin-desktop": "32px",
+                        "margin-mobile": "16px",
+                        "container-max": "1440px"
+                    },
+                    "fontFamily": {
+                        "label-caps": ["JetBrains Mono"],
+                        "headline-lg": ["Inter"],
+                        "code-sm": ["JetBrains Mono"],
+                        "headline-lg-mobile": ["Inter"],
+                        "body-md": ["Inter"],
+                        "headline-md": ["Inter"]
+                    },
+                    "fontSize": {
+                        "label-caps": ["12px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "500" }],
+                        "headline-lg": ["32px", { "lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "code-sm": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "headline-lg-mobile": ["24px", { "lineHeight": "32px", "fontWeight": "600" }],
+                        "body-md": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+                        "headline-md": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        .inner-glow { box-shadow: inset 1px 1px 0 0 rgba(255, 255, 255, 0.1); }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .pulse-indicator { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: .4; }
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-surface font-body-md antialiased min-h-screen flex flex-col md:flex-row">
+<!-- NavigationDrawer (Desktop) -->
+<nav class="hidden md:flex flex-col py-gutter bg-surface-container-low h-full w-64 fixed left-0 top-0 border-r border-white/10 z-40">
+<div class="px-margin-desktop mb-8">
+<h2 class="font-headline-md text-headline-md text-primary">NoteClaw Librarian</h2>
+</div>
+<ul class="flex flex-col gap-2 px-4">
+<li>
+<a class="flex items-center gap-4 px-4 py-3 rounded-lg bg-primary-container/20 text-primary border-l-2 border-primary font-label-caps text-label-caps transition-all duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="book_2">book_2</span>
+                    Memory Notebook
+                </a>
+</li>
+<li>
+<a class="flex items-center gap-4 px-4 py-3 rounded-lg text-on-surface-variant hover:bg-surface-container-highest transition-all duration-200 ease-in-out font-label-caps text-label-caps" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="fact_check">fact_check</span>
+                    Fact Check
+                </a>
+</li>
+<li>
+<a class="flex items-center gap-4 px-4 py-3 rounded-lg text-on-surface-variant hover:bg-surface-container-highest transition-all duration-200 ease-in-out font-label-caps text-label-caps" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="terminal">terminal</span>
+                    Code Review
+                </a>
+</li>
+<li>
+<a class="flex items-center gap-4 px-4 py-3 rounded-lg text-on-surface-variant hover:bg-surface-container-highest transition-all duration-200 ease-in-out font-label-caps text-label-caps" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="settings">settings</span>
+                    Settings
+                </a>
+</li>
+</ul>
+</nav>
+<!-- TopAppBar (Mobile & Desktop Overlay) -->
+<header class="flex items-center justify-between px-margin-mobile md:px-margin-desktop h-16 bg-surface/60 backdrop-blur-xl fixed top-0 w-full z-50 border-b border-white/10 md:hidden md:pl-[calc(16rem+32px)]">
+<div class="flex items-center gap-4 cursor-pointer active:opacity-70 text-on-surface-variant hover:text-secondary-fixed-dim transition-colors">
+<span class="material-symbols-outlined" data-icon="menu">menu</span>
+</div>
+<h1 class="font-headline-md text-headline-md tracking-tight text-primary">NoteClaw</h1>
+<div class="flex items-center gap-4 cursor-pointer active:opacity-70 text-on-surface-variant hover:text-secondary-fixed-dim transition-colors">
+<span class="material-symbols-outlined" data-icon="search">search</span>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="flex-1 mt-16 md:mt-0 md:ml-64 p-margin-mobile md:p-margin-desktop max-w-container-max w-full mx-auto pb-32">
+<!-- Header Section -->
+<div class="mb-8 border-b border-white/10 pb-6">
+<div class="flex items-center gap-3 mb-2">
+<span class="w-2 h-2 rounded-full bg-secondary pulse-indicator"></span>
+<span class="font-label-caps text-label-caps text-secondary tracking-widest">ACTIVE SYNC</span>
+</div>
+<h1 class="font-headline-lg-mobile md:font-headline-lg text-headline-lg-mobile md:text-headline-lg text-on-surface mb-4">Project Phoenix</h1>
+<p class="text-on-surface-variant font-code-sm text-code-sm max-w-2xl">
+                NAMESPACE: px_core_v4 // Agent synthesis complete. 42 entities mapped.
+            </p>
+</div>
+<!-- Tabs -->
+<div class="flex gap-8 border-b border-surface-container-high mb-8 font-label-caps text-label-caps">
+<button class="pb-4 text-primary border-b-2 border-primary tab-btn" data-target="chats-tab">
+                CHATS (12)
+            </button>
+<button class="pb-4 text-on-surface-variant hover:text-primary transition-colors tab-btn" data-target="sources-tab">
+                SOURCES (48)
+            </button>
+</div>
+<!-- Chats Tab -->
+<div class="tab-content active space-y-4" id="chats-tab">
+<div class="bg-[#1E293B] rounded-lg p-6 border border-white/10 inner-glow hover:bg-surface-container-highest transition-colors cursor-pointer group">
+<div class="flex justify-between items-start mb-4">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-secondary" data-icon="forum">forum</span>
+<h3 class="font-body-md text-body-md text-on-surface font-semibold">Auth Flow Optimization Review</h3>
+</div>
+<span class="font-label-caps text-label-caps text-on-surface-variant">2H AGO</span>
+</div>
+<p class="font-code-sm text-code-sm text-on-surface-variant mb-4 line-clamp-2">
+                    Agent Architect: "Reviewing the current OAuth implementation. We need to reduce token refresh latency."<br/>
+                    Agent Security: "Agreed. Proposing a JWT caching layer on Edge."
+                </p>
+<div class="flex gap-2">
+<span class="px-2 py-1 bg-surface-container-lowest border border-tertiary/30 text-tertiary rounded font-label-caps text-label-caps text-[10px]">#ARCHITECTURE</span>
+<span class="px-2 py-1 bg-surface-container-lowest border border-tertiary/30 text-tertiary rounded font-label-caps text-label-caps text-[10px]">#SECURITY</span>
+</div>
+</div>
+<div class="bg-[#1E293B] rounded-lg p-6 border border-white/10 inner-glow hover:bg-surface-container-highest transition-colors cursor-pointer group">
+<div class="flex justify-between items-start mb-4">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-outline" data-icon="forum">forum</span>
+<h3 class="font-body-md text-body-md text-on-surface font-semibold">Database Migration Planning</h3>
+</div>
+<span class="font-label-caps text-label-caps text-on-surface-variant">YESTERDAY</span>
+</div>
+<p class="font-code-sm text-code-sm text-on-surface-variant mb-4 line-clamp-2">
+                    Agent DBA: "Migration script for users table is ready. Estimated downtime: 14ms."<br/>
+                    Agent DevOps: "Approval pending dry run in staging environment."
+                </p>
+<div class="flex gap-2">
+<span class="px-2 py-1 bg-surface-container-lowest border border-tertiary/30 text-tertiary rounded font-label-caps text-label-caps text-[10px]">#DBA</span>
+<span class="px-2 py-1 bg-surface-container-lowest border border-tertiary/30 text-tertiary rounded font-label-caps text-label-caps text-[10px]">#DEVOPS</span>
+</div>
+</div>
+</div>
+<!-- Sources Tab -->
+<div class="tab-content" id="sources-tab">
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+<div class="bg-[#1E293B] rounded-lg p-6 border border-white/10 inner-glow flex flex-col h-full">
+<div class="flex justify-between items-start mb-4">
+<div class="p-2 bg-surface-container-low rounded">
+<span class="material-symbols-outlined text-primary" data-icon="description">description</span>
+</div>
+<span class="font-label-caps text-label-caps text-on-surface-variant flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]" data-icon="sync">sync</span> 10m
+                        </span>
+</div>
+<h3 class="font-code-sm text-code-sm text-on-surface font-semibold mb-2">Auth_V2.ts</h3>
+<p class="font-body-md text-body-md text-on-surface-variant text-sm mb-6 flex-1">Core authentication logic implementing JWT refresh rotation.</p>
+<div class="mt-auto flex justify-between items-center">
+<span class="px-2 py-1 bg-surface-container-lowest border border-secondary/30 text-secondary rounded font-label-caps text-label-caps text-[10px]">#CODE</span>
+<button class="text-outline hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-[18px]" data-icon="open_in_new">open_in_new</span>
+</button>
+</div>
+</div>
+<div class="bg-[#1E293B] rounded-lg p-6 border border-white/10 inner-glow flex flex-col h-full">
+<div class="flex justify-between items-start mb-4">
+<div class="p-2 bg-surface-container-low rounded">
+<span class="material-symbols-outlined text-tertiary" data-icon="link">link</span>
+</div>
+<span class="font-label-caps text-label-caps text-on-surface-variant flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]" data-icon="sync">sync</span> 1h
+                        </span>
+</div>
+<h3 class="font-code-sm text-code-sm text-on-surface font-semibold mb-2">API Documentation</h3>
+<p class="font-body-md text-body-md text-on-surface-variant text-sm mb-6 flex-1">External Swagger definitions for v4 endpoints.</p>
+<div class="mt-auto flex justify-between items-center">
+<span class="px-2 py-1 bg-surface-container-lowest border border-primary/30 text-primary rounded font-label-caps text-label-caps text-[10px]">#DOCS</span>
+<button class="text-outline hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-[18px]" data-icon="open_in_new">open_in_new</span>
+</button>
+</div>
+</div>
+<div class="bg-[#1E293B] rounded-lg p-6 border border-white/10 inner-glow flex flex-col h-full">
+<div class="flex justify-between items-start mb-4">
+<div class="p-2 bg-surface-container-low rounded">
+<span class="material-symbols-outlined text-primary" data-icon="description">description</span>
+</div>
+<span class="font-label-caps text-label-caps text-on-surface-variant flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]" data-icon="sync">sync</span> 5h
+                        </span>
+</div>
+<h3 class="font-code-sm text-code-sm text-on-surface font-semibold mb-2">schema_v4.sql</h3>
+<p class="font-body-md text-body-md text-on-surface-variant text-sm mb-6 flex-1">Database definitions including new vector indices.</p>
+<div class="mt-auto flex justify-between items-center">
+<span class="px-2 py-1 bg-surface-container-lowest border border-secondary/30 text-secondary rounded font-label-caps text-label-caps text-[10px]">#CODE</span>
+<button class="text-outline hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-[18px]" data-icon="open_in_new">open_in_new</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- BottomNavBar (Mobile) -->
+<nav class="md:hidden flex justify-around items-center h-16 px-4 pb-safe bg-surface-container/80 backdrop-blur-xl fixed bottom-0 w-full z-50 rounded-t-xl shadow-lg border-t border-white/10">
+<a class="flex flex-col items-center justify-center text-primary font-bold active:scale-95 transition-transform hover:text-primary/80" href="#">
+<span class="material-symbols-outlined" data-icon="database">database</span>
+<span class="font-label-caps text-label-caps mt-1">Notebook</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant/60 active:scale-95 transition-transform hover:text-primary/80" href="#">
+<span class="material-symbols-outlined" data-icon="verified">verified</span>
+<span class="font-label-caps text-label-caps mt-1">Fact Check</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant/60 active:scale-95 transition-transform hover:text-primary/80" href="#">
+<span class="material-symbols-outlined" data-icon="code">code</span>
+<span class="font-label-caps text-label-caps mt-1">Code Review</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant/60 active:scale-95 transition-transform hover:text-primary/80" href="#">
+<span class="material-symbols-outlined" data-icon="lock">lock</span>
+<span class="font-label-caps text-label-caps mt-1">Vault</span>
+</a>
+</nav>
+<script>
+        document.querySelectorAll('.tab-btn').forEach(button => {
+            button.addEventListener('click', () => {
+                // Remove active styling from all buttons
+                document.querySelectorAll('.tab-btn').forEach(btn => {
+                    btn.classList.remove('text-primary', 'border-b-2', 'border-primary');
+                    btn.classList.add('text-on-surface-variant');
+                });
+                // Add active styling to clicked button
+                button.classList.add('text-primary', 'border-b-2', 'border-primary');
+                button.classList.remove('text-on-surface-variant');
+
+                // Hide all content
+                document.querySelectorAll('.tab-content').forEach(content => {
+                    content.classList.remove('active');
+                });
+                // Show target content
+                const targetId = button.getAttribute('data-target');
+                document.getElementById(targetId).classList.add('active');
+            });
+        });
+    </script>
+</body></html>

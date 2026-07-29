@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../ui/digital_librarian.dart';
 import 'code_review_detail_view.dart';
 import 'code_review_github_file_picker.dart';
 import 'code_review_provider.dart';
@@ -93,7 +94,12 @@ class _CodeReviewScreenState extends ConsumerState<CodeReviewScreen>
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Code Review'),
+        toolbarHeight: 64,
+        titleSpacing: 16,
+        title: const NoteClawHeader(
+          compact: true,
+          eyebrow: 'Code review',
+        ),
         bottom: TabBar(
           controller: _tabController,
           tabs: const [
@@ -101,6 +107,9 @@ class _CodeReviewScreenState extends ConsumerState<CodeReviewScreen>
             Tab(text: 'History', icon: Icon(Icons.history)),
           ],
         ),
+      ),
+      bottomNavigationBar: const MemoryToolNavigationBar(
+        selected: MemoryToolDestination.codeReview,
       ),
       body: TabBarView(
         controller: _tabController,

@@ -13,20 +13,20 @@ class AppTheme {
     'sans-serif',
   ];
 
-  // Restrained, high-contrast palette for the memory workspace.
-  static const Color _lightPrimary = Color(0xFF68408D);
-  static const Color _darkPrimary = Color(0xFFC9A9EA);
+  // Stitch "Digital Librarian" palette.
+  static const Color _lightPrimary = Color(0xFF005AC2);
+  static const Color _darkPrimary = Color(0xFFADC6FF);
 
-  static const Color _lightBackground = Color(0xFFF6F5F8);
-  static const Color _darkBackground = Color(0xFF061017);
+  static const Color _lightBackground = Color(0xFFF4F7FF);
+  static const Color _darkBackground = Color(0xFF020617);
 
   // --- Gradients ---
   static const LinearGradient premiumGradient = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
     colors: [
-      Color(0xFF72459A),
-      Color(0xFF318F96),
+      Color(0xFF4D8EFF),
+      Color(0xFF00A572),
     ],
   );
 
@@ -34,8 +34,8 @@ class AppTheme {
     begin: Alignment.centerLeft,
     end: Alignment.centerRight,
     colors: [
-      Color(0xFF7650A3),
-      Color(0xFF55BDC0),
+      Color(0xFF4D8EFF),
+      Color(0xFF4EDEA3),
     ],
   );
 
@@ -54,25 +54,35 @@ class AppTheme {
 
     // Surfaces (Cards, Bottom Sheets)
     // Dark mode uses deep slate with slight transparency for glass effects
-    final surface = isDark ? const Color(0xFF0C1720) : const Color(0xFFFFFFFF);
+    final surface = isDark ? const Color(0xFF0B1326) : const Color(0xFFFFFFFF);
     final surfaceContainer =
-        isDark ? const Color(0xFF14232D) : const Color(0xFFF0EDF4);
+        isDark ? const Color(0xFF171F33) : const Color(0xFFE9EEFA);
     final menuSurface =
-        isDark ? const Color(0xFF0C1720) : const Color(0xFFFFFFFF);
+        isDark ? const Color(0xFF131B2E) : const Color(0xFFFFFFFF);
 
     final colorScheme = ColorScheme.fromSeed(
       brightness: brightness,
       seedColor: primary,
       primary: primary,
-      secondary: isDark ? const Color(0xFF72D0D1) : const Color(0xFF267D83),
-      tertiary: isDark ? const Color(0xFFE0B5F3) : const Color(0xFF8050A2),
+      secondary: isDark ? const Color(0xFF4EDEA3) : const Color(0xFF006C49),
+      tertiary: isDark ? const Color(0xFFD0BCFF) : const Color(0xFF6E3FD0),
       surface: surface,
     ).copyWith(
-      // Custom overrides for premium feel
       surfaceContainer: surfaceContainer,
-      outline: isDark ? const Color(0xFF2B3C48) : const Color(0xFFDDD8E3),
+      surfaceContainerLowest:
+          isDark ? const Color(0xFF060E20) : const Color(0xFFFFFFFF),
+      surfaceContainerLow:
+          isDark ? const Color(0xFF131B2E) : const Color(0xFFF0F3FB),
+      surfaceContainerHigh:
+          isDark ? const Color(0xFF222A3D) : const Color(0xFFE2E7F2),
+      surfaceContainerHighest:
+          isDark ? const Color(0xFF2D3449) : const Color(0xFFD9DFEC),
+      onSurface: isDark ? const Color(0xFFDAE2FD) : const Color(0xFF101828),
+      onSurfaceVariant:
+          isDark ? const Color(0xFFC2C6D6) : const Color(0xFF4C566A),
+      outline: isDark ? const Color(0xFF8C909F) : const Color(0xFF70798C),
       outlineVariant:
-          isDark ? const Color(0xFF1C2B35) : const Color(0xFFEAE6EF),
+          isDark ? const Color(0xFF424754) : const Color(0xFFD2D8E4),
       shadow: isDark
           ? Colors.black.withValues(alpha: 0.5)
           : Colors.black.withValues(alpha: 0.1),
@@ -83,46 +93,58 @@ class AppTheme {
       side: BorderSide(color: menuBorderColor),
     );
 
-    final baseTextTheme = GoogleFonts.plusJakartaSansTextTheme()
-        .apply(fontFamilyFallback: _fallbackFonts);
+    final baseTextTheme =
+        GoogleFonts.interTextTheme().apply(fontFamilyFallback: _fallbackFonts);
     TextStyle withFallback(TextStyle? style) =>
         style?.copyWith(fontFamilyFallback: _fallbackFonts) ??
         const TextStyle(fontFamilyFallback: _fallbackFonts);
 
     final textTheme = baseTextTheme.copyWith(
-      displayLarge: withFallback(GoogleFonts.outfit(
-          fontWeight: FontWeight.bold,
+      displayLarge: withFallback(GoogleFonts.inter(
+          fontWeight: FontWeight.w600,
           letterSpacing: -1.0,
           color: colorScheme.onSurface)),
-      headlineLarge: withFallback(GoogleFonts.outfit(
-          fontWeight: FontWeight.bold,
+      displayMedium: withFallback(GoogleFonts.inter(
+          fontWeight: FontWeight.w600,
+          letterSpacing: -0.8,
+          color: colorScheme.onSurface)),
+      displaySmall: withFallback(GoogleFonts.inter(
+          fontWeight: FontWeight.w600,
+          letterSpacing: -0.6,
+          color: colorScheme.onSurface)),
+      headlineLarge: withFallback(GoogleFonts.inter(
+          fontWeight: FontWeight.w600,
           letterSpacing: -0.5,
           color: colorScheme.onSurface)),
-      headlineMedium: withFallback(GoogleFonts.outfit(
+      headlineMedium: withFallback(GoogleFonts.inter(
           fontWeight: FontWeight.w600, color: colorScheme.onSurface)),
-      titleLarge: withFallback(GoogleFonts.plusJakartaSans(
+      headlineSmall: withFallback(GoogleFonts.inter(
+          fontWeight: FontWeight.w600,
+          letterSpacing: -0.35,
+          color: colorScheme.onSurface)),
+      titleLarge: withFallback(GoogleFonts.inter(
           fontWeight: FontWeight.w600,
           letterSpacing: 0.15,
           color: colorScheme.onSurface)),
-      titleMedium: withFallback(GoogleFonts.plusJakartaSans(
+      titleMedium: withFallback(GoogleFonts.inter(
           fontWeight: FontWeight.w600, color: colorScheme.onSurface)),
-      titleSmall: withFallback(GoogleFonts.plusJakartaSans(
+      titleSmall: withFallback(GoogleFonts.inter(
           fontWeight: FontWeight.w600, color: colorScheme.onSurface)),
-      bodyLarge: withFallback(GoogleFonts.plusJakartaSans(
-          height: 1.6, color: colorScheme.onSurface)),
-      bodyMedium: withFallback(GoogleFonts.plusJakartaSans(
-          height: 1.5, color: colorScheme.onSurface)),
-      bodySmall: withFallback(GoogleFonts.plusJakartaSans(
-          height: 1.45, color: colorScheme.onSurface)),
-      labelMedium: withFallback(GoogleFonts.plusJakartaSans(
+      bodyLarge: withFallback(
+          GoogleFonts.inter(height: 1.6, color: colorScheme.onSurface)),
+      bodyMedium: withFallback(
+          GoogleFonts.inter(height: 1.5, color: colorScheme.onSurface)),
+      bodySmall: withFallback(
+          GoogleFonts.inter(height: 1.45, color: colorScheme.onSurface)),
+      labelMedium: withFallback(GoogleFonts.jetBrainsMono(
           fontWeight: FontWeight.w500,
           letterSpacing: 0.3,
           color: colorScheme.onSurface)),
-      labelSmall: withFallback(GoogleFonts.plusJakartaSans(
+      labelSmall: withFallback(GoogleFonts.jetBrainsMono(
           fontWeight: FontWeight.w500,
-          letterSpacing: 0.3,
+          letterSpacing: 0.6,
           color: colorScheme.onSurfaceVariant)),
-      labelLarge: withFallback(GoogleFonts.plusJakartaSans(
+      labelLarge: withFallback(GoogleFonts.inter(
           fontWeight: FontWeight.w600,
           letterSpacing: 0.5,
           color: colorScheme.onSurface)),
@@ -156,9 +178,9 @@ class AppTheme {
         // Semi-transparent color
         color: surface,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(8),
           side: BorderSide(
-            color: isDark ? const Color(0xFF2B3C48) : const Color(0xFFDDD8E3),
+            color: isDark ? const Color(0xFF424754) : const Color(0xFFD2D8E4),
             width: 1,
           ),
         ),
@@ -167,22 +189,22 @@ class AppTheme {
       // --- Inputs ---
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: isDark ? const Color(0xFF14232D) : const Color(0xFFF0EDF4),
+        fillColor: isDark ? const Color(0xFF171F33) : const Color(0xFFE9EEFA),
         hintStyle: TextStyle(color: colorScheme.onSurfaceVariant),
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(4),
           borderSide: BorderSide.none,
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(4),
           borderSide: BorderSide(
             color: colorScheme.outline.withValues(alpha: 0.3),
           ),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(4),
           borderSide: BorderSide(color: primary, width: 2),
         ),
       ),
@@ -191,8 +213,7 @@ class AppTheme {
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
           textStyle: textTheme.labelLarge?.copyWith(fontSize: 14),
           elevation: 0,
         ),
@@ -201,8 +222,7 @@ class AppTheme {
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
           backgroundColor: colorScheme.surfaceContainer,
           foregroundColor: colorScheme.onSurface,
           elevation: 0,
@@ -221,7 +241,7 @@ class AppTheme {
       // --- Navigation Bar ---
       navigationBarTheme: NavigationBarThemeData(
         backgroundColor: isDark
-            ? const Color(0xFF0F172A).withValues(alpha: 0.8)
+            ? const Color(0xFF060E20).withValues(alpha: 0.96)
             : Colors.white,
         indicatorColor: primary.withValues(alpha: 0.2),
         labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,

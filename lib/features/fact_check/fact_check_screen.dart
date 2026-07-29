@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 
+import '../../ui/digital_librarian.dart';
 import 'fact_check_service.dart';
 
 class FactCheckScreen extends ConsumerStatefulWidget {
@@ -53,7 +54,17 @@ class _FactCheckScreenState extends ConsumerState<FactCheckScreen> {
     final text = Theme.of(context).textTheme;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Fact check')),
+      appBar: AppBar(
+        toolbarHeight: 64,
+        titleSpacing: 16,
+        title: const NoteClawHeader(
+          compact: true,
+          eyebrow: 'Fact verification',
+        ),
+      ),
+      bottomNavigationBar: const MemoryToolNavigationBar(
+        selected: MemoryToolDestination.factCheck,
+      ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(18, 12, 18, 40),
         children: [
@@ -64,7 +75,7 @@ class _FactCheckScreenState extends ConsumerState<FactCheckScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Text(
-                    'Check factual claims',
+                    'Verification Report',
                     style: text.headlineSmall?.copyWith(
                       fontWeight: FontWeight.w800,
                       letterSpacing: -0.4,
@@ -72,7 +83,7 @@ class _FactCheckScreenState extends ConsumerState<FactCheckScreen> {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    'Paste text to identify claims, verdicts, explanations, and confidence.',
+                    'Verify claims with evidence, confidence, and source-aware explanations.',
                     style: text.bodyMedium?.copyWith(
                       color: scheme.onSurfaceVariant,
                     ),

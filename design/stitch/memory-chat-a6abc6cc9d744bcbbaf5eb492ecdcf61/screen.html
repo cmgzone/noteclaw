@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>NoteClaw - Memory Chat</title>
+<!-- Google Fonts -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet"/>
+<!-- Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Tailwind Config -->
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "surface-container-low": "#131b2e",
+                        "on-tertiary": "#3c0091",
+                        "outline-variant": "#424754",
+                        "surface-container-highest": "#2d3449",
+                        "surface-container-lowest": "#060e20",
+                        "on-surface": "#dae2fd",
+                        "on-primary": "#002e6a",
+                        "surface-variant": "#2d3449",
+                        "surface-container-high": "#222a3d",
+                        "on-tertiary-container": "#340080",
+                        "surface-bright": "#31394d",
+                        "on-secondary-fixed": "#002113",
+                        "secondary-fixed": "#6ffbbe",
+                        "surface-container": "#171f33",
+                        "secondary-fixed-dim": "#4edea3",
+                        "secondary": "#4edea3",
+                        "on-secondary": "#003824",
+                        "tertiary-container": "#a078ff",
+                        "inverse-surface": "#dae2fd",
+                        "primary-fixed-dim": "#adc6ff",
+                        "on-primary-fixed-variant": "#004395",
+                        "on-tertiary-fixed": "#23005c",
+                        "on-primary-fixed": "#001a42",
+                        "inverse-on-surface": "#283044",
+                        "on-secondary-container": "#00311f",
+                        "primary": "#adc6ff",
+                        "on-secondary-fixed-variant": "#005236",
+                        "secondary-container": "#00a572",
+                        "primary-fixed": "#d8e2ff",
+                        "on-error": "#690005",
+                        "surface": "#0b1326",
+                        "tertiary-fixed-dim": "#d0bcff",
+                        "on-background": "#dae2fd",
+                        "surface-dim": "#0b1326",
+                        "on-surface-variant": "#c2c6d6",
+                        "on-primary-container": "#00285d",
+                        "surface-tint": "#adc6ff",
+                        "primary-container": "#4d8eff",
+                        "error-container": "#93000a",
+                        "tertiary": "#d0bcff",
+                        "tertiary-fixed": "#e9ddff",
+                        "outline": "#8c909f",
+                        "inverse-primary": "#005ac2",
+                        "error": "#ffb4ab",
+                        "background": "#0b1326",
+                        "on-error-container": "#ffdad6",
+                        "on-tertiary-fixed-variant": "#5516be"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "container-max": "1440px",
+                        "margin-mobile": "16px",
+                        "unit": "4px",
+                        "gutter": "16px",
+                        "margin-desktop": "32px"
+                    },
+                    "fontFamily": {
+                        "headline-lg": ["Inter"],
+                        "headline-md": ["Inter"],
+                        "code-sm": ["JetBrains Mono"],
+                        "headline-lg-mobile": ["Inter"],
+                        "label-caps": ["JetBrains Mono"],
+                        "body-md": ["Inter"]
+                    },
+                    "fontSize": {
+                        "headline-lg": ["32px", { "lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "headline-md": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "code-sm": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "headline-lg-mobile": ["24px", { "lineHeight": "32px", "fontWeight": "600" }],
+                        "label-caps": ["12px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "500" }],
+                        "body-md": ["16px", { "lineHeight": "24px", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .icon-fill {
+            font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        /* Custom scrollbar for chat area */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #2d3449; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #424754; }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background min-h-screen flex flex-col font-body-md overflow-hidden">
+<!-- TopAppBar (from JSON) -->
+<header class="bg-surface/60 dark:bg-surface/60 backdrop-blur-xl docked full-width top-0 sticky border-b border-white/10 flex justify-between items-center px-margin-mobile h-16 w-full z-50">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-surface-container-highest flex items-center justify-center overflow-hidden border border-white/10">
+<span class="material-symbols-outlined text-on-surface-variant text-sm">person</span>
+</div>
+<h1 class="text-headline-md font-headline-md font-bold text-on-surface dark:text-on-surface">NoteClaw</h1>
+</div>
+<button class="text-primary dark:text-primary-fixed-dim hover:opacity-80 transition-opacity active:scale-95 duration-150 p-2 rounded-full hover:bg-surface-container">
+<span class="material-symbols-outlined">search</span>
+</button>
+</header>
+<!-- Chat Context Header -->
+<div class="bg-surface-container-low border-b border-white/5 py-3 px-margin-mobile flex items-center justify-between z-40">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-secondary text-sm icon-fill">hub</span>
+<div class="flex flex-col">
+<span class="text-label-caps font-label-caps text-on-surface-variant">Active Context</span>
+<span class="text-sm font-semibold text-on-surface">Chat with: Project Phoenix Memory</span>
+</div>
+</div>
+<div class="flex items-center gap-2">
+<span class="relative flex h-2 w-2">
+<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-secondary opacity-75"></span>
+<span class="relative inline-flex rounded-full h-2 w-2 bg-secondary"></span>
+</span>
+<span class="text-label-caps font-label-caps text-secondary">Syncing</span>
+</div>
+</div>
+<!-- Main Chat Area -->
+<main class="flex-1 overflow-y-auto p-margin-mobile pb-32 md:pb-24 space-y-6 flex flex-col">
+<!-- Timestamp -->
+<div class="flex justify-center">
+<span class="text-label-caps font-label-caps text-on-surface-variant bg-surface-container px-3 py-1 rounded-full">Today, 14:32</span>
+</div>
+<!-- User Message -->
+<div class="flex justify-end">
+<div class="max-w-[85%] md:max-w-[70%] bg-primary-container text-on-primary-container p-4 rounded-xl rounded-tr-none shadow-sm">
+<p>Can you summarize the current state of the Phoenix authentication module? I need to know what dependencies were added yesterday.</p>
+</div>
+</div>
+<!-- Agent Side-Talk Indicator (Simulating real-time retrieval) -->
+<div class="flex items-center gap-3 self-start px-2">
+<div class="h-6 w-6 rounded-full bg-surface-container-highest border border-secondary/30 flex items-center justify-center animate-pulse">
+<span class="material-symbols-outlined text-secondary" style="font-size: 14px;">memory</span>
+</div>
+<span class="text-label-caps font-label-caps text-on-surface-variant italic">Claude is accessing Namespace: Auth_V2...</span>
+</div>
+<!-- Memory/Agent Response -->
+<div class="flex justify-start">
+<div class="max-w-[90%] md:max-w-[75%] bg-surface-container-highest border border-white/10 p-4 rounded-xl rounded-tl-none shadow-sm flex flex-col gap-3">
+<div class="flex items-center gap-2 border-b border-white/5 pb-2">
+<span class="material-symbols-outlined text-secondary text-sm">database</span>
+<span class="text-label-caps font-label-caps text-secondary">System Memory Synthesis</span>
+</div>
+<p class="text-on-surface">Based on the recent commits and agent logs in the <strong>Auth_V2</strong> namespace, the authentication module has transitioned to JWT implementation.</p>
+<p class="text-on-surface-variant text-sm">The following dependencies were injected into the environment yesterday by Agent Omega:</p>
+<!-- Technical Block -->
+<div class="bg-surface-lowest border border-white/5 rounded-lg p-3 overflow-x-auto relative group">
+<div class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="text-on-surface-variant hover:text-on-surface"><span class="material-symbols-outlined text-sm">content_copy</span></button>
+</div>
+<pre class="font-code-sm text-code-sm text-primary-fixed-dim">{
+  "dependencies": {
+    "jsonwebtoken": "^9.0.2",
+    "bcrypt": "^5.1.1",
+    "@types/jsonwebtoken": "^9.0.5"
+  },
+  "status": "verified_by_claude",
+  "timestamp": "2023-10-27T18:45:00Z"
+}</pre>
+</div>
+<div class="flex gap-2 mt-1">
+<span class="inline-flex items-center gap-1 border border-secondary-container/50 bg-secondary-container/10 px-2 py-1 rounded text-label-caps font-label-caps text-secondary-fixed-dim">
+<span class="material-symbols-outlined" style="font-size: 12px;">check_circle</span> Verified
+                    </span>
+<span class="inline-flex items-center gap-1 border border-outline/30 bg-surface-container-low px-2 py-1 rounded text-label-caps font-label-caps text-on-surface-variant">
+                        Namespace: Auth_V2
+                    </span>
+</div>
+</div>
+</div>
+</main>
+<!-- Chat Input Area -->
+<div class="fixed bottom-[72px] md:bottom-0 left-0 w-full bg-surface-container/90 backdrop-blur-md border-t border-white/10 p-margin-mobile z-40">
+<div class="max-w-container-max mx-auto relative flex items-end gap-2">
+<button class="flex-shrink-0 w-10 h-10 rounded-full bg-surface-container-highest hover:bg-surface-bright border border-white/10 flex items-center justify-center text-on-surface-variant transition-colors group">
+<span class="material-symbols-outlined group-hover:text-primary transition-colors">library_books</span>
+</button>
+<div class="flex-1 bg-surface-lowest border border-outline-variant rounded-2xl overflow-hidden focus-within:border-primary focus-within:ring-1 focus-within:ring-primary transition-all flex items-end min-h-[48px]">
+<textarea class="w-full bg-transparent border-none focus:ring-0 text-on-surface placeholder-outline font-body-md resize-none py-3 px-4 max-h-32" placeholder="Query shared memory or direct agents..." rows="1" style="min-height: 48px;"></textarea>
+</div>
+<button class="flex-shrink-0 w-12 h-12 rounded-full bg-primary-container hover:bg-primary transition-colors flex items-center justify-center text-on-primary-container shadow-sm group">
+<span class="material-symbols-outlined icon-fill group-hover:scale-110 transition-transform">send</span>
+</button>
+</div>
+</div>
+<!-- BottomNavBar (from JSON) -->
+<nav class="md:hidden bg-surface-container dark:bg-surface-container-low docked full-width bottom-0 fixed rounded-t-full border-t border-white/10 bg-surface-container/80 backdrop-blur-md flex justify-around items-center px-4 py-2 w-full z-50">
+<!-- Inactive: Memory -->
+<a class="flex flex-col items-center justify-center text-outline p-2 hover:text-secondary transition-colors" href="#">
+<span class="material-symbols-outlined mb-1">book_2</span>
+<span class="text-label-caps font-label-caps">Memory</span>
+</a>
+<!-- Inactive: Agents -->
+<a class="flex flex-col items-center justify-center text-outline p-2 hover:text-secondary transition-colors" href="#">
+<span class="material-symbols-outlined mb-1">hub</span>
+<span class="text-label-caps font-label-caps">Agents</span>
+</a>
+<!-- Active: Chat -->
+<a class="flex flex-col items-center justify-center bg-secondary-container text-on-secondary-container rounded-full px-4 py-1 hover:text-secondary transition-colors translate-y-[-2px] transition-transform" href="#">
+<span class="material-symbols-outlined mb-1 icon-fill">forum</span>
+<span class="text-label-caps font-label-caps font-bold">Chat</span>
+</a>
+<!-- Inactive: Settings -->
+<a class="flex flex-col items-center justify-center text-outline p-2 hover:text-secondary transition-colors" href="#">
+<span class="material-symbols-outlined mb-1">settings</span>
+<span class="text-label-caps font-label-caps">Settings</span>
+</a>
+</nav>
+</body></html>

@@ -7,6 +7,7 @@ import 'package:lucide_icons/lucide_icons.dart';
 import '../../core/api/api_service.dart';
 import '../../core/auth/custom_auth_service.dart';
 import '../../core/config/env_config.dart';
+import '../../ui/digital_librarian.dart';
 import '../memory/memory_models.dart';
 import '../sources/source.dart';
 import '../sources/source_chat_sheet.dart';
@@ -292,9 +293,12 @@ class AgentConnectionsScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        toolbarHeight: 72,
-        titleSpacing: 20,
-        title: const _Brand(),
+        toolbarHeight: 64,
+        titleSpacing: 16,
+        title: const NoteClawHeader(
+          compact: true,
+          eyebrow: 'MCP protocol',
+        ),
         actions: [
           const SubscriptionBalanceButton(),
           PopupMenuButton<_WorkspaceMenuAction>(
@@ -388,55 +392,60 @@ class AgentConnectionsScreen extends ConsumerWidget {
           const SizedBox(width: 8),
         ],
       ),
+      bottomNavigationBar: const MemoryNavigationBar(
+        selected: MemoryDestination.agents,
+      ),
       body: RefreshIndicator(
         onRefresh: () => ref.read(memoryWorkspaceProvider.notifier).refresh(),
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(18, 14, 18, 48),
+          padding: const EdgeInsets.fromLTRB(16, 20, 16, 40),
           children: [
             Center(
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 1180),
+                constraints: const BoxConstraints(maxWidth: 980),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    _WorkspaceHeader(
+                    const TechnicalLabel('Agent hub'),
+                    const SizedBox(height: 7),
+                    Text(
+                      'Connected Agents',
+                      style:
+                          Theme.of(context).textTheme.headlineSmall?.copyWith(
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: -0.5,
+                              ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'MCP Protocol · Auth & Connections',
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                            color:
+                                Theme.of(context).colorScheme.onSurfaceVariant,
+                            fontSize: 9,
+                          ),
+                    ),
+                    const SizedBox(height: 16),
+                    _AgentHubStatus(
                       state: workspace,
                       onConnectAgent: () => _showConnectAgent(context),
-                      onResearch: () => context.push('/research'),
                       onManageAccess: () =>
                           _showTopicAccess(context, workspace.topicAccess),
                     ),
-                    const SizedBox(height: 22),
-                    LayoutBuilder(
-                      builder: (context, constraints) {
-                        final notebooks = _NotebookSection(state: workspace);
-                        final agents = _ConnectedAgentsSection(
-                          state: workspace,
-                          onTalk: (notebook) =>
-                              _talkToAgent(context, ref, notebook),
-                        );
-
-                        if (constraints.maxWidth < 880) {
-                          return Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              notebooks,
-                              const SizedBox(height: 18),
-                              agents,
-                            ],
-                          );
-                        }
-
-                        return Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(flex: 7, child: notebooks),
-                            const SizedBox(width: 18),
-                            Expanded(flex: 4, child: agents),
-                          ],
-                        );
-                      },
+                    const SizedBox(height: 24),
+                    _ConnectedAgentsSection(
+                      state: workspace,
+                      onTalk: (notebook) =>
+                          _talkToAgent(context, ref, notebook),
+                    ),
+                    const SizedBox(height: 24),
+                    _SharedSessionsSection(state: workspace),
+                    const SizedBox(height: 14),
+                    FilledButton.icon(
+                      onPressed: () => _showConnectAgent(context),
+                      icon: const Icon(LucideIcons.plus, size: 17),
+                      label: const Text('Connect New Agent'),
                     ),
                   ],
                 ),
@@ -449,6 +458,141 @@ class AgentConnectionsScreen extends ConsumerWidget {
   }
 }
 
+class _AgentHubStatus extends StatelessWidget {
+  const _AgentHubStatus({
+    required this.state,
+    required this.onConnectAgent,
+    required this.onManageAccess,
+  });
+
+  final MemoryWorkspaceState state;
+  final VoidCallback onConnectAgent;
+  final VoidCallback onManageAccess;
+
+  @override
+  Widget build(BuildContext context) {
+    return DigitalLibrarianPanel(
+      padding: const EdgeInsets.all(14),
+      color: DigitalLibrarian.surfaceLow,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: LiveStatus(
+                  label: state.liveConnections > 0
+                      ? '${state.liveConnections} LIVE CONNECTION${state.liveConnections == 1 ? '' : 'S'}'
+                      : 'MCP ENDPOINT READY',
+                  active: state.liveConnections > 0,
+                ),
+              ),
+              Text(
+                '${state.notebooks.length} NOTEBOOKS',
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: DigitalLibrarian.primary,
+                      fontSize: 9,
+                    ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              OutlinedButton.icon(
+                onPressed: onManageAccess,
+                icon: const Icon(LucideIcons.shieldCheck, size: 16),
+                label: const Text('Topic access'),
+              ),
+              OutlinedButton.icon(
+                onPressed: onConnectAgent,
+                icon: const Icon(LucideIcons.keyRound, size: 16),
+                label: const Text('Tokens & setup'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SharedSessionsSection extends StatelessWidget {
+  const _SharedSessionsSection({required this.state});
+
+  final MemoryWorkspaceState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final sessions = state.notebooks.take(4).toList(growable: false);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const TechnicalLabel('Shared sessions'),
+        const SizedBox(height: 9),
+        if (sessions.isEmpty)
+          const DigitalLibrarianPanel(
+            child: Text(
+              'Sessions appear when agents on this account write to the same topic notebook.',
+            ),
+          )
+        else
+          DigitalLibrarianPanel(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Column(
+              children: [
+                for (var index = 0; index < sessions.length; index++) ...[
+                  ListTile(
+                    dense: true,
+                    leading: Icon(
+                      sessions[index].session.websocketConnected
+                          ? LucideIcons.radio
+                          : LucideIcons.database,
+                      size: 18,
+                      color: sessions[index].session.websocketConnected
+                          ? DigitalLibrarian.secondary
+                          : DigitalLibrarian.primary,
+                    ),
+                    title: Text(
+                      sessions[index].title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    subtitle: Text(
+                      '${sessions[index].sourceCount} sources · ${sessions[index].session.displayAgentName}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context)
+                          .textTheme
+                          .labelSmall
+                          ?.copyWith(fontSize: 9),
+                    ),
+                    trailing: const Icon(LucideIcons.chevronRight, size: 16),
+                    onTap: () => context.push(
+                      '/memory-notebooks/${sessions[index].id}',
+                    ),
+                  ),
+                  if (index < sessions.length - 1)
+                    Divider(
+                      height: 1,
+                      color: Theme.of(context).colorScheme.outlineVariant,
+                    ),
+                ],
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+// ignore: unused_element
 class _Brand extends StatelessWidget {
   const _Brand();
 
@@ -499,6 +643,7 @@ class _Brand extends StatelessWidget {
   }
 }
 
+// ignore: unused_element
 class _WorkspaceHeader extends StatelessWidget {
   const _WorkspaceHeader({
     required this.state,
@@ -1087,6 +1232,7 @@ class _AgentRow extends StatelessWidget {
   }
 }
 
+// ignore: unused_element
 class _NotebookSection extends StatelessWidget {
   const _NotebookSection({required this.state});
 

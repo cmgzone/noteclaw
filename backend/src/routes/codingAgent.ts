@@ -3762,6 +3762,113 @@ router.get(
 );
 
 router.post(
+  '/memory/notebooks/:notebookId/live-agent-source',
+  authenticateToken,
+  async (req: Request, res: Response) => {
+    try {
+      if (!requireAccountOwnerAuth(req, res)) return;
+
+      const userId = (req as any).userId;
+      const { notebookId } = req.params;
+      const notebookResult = await pool.query(
+        `SELECT n.id, n.title, n.agent_session_id, a.agent_name
+         FROM notebooks n
+         LEFT JOIN agent_sessions a ON a.id = n.agent_session_id
+         WHERE n.id::text = $1 AND n.user_id = $2`,
+        [notebookId, userId],
+      );
+
+      if (notebookResult.rows.length === 0) {
+        return res.status(404).json({
+          success: false,
+          code: 'TOPIC_NOT_FOUND',
+          error: 'Topic notebook not found.',
+        });
+      }
+
+      const notebook = notebookResult.rows[0];
+      const agentSessionId = notebook.agent_session_id as string | null;
+      if (!agentSessionId) {
+        return res.status(409).json({
+          success: false,
+          code: 'NO_AGENT_SESSION',
+          error: 'This notebook is not connected to a coding agent.',
+        });
+      }
+
+      let sourceResult = await pool.query(
+        `SELECT id, notebook_id, type, title, metadata, created_at, updated_at
+         FROM sources
+         WHERE notebook_id = $1
+           AND user_id = $2
+           AND type = 'agent_chat'
+           AND metadata->>'agentSessionId' = $3
+         ORDER BY created_at ASC
+         LIMIT 1`,
+        [notebook.id, userId, agentSessionId],
+      );
+
+      if (sourceResult.rows.length === 0) {
+        const sourceId = uuidv4();
+        const agentName = notebook.agent_name || 'Coding agent';
+        sourceResult = await pool.query(
+          `INSERT INTO sources (
+             id, notebook_id, user_id, type, title, content, metadata,
+             created_at, updated_at
+           )
+           VALUES ($1, $2, $3, 'agent_chat', $4, '', $5::jsonb, NOW(), NOW())
+           RETURNING id, notebook_id, type, title, metadata, created_at, updated_at`,
+          [
+            sourceId,
+            notebook.id,
+            userId,
+            `Live chat with ${agentName}`,
+            JSON.stringify({
+              agentSessionId,
+              systemSource: true,
+              purpose: 'realtime_coding_agent_chat',
+            }),
+          ],
+        );
+      }
+
+      const source = sourceResult.rows[0];
+      return res.json({
+        success: true,
+        source: {
+          id: source.id,
+          notebookId: source.notebook_id,
+          type: source.type,
+          title: source.title,
+          metadata:
+            typeof source.metadata === 'string'
+              ? JSON.parse(source.metadata)
+              : source.metadata || {},
+          createdAt: source.created_at,
+          updatedAt: source.updated_at,
+        },
+        agent: {
+          sessionId: agentSessionId,
+          name: notebook.agent_name || 'Coding agent',
+          websocketConnected:
+            agentWebSocketService.isAgentConnected(agentSessionId),
+          websocketConnectionCount:
+            agentWebSocketService.getConnectionCount(agentSessionId),
+          connectedClients:
+            agentWebSocketService.getConnectedClients(agentSessionId),
+        },
+      });
+    } catch (error: any) {
+      console.error('Create live agent chat source error:', error);
+      return res.status(500).json({
+        success: false,
+        error: error.message || 'Failed to open live coding agent chat.',
+      });
+    }
+  },
+);
+
+router.post(
   '/memory/notebooks/:notebookId/chat',
   authenticateToken,
   async (req: Request, res: Response) => {

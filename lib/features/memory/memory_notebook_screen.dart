@@ -3,9 +3,11 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 
 import '../../core/api/api_service.dart';
+import '../../ui/digital_librarian.dart';
 import 'memory_models.dart';
 
 class MemoryNotebookScreen extends ConsumerStatefulWidget {
@@ -46,8 +48,12 @@ class _MemoryNotebookScreenState extends ConsumerState<MemoryNotebookScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        toolbarHeight: 68,
-        title: const Text('Memory notebook'),
+        toolbarHeight: 64,
+        titleSpacing: 16,
+        title: const NoteClawHeader(
+          compact: true,
+          eyebrow: 'Memory notebook',
+        ),
         actions: [
           IconButton(
             onPressed: _refresh,
@@ -56,6 +62,9 @@ class _MemoryNotebookScreenState extends ConsumerState<MemoryNotebookScreen> {
           ),
           const SizedBox(width: 10),
         ],
+      ),
+      bottomNavigationBar: const MemoryToolNavigationBar(
+        selected: MemoryToolDestination.notebook,
       ),
       body: FutureBuilder<MemoryNotebookDetail>(
         future: _detail,
@@ -92,41 +101,24 @@ class _MemoryNotebookScreenState extends ConsumerState<MemoryNotebookScreen> {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         _NotebookHeader(detail: detail),
+                        const SizedBox(height: 12),
+                        FilledButton.icon(
+                          onPressed: () => context.push(
+                            '/memory-notebooks/${detail.notebook.id}/chat',
+                          ),
+                          icon: const Icon(
+                            LucideIcons.messagesSquare,
+                            size: 18,
+                          ),
+                          label: const Text('Chat with this memory'),
+                        ),
                         const SizedBox(height: 18),
-                        LayoutBuilder(
-                          builder: (context, constraints) {
-                            final memory = _MemoryBrowser(
-                              sources: sources,
-                              selected: selected,
-                              onSelected: (source) => setState(
-                                () => _selectedSourceId = source.id,
-                              ),
-                            );
-                            final chat = MemoryChatPanel(
-                              notebook: detail.notebook,
-                              sources: sources,
-                            );
-
-                            if (constraints.maxWidth < 920) {
-                              return Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  memory,
-                                  const SizedBox(height: 18),
-                                  chat,
-                                ],
-                              );
-                            }
-
-                            return Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(flex: 7, child: memory),
-                                const SizedBox(width: 18),
-                                SizedBox(width: 390, child: chat),
-                              ],
-                            );
-                          },
+                        _MemoryBrowser(
+                          sources: sources,
+                          selected: selected,
+                          onSelected: (source) => setState(
+                            () => _selectedSourceId = source.id,
+                          ),
                         ),
                       ],
                     ),
@@ -528,7 +520,6 @@ class _SourceViewer extends StatelessWidget {
           Divider(height: 1, color: scheme.outlineVariant),
           Container(
             constraints: const BoxConstraints(minHeight: 320, maxHeight: 570),
-            color: scheme.surfaceContainerHighest.withValues(alpha: 0.33),
             child: memory.isEmpty
                 ? Center(
                     child: Text(
@@ -621,7 +612,14 @@ class _StructuredMemoryView extends StatelessWidget {
             name: memory.entries.elementAt(index).key,
             value: memory.entries.elementAt(index).value,
           ),
-          if (index < memory.entries.length - 1) const SizedBox(height: 10),
+          if (index < memory.entries.length - 1)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              child: Divider(
+                height: 1,
+                color: Theme.of(context).colorScheme.outlineVariant,
+              ),
+            ),
         ],
       ],
     );
@@ -640,43 +638,35 @@ class _MemoryFieldCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: scheme.surface.withValues(alpha: 0.74),
-        borderRadius: BorderRadius.circular(13),
-        border: Border.all(color: scheme.outlineVariant),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  _readableMemoryLabel(name),
-                  style: TextStyle(
-                    color: scheme.onSurfaceVariant,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.65,
-                  ),
-                ),
-              ),
-              Text(
-                _memoryValueType(value),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                _readableMemoryLabel(name),
                 style: TextStyle(
-                  color: scheme.onSurfaceVariant.withValues(alpha: 0.72),
-                  fontFamily: 'monospace',
-                  fontSize: 9,
+                  color: scheme.onSurfaceVariant,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.65,
                 ),
               ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          _MemoryValueView(value: value),
-        ],
-      ),
+            ),
+            Text(
+              _memoryValueType(value),
+              style: TextStyle(
+                color: scheme.onSurfaceVariant.withValues(alpha: 0.72),
+                fontFamily: 'monospace',
+                fontSize: 9,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 9),
+        _MemoryValueView(value: value),
+      ],
     );
   }
 }
@@ -762,38 +752,24 @@ class _MemoryValueView extends StatelessWidget {
       return Column(
         children: [
           for (var index = 0; index < visibleItems.length; index++) ...[
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(11),
-              decoration: BoxDecoration(
-                color: scheme.surfaceContainerHighest.withValues(alpha: 0.42),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                  color: scheme.outlineVariant.withValues(alpha: 0.78),
-                ),
-              ),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    constraints: const BoxConstraints(minWidth: 22),
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 5, vertical: 3),
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: scheme.primary.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
+                  SizedBox(
+                    width: 24,
                     child: Text(
-                      '${index + 1}',
+                      '${index + 1}.',
                       style: TextStyle(
                         color: scheme.primary,
+                        fontFamily: 'monospace',
                         fontSize: 10,
-                        fontWeight: FontWeight.w800,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
                   ),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: 6),
                   Expanded(
                     child: _MemoryValueView(
                       value: visibleItems[index],
@@ -803,7 +779,6 @@ class _MemoryValueView extends StatelessWidget {
                 ],
               ),
             ),
-            if (index < visibleItems.length - 1) const SizedBox(height: 7),
           ],
           if (normalized.length > visibleItems.length) ...[
             const SizedBox(height: 8),
@@ -827,47 +802,33 @@ class _MemoryValueView extends StatelessWidget {
         style: TextStyle(color: scheme.onSurfaceVariant),
       );
     }
-    return Container(
-      padding: const EdgeInsets.all(11),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest.withValues(alpha: 0.32),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: scheme.outlineVariant.withValues(alpha: 0.72),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          for (var index = 0; index < map.entries.length; index++) ...[
-            Text(
-              _readableMemoryLabel(map.entries.elementAt(index).key),
-              style: TextStyle(
-                color: scheme.onSurfaceVariant,
-                fontSize: 10,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0.45,
-              ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (var index = 0; index < map.entries.length; index++) ...[
+          Text(
+            _readableMemoryLabel(map.entries.elementAt(index).key),
+            style: TextStyle(
+              color: scheme.onSurfaceVariant,
+              fontSize: 10,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.45,
             ),
-            const SizedBox(height: 5),
-            _MemoryValueView(
-              value: map.entries.elementAt(index).value,
-              depth: depth + 1,
-            ),
-            if (index < map.entries.length - 1)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 9),
-                child: Divider(height: 1, color: scheme.outlineVariant),
-              ),
-          ],
+          ),
+          const SizedBox(height: 5),
+          _MemoryValueView(
+            value: map.entries.elementAt(index).value,
+            depth: depth + 1,
+          ),
+          if (index < map.entries.length - 1) const SizedBox(height: 12),
         ],
-      ),
+      ],
     );
   }
 }
 
-class MemoryChatPanel extends ConsumerStatefulWidget {
-  const MemoryChatPanel({
+class LegacyMemoryChatPanel extends ConsumerStatefulWidget {
+  const LegacyMemoryChatPanel({
     super.key,
     required this.notebook,
     required this.sources,
@@ -877,10 +838,10 @@ class MemoryChatPanel extends ConsumerStatefulWidget {
   final List<MemorySource> sources;
 
   @override
-  ConsumerState<MemoryChatPanel> createState() => _MemoryChatPanelState();
+  ConsumerState<LegacyMemoryChatPanel> createState() => _MemoryChatPanelState();
 }
 
-class _MemoryChatPanelState extends ConsumerState<MemoryChatPanel> {
+class _MemoryChatPanelState extends ConsumerState<LegacyMemoryChatPanel> {
   final _controller = TextEditingController();
   final _scrollController = ScrollController();
   final List<MemoryChatMessage> _messages = [];

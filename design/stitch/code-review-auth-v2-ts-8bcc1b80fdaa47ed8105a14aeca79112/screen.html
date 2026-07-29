@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Code Review - NoteClaw</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&amp;family=Inter:wght@400;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-primary-fixed": "#001a42",
+                        "primary": "#adc6ff",
+                        "tertiary": "#d0bcff",
+                        "on-tertiary-fixed-variant": "#5516be",
+                        "on-secondary-fixed": "#002113",
+                        "on-background": "#dae2fd",
+                        "secondary-fixed-dim": "#4edea3",
+                        "on-tertiary-fixed": "#23005c",
+                        "surface": "#0b1326",
+                        "on-primary-container": "#00285d",
+                        "error": "#ffb4ab",
+                        "outline-variant": "#424754",
+                        "on-tertiary-container": "#340080",
+                        "tertiary-container": "#a078ff",
+                        "on-error-container": "#ffdad6",
+                        "surface-container-high": "#222a3d",
+                        "on-primary": "#002e6a",
+                        "background": "#0b1326",
+                        "on-surface-variant": "#c2c6d6",
+                        "primary-container": "#4d8eff",
+                        "surface-container-highest": "#2d3449",
+                        "surface-bright": "#31394d",
+                        "on-secondary-fixed-variant": "#005236",
+                        "on-surface": "#dae2fd",
+                        "on-error": "#690005",
+                        "tertiary-fixed-dim": "#d0bcff",
+                        "surface-container-lowest": "#060e20",
+                        "on-secondary": "#003824",
+                        "surface-variant": "#2d3449",
+                        "secondary": "#4edea3",
+                        "surface-dim": "#0b1326",
+                        "inverse-surface": "#dae2fd",
+                        "surface-tint": "#adc6ff",
+                        "secondary-container": "#00a572",
+                        "outline": "#8c909f",
+                        "inverse-primary": "#005ac2",
+                        "surface-container": "#171f33",
+                        "primary-fixed": "#d8e2ff",
+                        "tertiary-fixed": "#e9ddff",
+                        "inverse-on-surface": "#283044",
+                        "on-secondary-container": "#00311f",
+                        "on-primary-fixed-variant": "#004395",
+                        "error-container": "#93000a",
+                        "primary-fixed-dim": "#adc6ff",
+                        "surface-container-low": "#131b2e",
+                        "secondary-fixed": "#6ffbbe",
+                        "on-tertiary": "#3c0091"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "gutter": "16px",
+                        "unit": "4px",
+                        "margin-desktop": "32px",
+                        "margin-mobile": "16px",
+                        "container-max": "1440px"
+                    },
+                    "fontFamily": {
+                        "label-caps": ["JetBrains Mono"],
+                        "headline-lg": ["Inter"],
+                        "code-sm": ["JetBrains Mono"],
+                        "headline-lg-mobile": ["Inter"],
+                        "body-md": ["Inter"],
+                        "headline-md": ["Inter"]
+                    },
+                    "fontSize": {
+                        "label-caps": ["12px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "500" }],
+                        "headline-lg": ["32px", { "lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "code-sm": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "headline-lg-mobile": ["24px", { "lineHeight": "32px", "fontWeight": "600" }],
+                        "body-md": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+                        "headline-md": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body {
+            background-color: theme('colors.background');
+            color: theme('colors.on-background');
+        }
+        .diff-added { background-color: rgba(78, 222, 163, 0.1); border-left: 2px solid theme('colors.secondary'); }
+        .diff-removed { background-color: rgba(255, 180, 171, 0.1); border-left: 2px solid theme('colors.error'); }
+        .diff-neutral { border-left: 2px solid transparent; }
+
+        /* Inner Glow */
+        .glass-panel {
+            background: rgba(30, 41, 59, 0.6);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-top: 1px solid rgba(255, 255, 255, 0.15);
+            border-left: 1px solid rgba(255, 255, 255, 0.15);
+        }
+
+        .pulse-dot {
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.4; }
+            100% { opacity: 1; }
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="antialiased min-h-screen flex flex-col md:flex-row">
+<!-- Mobile Top App Bar -->
+<header class="md:hidden flex items-center justify-between px-margin-mobile h-16 bg-surface/60 backdrop-blur-xl border-b border-white/10 fixed top-0 w-full z-50">
+<div class="flex items-center gap-4">
+<span class="material-symbols-outlined text-primary cursor-pointer active:opacity-70 transition-colors">menu</span>
+<span class="font-headline-md text-headline-md tracking-tight text-primary">NoteClaw</span>
+</div>
+<span class="material-symbols-outlined text-primary cursor-pointer active:opacity-70 transition-colors">search</span>
+</header>
+<!-- Desktop Side Navigation -->
+<nav class="hidden md:flex flex-col py-gutter bg-surface-container-low border-r border-white/10 h-full w-64 fixed left-0 top-0 z-40">
+<div class="px-6 mb-8 mt-4">
+<h1 class="font-headline-md text-headline-md text-primary">NoteClaw Librarian</h1>
+</div>
+<ul class="flex-1 flex flex-col gap-1">
+<li>
+<a class="flex items-center gap-4 px-6 py-3 text-on-surface-variant hover:bg-surface-container-highest transition-all duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined">book_2</span>
+<span class="font-label-caps text-label-caps">Memory Notebook</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-4 px-6 py-3 text-on-surface-variant hover:bg-surface-container-highest transition-all duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined">fact_check</span>
+<span class="font-label-caps text-label-caps">Fact Check</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-4 px-6 py-3 bg-primary-container/20 text-primary border-l-2 border-primary hover:bg-surface-container-highest transition-all duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">terminal</span>
+<span class="font-label-caps text-label-caps">Code Review</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-4 px-6 py-3 text-on-surface-variant hover:bg-surface-container-highest transition-all duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined">settings</span>
+<span class="font-label-caps text-label-caps">Settings</span>
+</a>
+</li>
+</ul>
+</nav>
+<!-- Main Content Area -->
+<main class="flex-1 mt-16 md:mt-0 md:ml-64 p-margin-mobile md:p-margin-desktop mb-24 md:mb-0 max-w-container-max mx-auto w-full">
+<!-- Header & Summary -->
+<div class="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+<div>
+<div class="flex items-center gap-2 mb-2">
+<span class="font-label-caps text-label-caps text-primary px-2 py-1 bg-primary/10 rounded-DEFAULT border border-primary/20">PR-402</span>
+<span class="font-label-caps text-label-caps text-on-surface-variant">AuthMiddleware.ts</span>
+</div>
+<h2 class="font-headline-lg-mobile md:font-headline-lg text-headline-lg-mobile md:text-headline-lg">Authentication refactor</h2>
+</div>
+<div class="flex gap-4">
+<div class="glass-panel px-4 py-2 rounded-lg flex items-center gap-3">
+<div class="flex items-center gap-1.5 text-error">
+<span class="material-symbols-outlined text-sm" style="font-variation-settings: 'FILL' 1;">warning</span>
+<span class="font-label-caps text-label-caps">2 Critical</span>
+</div>
+<div class="w-px h-4 bg-outline-variant"></div>
+<div class="flex items-center gap-1.5 text-secondary">
+<span class="material-symbols-outlined text-sm">lightbulb</span>
+<span class="font-label-caps text-label-caps">1 Suggestion</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Active Agents Bar -->
+<div class="flex items-center gap-4 mb-6 border-b border-surface-container-highest pb-4">
+<span class="font-label-caps text-label-caps text-on-surface-variant">ACTIVE AGENTS:</span>
+<div class="flex items-center gap-2 px-3 py-1.5 bg-surface-container rounded-full border border-surface-container-highest">
+<div class="w-2 h-2 rounded-full bg-secondary pulse-dot"></div>
+<span class="font-code-sm text-code-sm">Claude 3.5 Sonnet</span>
+</div>
+<div class="flex items-center gap-2 px-3 py-1.5 bg-surface-container rounded-full border border-surface-container-highest">
+<div class="w-2 h-2 rounded-full bg-error pulse-dot"></div>
+<span class="font-code-sm text-code-sm">Cursor Security</span>
+</div>
+</div>
+<!-- Review Grid Layout -->
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+<!-- Code Diff Panel (Spans 2 columns on desktop) -->
+<div class="lg:col-span-2 glass-panel rounded-xl overflow-hidden flex flex-col">
+<div class="bg-surface-container-lowest px-4 py-3 border-b border-surface-container-highest flex items-center justify-between">
+<span class="font-code-sm text-code-sm text-on-surface-variant">src/middleware/auth.ts</span>
+<button class="font-label-caps text-label-caps text-primary hover:text-primary-fixed transition-colors">EXPAND</button>
+</div>
+<div class="p-4 overflow-x-auto font-code-sm text-code-sm text-on-surface font-mono leading-relaxed bg-[#0b1326]">
+<div class="diff-neutral px-2 flex"><span class="w-8 text-outline text-right pr-4 select-none">42</span><span>  async function verifyToken(req: Request, res: Response, next: NextFunction) {</span></div>
+<div class="diff-neutral px-2 flex"><span class="w-8 text-outline text-right pr-4 select-none">43</span><span>    const token = req.headers.authorization?.split(' ')[1];</span></div>
+<div class="diff-removed px-2 flex text-error/80"><span class="w-8 text-outline text-right pr-4 select-none">44</span><span>-   if (!token) return res.status(401).send('Access Denied');</span></div>
+<div class="diff-added px-2 flex text-secondary"><span class="w-8 text-outline text-right pr-4 select-none">44</span><span>+   if (!token) {</span></div>
+<div class="diff-added px-2 flex text-secondary"><span class="w-8 text-outline text-right pr-4 select-none">45</span><span>+     logger.warn('Authentication attempt without token', { ip: req.ip });</span></div>
+<div class="diff-added px-2 flex text-secondary"><span class="w-8 text-outline text-right pr-4 select-none">46</span><span>+     return res.status(401).json({ error: 'Authentication required' });</span></div>
+<div class="diff-added px-2 flex text-secondary"><span class="w-8 text-outline text-right pr-4 select-none">47</span><span>+   }</span></div>
+<div class="diff-neutral px-2 flex"><span class="w-8 text-outline text-right pr-4 select-none">48</span><span> </span></div>
+<div class="diff-neutral px-2 flex"><span class="w-8 text-outline text-right pr-4 select-none">49</span><span>    try {</span></div>
+<div class="diff-removed px-2 flex text-error/80"><span class="w-8 text-outline text-right pr-4 select-none">50</span><span>-     const verified = jwt.verify(token, process.env.TOKEN_SECRET);</span></div>
+<div class="diff-added px-2 flex text-secondary"><span class="w-8 text-outline text-right pr-4 select-none">50</span><span>+     // Security vulnerability highlighted below</span></div>
+<div class="diff-added px-2 flex text-secondary relative"><span class="w-8 text-outline text-right pr-4 select-none">51</span><span>+     const verified = jwt.verify(token, process.env.TOKEN_SECRET, { algorithms: ['HS256'] });</span>
+<div class="absolute right-2 top-0 bottom-0 flex items-center">
+<span class="material-symbols-outlined text-error text-sm" style="font-variation-settings: 'FILL' 1;">warning</span>
+</div>
+</div>
+<div class="diff-neutral px-2 flex"><span class="w-8 text-outline text-right pr-4 select-none">52</span><span>      req.user = verified;</span></div>
+<div class="diff-neutral px-2 flex"><span class="w-8 text-outline text-right pr-4 select-none">53</span><span>      next();</span></div>
+</div>
+</div>
+<!-- Agent Comments Panel -->
+<div class="flex flex-col gap-4">
+<!-- Critical Issue -->
+<div class="glass-panel rounded-xl p-4 border-l-2 border-l-error">
+<div class="flex justify-between items-start mb-3">
+<div class="flex items-center gap-2">
+<div class="w-6 h-6 rounded bg-error/20 flex items-center justify-center">
+<span class="material-symbols-outlined text-error text-sm">security</span>
+</div>
+<span class="font-label-caps text-label-caps text-error">Cursor Security</span>
+</div>
+<span class="font-code-sm text-code-sm text-outline">Line 51</span>
+</div>
+<h3 class="font-body-md text-body-md font-semibold text-on-surface mb-2">JWT Algorithm Confusion Vulnerability</h3>
+<p class="font-body-md text-body-md text-on-surface-variant mb-4">Hardcoding the algorithm to `['HS256']` is good, but you must ensure `process.env.TOKEN_SECRET` is never undefined or a public key if symmetric signing is expected.</p>
+<div class="bg-surface-container-lowest p-2 rounded border border-surface-container-highest font-code-sm text-code-sm text-primary/80">
+                        Suggest: Verify secret type before init.
+                    </div>
+<div class="mt-4 flex gap-2">
+<button class="px-3 py-1.5 bg-surface-container hover:bg-surface-container-high border border-surface-container-highest rounded font-label-caps text-label-caps transition-colors">Acknowledge</button>
+</div>
+</div>
+<!-- Suggestion -->
+<div class="glass-panel rounded-xl p-4 border-l-2 border-l-secondary">
+<div class="flex justify-between items-start mb-3">
+<div class="flex items-center gap-2">
+<div class="w-6 h-6 rounded bg-secondary/20 flex items-center justify-center">
+<span class="material-symbols-outlined text-secondary text-sm">speed</span>
+</div>
+<span class="font-label-caps text-label-caps text-secondary">Claude 3.5 Sonnet</span>
+</div>
+<span class="font-code-sm text-code-sm text-outline">Line 45</span>
+</div>
+<h3 class="font-body-md text-body-md font-semibold text-on-surface mb-2">Performance: Logger Await</h3>
+<p class="font-body-md text-body-md text-on-surface-variant mb-4">If `logger.warn` is writing to a slow transport (like a remote DB), consider removing the implicit block or firing it asynchronously without awaiting in the hot path of auth middleware.</p>
+<div class="mt-4 flex gap-2">
+<button class="px-3 py-1.5 bg-secondary text-on-secondary hover:bg-secondary/90 rounded font-label-caps text-label-caps transition-colors">Apply Fix</button>
+<button class="px-3 py-1.5 bg-surface-container hover:bg-surface-container-high border border-surface-container-highest rounded font-label-caps text-label-caps transition-colors">Dismiss</button>
+</div>
+</div>
+</div>
+</div>
+<!-- Action Footer -->
+<div class="mt-8 flex justify-end gap-4 border-t border-surface-container-highest pt-6">
+<button class="px-6 py-3 bg-surface-container hover:bg-surface-container-high border border-error/50 text-error rounded-lg font-label-caps text-label-caps transition-colors flex items-center gap-2">
+<span class="material-symbols-outlined text-sm">cancel</span>
+                Request Changes
+            </button>
+<button class="px-6 py-3 bg-primary text-on-primary hover:bg-primary/90 rounded-lg font-label-caps text-label-caps transition-colors flex items-center gap-2">
+<span class="material-symbols-outlined text-sm">check_circle</span>
+                Approve PR
+            </button>
+</div>
+</main>
+<!-- Mobile Bottom Navigation -->
+<nav class="md:hidden flex justify-around items-center h-16 px-4 pb-safe bg-surface-container/80 backdrop-blur-xl fixed bottom-0 w-full z-50 rounded-t-xl border-t border-white/10 shadow-lg">
+<a class="flex flex-col items-center justify-center text-on-surface-variant/60 hover:text-primary/80 active:scale-95 transition-transform w-1/4" href="#">
+<span class="material-symbols-outlined mb-1">database</span>
+<span class="font-label-caps text-label-caps text-[10px]">Notebook</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant/60 hover:text-primary/80 active:scale-95 transition-transform w-1/4" href="#">
+<span class="material-symbols-outlined mb-1">verified</span>
+<span class="font-label-caps text-label-caps text-[10px]">Fact Check</span>
+</a>
+<a class="flex flex-col items-center justify-center text-primary font-bold active:scale-95 transition-transform w-1/4" href="#">
+<span class="material-symbols-outlined mb-1" style="font-variation-settings: 'FILL' 1;">code</span>
+<span class="font-label-caps text-label-caps text-[10px]">Code Review</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant/60 hover:text-primary/80 active:scale-95 transition-transform w-1/4" href="#">
+<span class="material-symbols-outlined mb-1">lock</span>
+<span class="font-label-caps text-label-caps text-[10px]">Vault</span>
+</a>
+</nav>
+</body></html>

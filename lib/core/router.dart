@@ -8,8 +8,11 @@ import '../features/auth/email_verification_required_screen.dart';
 import '../features/auth/email_verification_screen.dart';
 import '../features/auth/password_reset_screen.dart';
 import '../features/auth/terms_of_service_screen.dart';
+import '../features/chat/memory_chat_screen.dart';
+import '../features/code_review/code_review_screen.dart';
 import '../features/fact_check/fact_check_screen.dart';
 import '../features/github/github_connect_screen.dart';
+import '../features/home/memory_dashboard_screen.dart';
 import '../features/memory/memory_notebook_screen.dart';
 import '../features/search/web_search_screen.dart';
 import '../features/settings/agent_connections_screen.dart';
@@ -51,11 +54,30 @@ GoRouter createRouter(ProviderContainer container) {
         name: 'memory-bank',
         pageBuilder: (context, state) => buildTransitionPage(
           child: const PaidAccessGate(
+            child: MemoryDashboardScreen(),
+          ),
+        ),
+      ),
+      GoRoute(
+        path: '/agents',
+        name: 'agent-hub',
+        pageBuilder: (context, state) => buildTransitionPage(
+          child: const PaidAccessGate(
             child: AgentConnectionsScreen(),
           ),
         ),
       ),
-      GoRoute(path: '/agent-connections', redirect: (_, __) => '/home'),
+      GoRoute(path: '/agent-connections', redirect: (_, __) => '/agents'),
+      GoRoute(
+        path: '/memory-chat',
+        name: 'memory-chat',
+        pageBuilder: (context, state) => buildTransitionPage(
+          child: const PaidAccessGate(
+            child: MemoryChatScreen(),
+          ),
+        ),
+      ),
+      GoRoute(path: '/chat', redirect: (_, __) => '/memory-chat'),
       GoRoute(
         path: '/research',
         name: 'deep-research',
@@ -70,6 +92,15 @@ GoRouter createRouter(ProviderContainer container) {
         name: 'fact-check',
         pageBuilder: (context, state) =>
             buildTransitionPage(child: const FactCheckScreen()),
+      ),
+      GoRoute(
+        path: '/code-review',
+        name: 'code-review',
+        pageBuilder: (context, state) => buildTransitionPage(
+          child: const PaidAccessGate(
+            child: CodeReviewScreen(),
+          ),
+        ),
       ),
       GoRoute(
         path: '/github',
@@ -97,6 +128,17 @@ GoRouter createRouter(ProviderContainer container) {
           child: PaidAccessGate(
             child: MemoryNotebookScreen(
               notebookId: state.pathParameters['notebookId'] ?? '',
+            ),
+          ),
+        ),
+      ),
+      GoRoute(
+        path: '/memory-notebooks/:notebookId/chat',
+        name: 'notebook-memory-chat',
+        pageBuilder: (context, state) => buildTransitionPage(
+          child: PaidAccessGate(
+            child: MemoryChatScreen(
+              initialNotebookId: state.pathParameters['notebookId'],
             ),
           ),
         ),

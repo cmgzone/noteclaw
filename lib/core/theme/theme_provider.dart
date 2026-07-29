@@ -7,7 +7,7 @@ final themeModeProvider = StateNotifierProvider<ThemeModeNotifier, ThemeMode>(
 );
 
 class ThemeModeNotifier extends StateNotifier<ThemeMode> {
-  ThemeModeNotifier() : super(ThemeMode.system) {
+  ThemeModeNotifier() : super(ThemeMode.dark) {
     _init();
   }
 
@@ -57,7 +57,7 @@ class ThemeModeNotifier extends StateNotifier<ThemeMode> {
       case 'system':
         return ThemeMode.system;
       default:
-        return ThemeMode.system;
+        return ThemeMode.dark;
     }
   }
 }

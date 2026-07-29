@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Fact Check - NoteClaw</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "on-primary-fixed": "#001a42",
+                      "primary": "#adc6ff",
+                      "tertiary": "#d0bcff",
+                      "on-tertiary-fixed-variant": "#5516be",
+                      "on-secondary-fixed": "#002113",
+                      "on-background": "#dae2fd",
+                      "secondary-fixed-dim": "#4edea3",
+                      "on-tertiary-fixed": "#23005c",
+                      "surface": "#0b1326",
+                      "on-primary-container": "#00285d",
+                      "error": "#ffb4ab",
+                      "outline-variant": "#424754",
+                      "on-tertiary-container": "#340080",
+                      "tertiary-container": "#a078ff",
+                      "on-error-container": "#ffdad6",
+                      "surface-container-high": "#222a3d",
+                      "on-primary": "#002e6a",
+                      "background": "#0b1326",
+                      "on-surface-variant": "#c2c6d6",
+                      "primary-container": "#4d8eff",
+                      "surface-container-highest": "#2d3449",
+                      "surface-bright": "#31394d",
+                      "on-secondary-fixed-variant": "#005236",
+                      "on-surface": "#dae2fd",
+                      "on-error": "#690005",
+                      "tertiary-fixed-dim": "#d0bcff",
+                      "surface-container-lowest": "#060e20",
+                      "on-secondary": "#003824",
+                      "surface-variant": "#2d3449",
+                      "secondary": "#4edea3",
+                      "surface-dim": "#0b1326",
+                      "inverse-surface": "#dae2fd",
+                      "surface-tint": "#adc6ff",
+                      "secondary-container": "#00a572",
+                      "outline": "#8c909f",
+                      "inverse-primary": "#005ac2",
+                      "surface-container": "#171f33",
+                      "primary-fixed": "#d8e2ff",
+                      "tertiary-fixed": "#e9ddff",
+                      "inverse-on-surface": "#283044",
+                      "on-secondary-container": "#00311f",
+                      "on-primary-fixed-variant": "#004395",
+                      "error-container": "#93000a",
+                      "primary-fixed-dim": "#adc6ff",
+                      "surface-container-low": "#131b2e",
+                      "secondary-fixed": "#6ffbbe",
+                      "on-tertiary": "#3c0091"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.125rem",
+                      "lg": "0.25rem",
+                      "xl": "0.5rem",
+                      "full": "0.75rem"
+              },
+              "spacing": {
+                      "gutter": "16px",
+                      "unit": "4px",
+                      "margin-desktop": "32px",
+                      "margin-mobile": "16px",
+                      "container-max": "1440px"
+              },
+              "fontFamily": {
+                      "label-caps": [
+                              "JetBrains Mono"
+                      ],
+                      "headline-lg": [
+                              "Inter"
+                      ],
+                      "code-sm": [
+                              "JetBrains Mono"
+                      ],
+                      "headline-lg-mobile": [
+                              "Inter"
+                      ],
+                      "body-md": [
+                              "Inter"
+                      ],
+                      "headline-md": [
+                              "Inter"
+                      ]
+              },
+              "fontSize": {
+                      "label-caps": [
+                              "12px",
+                              {
+                                      "lineHeight": "16px",
+                                      "letterSpacing": "0.05em",
+                                      "fontWeight": "500"
+                              }
+                      ],
+                      "headline-lg": [
+                              "32px",
+                              {
+                                      "lineHeight": "40px",
+                                      "letterSpacing": "-0.02em",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "code-sm": [
+                              "14px",
+                              {
+                                      "lineHeight": "20px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "headline-lg-mobile": [
+                              "24px",
+                              {
+                                      "lineHeight": "32px",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "body-md": [
+                              "16px",
+                              {
+                                      "lineHeight": "24px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "headline-md": [
+                              "24px",
+                              {
+                                      "lineHeight": "32px",
+                                      "letterSpacing": "-0.01em",
+                                      "fontWeight": "600"
+                              }
+                      ]
+              }
+      },
+          },
+        }
+    </script>
+<style>
+        /* Pulse Animation for Syncing State */
+        @keyframes pulse-opacity {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+        .animate-pulse-opacity {
+            animation: pulse-opacity 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+
+        /* Glassmorphism Inner Glow */
+        .glass-card {
+            background-color: theme('colors.surface-container');
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            border-left: 1px solid rgba(255, 255, 255, 0.1);
+            border-right: 1px solid rgba(0, 0, 0, 0.3);
+            border-bottom: 1px solid rgba(0, 0, 0, 0.3);
+            box-shadow: inset 1px 1px 0px rgba(255, 255, 255, 0.05);
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: theme('colors.surface');
+        }
+        ::-webkit-scrollbar-thumb {
+            background: theme('colors.surface-container-highest');
+            border-radius: theme('borderRadius.full');
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: theme('colors.outline');
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background min-h-screen flex flex-col md:flex-row antialiased">
+<!-- TopAppBar (Mobile) / Top Bar (Desktop) -->
+<header class="bg-surface/60 backdrop-blur-xl fixed top-0 w-full z-50 border-b border-white/10 flat no shadows flex items-center justify-between px-margin-mobile md:px-margin-desktop h-16 md:hidden">
+<div class="flex items-center gap-4">
+<span class="material-symbols-outlined cursor-pointer active:opacity-70 text-on-surface-variant hover:text-secondary-fixed-dim transition-colors" data-icon="menu">menu</span>
+<span class="font-headline-md text-headline-md tracking-tight text-primary">NoteClaw</span>
+</div>
+<div>
+<span class="material-symbols-outlined cursor-pointer active:opacity-70 text-on-surface-variant hover:text-secondary-fixed-dim transition-colors" data-icon="search">search</span>
+</div>
+</header>
+<!-- NavigationDrawer (Desktop) -->
+<nav class="bg-surface-container-low border-r border-white/10 flat no shadows h-full w-64 fixed left-0 top-0 flex flex-col py-gutter hidden md:flex z-40">
+<div class="px-6 mb-8 mt-2">
+<h1 class="font-headline-md text-headline-md text-primary tracking-tight">NoteClaw Librarian</h1>
+</div>
+<div class="flex flex-col gap-1 px-3">
+<a class="flex items-center gap-3 px-3 py-3 rounded-lg text-on-surface-variant hover:bg-surface-container-highest hover:bg-surface-container-high transition-all duration-200 ease-in-out font-label-caps text-label-caps" href="#">
+<span class="material-symbols-outlined" data-icon="book_2">book_2</span>
+<span>Memory Notebook</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-3 rounded-lg bg-primary-container/20 text-primary border-l-2 border-primary hover:bg-surface-container-highest transition-all duration-200 ease-in-out font-label-caps text-label-caps" href="#">
+<span class="material-symbols-outlined" data-icon="fact_check" style="font-variation-settings: 'FILL' 1;">fact_check</span>
+<span>Fact Check</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-3 rounded-lg text-on-surface-variant hover:bg-surface-container-highest hover:bg-surface-container-high transition-all duration-200 ease-in-out font-label-caps text-label-caps" href="#">
+<span class="material-symbols-outlined" data-icon="terminal">terminal</span>
+<span>Code Review</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-3 rounded-lg text-on-surface-variant hover:bg-surface-container-highest hover:bg-surface-container-high transition-all duration-200 ease-in-out font-label-caps text-label-caps" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span>Settings</span>
+</a>
+</div>
+</nav>
+<!-- Main Content Canvas -->
+<main class="flex-1 w-full pt-20 md:pt-8 pb-24 md:pb-8 px-margin-mobile md:px-margin-desktop md:ml-64 max-w-container-max mx-auto overflow-y-auto">
+<!-- Page Header & Claim Overview -->
+<div class="mb-10 animate-fade-in-up">
+<div class="flex items-center gap-3 mb-2">
+<div class="w-2 h-2 rounded-full bg-secondary animate-pulse-opacity"></div>
+<span class="font-label-caps text-label-caps text-secondary uppercase tracking-widest">Active Verification Process</span>
+</div>
+<h2 class="font-headline-lg-mobile md:font-headline-lg text-headline-lg-mobile md:text-headline-lg text-on-surface mb-6">Verification Report</h2>
+<!-- The Claim Box -->
+<div class="glass-card rounded-xl p-6 relative overflow-hidden group">
+<!-- Subtle background glow -->
+<div class="absolute -top-10 -right-10 w-32 h-32 bg-primary/10 rounded-full blur-2xl opacity-50 group-hover:opacity-100 transition-opacity duration-500"></div>
+<div class="flex flex-col md:flex-row gap-6 relative z-10">
+<div class="flex-1">
+<h3 class="font-label-caps text-label-caps text-outline mb-2">AI Claim Subject</h3>
+<div class="bg-surface-container-highest rounded-lg p-4 border border-white/5">
+<p class="font-body-md text-body-md text-on-surface leading-relaxed">
+                                "The current JWT implementation uses RS256 for signing, but the token expiration is set to 24 hours without a refresh token mechanism, exposing long-lived access tokens to potential interception in the stateless architecture."
+                            </p>
+</div>
+</div>
+<div class="md:w-64 flex flex-col justify-between border-t md:border-t-0 md:border-l border-white/10 pt-4 md:pt-0 md:pl-6">
+<div>
+<h3 class="font-label-caps text-label-caps text-outline mb-2">Overall Verdict</h3>
+<div class="flex items-center gap-2 mb-1">
+<span class="material-symbols-outlined text-secondary" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+<span class="font-headline-md text-headline-md text-secondary">Verified</span>
+</div>
+<span class="font-code-sm text-code-sm text-on-surface-variant">Match Score: 94%</span>
+</div>
+<div class="mt-4 md:mt-0 flex gap-2 flex-wrap">
+<span class="inline-flex items-center px-2 py-1 rounded bg-surface-container-highest border border-outline/30 font-code-sm text-code-sm text-primary">#auth</span>
+<span class="inline-flex items-center px-2 py-1 rounded bg-surface-container-highest border border-outline/30 font-code-sm text-code-sm text-primary">#security</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Verified Sources List -->
+<div>
+<h3 class="font-label-caps text-label-caps text-outline mb-6 flex items-center gap-2">
+<span class="material-symbols-outlined text-lg">database</span>
+                Verified Sources
+            </h3>
+<div class="flex flex-col gap-6">
+<!-- Source Item 1 -->
+<div class="glass-card rounded-xl overflow-hidden hover:bg-surface-container/90 transition-colors border-l-4 border-l-secondary">
+<div class="p-4 border-b border-white/5 bg-surface-container-low flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded bg-surface-container-highest flex items-center justify-center text-on-surface">
+<span class="material-symbols-outlined text-sm">description</span>
+</div>
+<div>
+<h4 class="font-code-sm text-code-sm text-on-surface font-medium">security-policy.md</h4>
+<span class="font-label-caps text-label-caps text-on-surface-variant opacity-70">Namespace: Architecture/Docs</span>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<div class="flex flex-col sm:items-end">
+<span class="font-label-caps text-label-caps text-outline">Confidence</span>
+<span class="font-code-sm text-code-sm text-secondary">98% High</span>
+</div>
+<button class="px-4 py-2 rounded-lg bg-surface-container-highest hover:bg-surface-bright border border-white/10 text-primary font-label-caps text-label-caps transition-colors flex items-center gap-2">
+                                View Source
+                                <span class="material-symbols-outlined text-sm">open_in_new</span>
+</button>
+</div>
+</div>
+<div class="p-5">
+<h5 class="font-label-caps text-label-caps text-outline mb-3">Extracted Snippet</h5>
+<pre class="bg-surface-container-lowest p-4 rounded-lg overflow-x-auto border border-white/5"><code class="font-code-sm text-code-sm text-on-surface"># Token Lifecycle
+All authentication tokens must be signed using RS256.
+Currently, access tokens are issued with an <span class="bg-secondary/20 text-secondary px-1 rounded">expiresIn: '24h'</span>
+configuration to support legacy client sessions.
+<span class="bg-secondary/20 text-secondary px-1 rounded">Refresh tokens are not yet implemented</span> for the V2 API.</code></pre>
+</div>
+</div>
+<!-- Source Item 2 -->
+<div class="glass-card rounded-xl overflow-hidden hover:bg-surface-container/90 transition-colors border-l-4 border-l-secondary-fixed-dim">
+<div class="p-4 border-b border-white/5 bg-surface-container-low flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded bg-surface-container-highest flex items-center justify-center text-on-surface">
+<span class="material-symbols-outlined text-sm">code</span>
+</div>
+<div>
+<h4 class="font-code-sm text-code-sm text-on-surface font-medium">Auth_V2.ts</h4>
+<span class="font-label-caps text-label-caps text-on-surface-variant opacity-70">Namespace: Backend/Services</span>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<div class="flex flex-col sm:items-end">
+<span class="font-label-caps text-label-caps text-outline">Confidence</span>
+<span class="font-code-sm text-code-sm text-secondary-fixed-dim">90% Med</span>
+</div>
+<button class="px-4 py-2 rounded-lg bg-surface-container-highest hover:bg-surface-bright border border-white/10 text-primary font-label-caps text-label-caps transition-colors flex items-center gap-2">
+                                View Source
+                                <span class="material-symbols-outlined text-sm">open_in_new</span>
+</button>
+</div>
+</div>
+<div class="p-5">
+<h5 class="font-label-caps text-label-caps text-outline mb-3">Extracted Snippet</h5>
+<pre class="bg-surface-container-lowest p-4 rounded-lg overflow-x-auto border border-white/5"><code class="font-code-sm text-code-sm text-on-surface">export const generateToken = (user: User) =&gt; {
+  return jwt.sign(
+    { id: user.id, role: user.role },
+    privateKey,
+    {
+      <span class="bg-secondary-fixed-dim/20 text-secondary-fixed-dim px-1 rounded">algorithm: 'RS256'</span>,
+      <span class="bg-secondary-fixed-dim/20 text-secondary-fixed-dim px-1 rounded">expiresIn: '24h' // TODO: implement refresh tokens</span>
+    }
+  );
+};</code></pre>
+</div>
+</div>
+<!-- Source Item 3 (Partial Match Example) -->
+<div class="glass-card rounded-xl overflow-hidden hover:bg-surface-container/90 transition-colors border-l-4 border-l-outline">
+<div class="p-4 border-b border-white/5 bg-surface-container-low flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded bg-surface-container-highest flex items-center justify-center text-on-surface">
+<span class="material-symbols-outlined text-sm">forum</span>
+</div>
+<div>
+<h4 class="font-code-sm text-code-sm text-on-surface font-medium">Architecture Sync #42</h4>
+<span class="font-label-caps text-label-caps text-on-surface-variant opacity-70">Namespace: Meetings/Transcripts</span>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<div class="flex flex-col sm:items-end">
+<span class="font-label-caps text-label-caps text-outline">Confidence</span>
+<span class="font-code-sm text-code-sm text-on-surface-variant">45% Low</span>
+</div>
+<button class="px-4 py-2 rounded-lg bg-surface-container-highest hover:bg-surface-bright border border-white/10 text-primary font-label-caps text-label-caps transition-colors flex items-center gap-2 opacity-70">
+                                View Source
+                                <span class="material-symbols-outlined text-sm">open_in_new</span>
+</button>
+</div>
+</div>
+<div class="p-5">
+<h5 class="font-label-caps text-label-caps text-outline mb-3">Extracted Snippet</h5>
+<pre class="bg-surface-container-lowest p-4 rounded-lg overflow-x-auto border border-white/5 opacity-80"><code class="font-code-sm text-code-sm text-on-surface-variant">...we need to address the token lifetimes. A 24-hour window
+without rotation is risky for the new dashboard clients, especially
+since they are completely stateless...</code></pre>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- BottomNavBar (Mobile) -->
+<nav class="bg-surface-container/80 backdrop-blur-xl fixed bottom-0 w-full z-50 rounded-t-xl border-t border-white/10 shadow-lg md:hidden flex justify-around items-center h-16 px-4 pb-safe">
+<a class="flex flex-col items-center justify-center text-on-surface-variant/60 hover:text-primary/80 active:scale-95 transition-transform font-label-caps text-label-caps" href="#">
+<span class="material-symbols-outlined" data-icon="database">database</span>
+<span>Notebook</span>
+</a>
+<a class="flex flex-col items-center justify-center text-primary font-bold active:scale-95 transition-transform font-label-caps text-label-caps" href="#">
+<span class="material-symbols-outlined" data-icon="verified" style="font-variation-settings: 'FILL' 1;">verified</span>
+<span>Fact Check</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant/60 hover:text-primary/80 active:scale-95 transition-transform font-label-caps text-label-caps" href="#">
+<span class="material-symbols-outlined" data-icon="code">code</span>
+<span>Code Review</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant/60 hover:text-primary/80 active:scale-95 transition-transform font-label-caps text-label-caps" href="#">
+<span class="material-symbols-outlined" data-icon="lock">lock</span>
+<span>Vault</span>
+</a>
+</nav>
+</body></html>

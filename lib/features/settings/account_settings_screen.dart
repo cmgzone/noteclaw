@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 
 import '../../core/auth/custom_auth_service.dart';
+import '../../core/theme/theme_provider.dart';
+import '../../ui/digital_librarian.dart';
 import '../subscription/widgets/subscription_overview.dart';
 
 class AccountSettingsScreen extends ConsumerStatefulWidget {
@@ -69,7 +71,15 @@ class _AccountSettingsScreenState extends ConsumerState<AccountSettingsScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Account settings'),
+        toolbarHeight: 64,
+        titleSpacing: 16,
+        title: const NoteClawHeader(
+          compact: true,
+          eyebrow: 'Account & settings',
+        ),
+      ),
+      bottomNavigationBar: const MemoryNavigationBar(
+        selected: MemoryDestination.settings,
       ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(18, 18, 18, 48),
@@ -127,6 +137,63 @@ class _AccountSettingsScreenState extends ConsumerState<AccountSettingsScreen> {
                   ),
                   const SizedBox(height: 18),
                   const SubscriptionOverviewCard(),
+                  const SizedBox(height: 18),
+                  DigitalLibrarianPanel(
+                    padding: EdgeInsets.zero,
+                    child: Column(
+                      children: [
+                        ListTile(
+                          leading: const Icon(LucideIcons.github, size: 19),
+                          title: const Text(
+                            'GitHub connection',
+                            style: TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                          subtitle: const Text(
+                            'Repositories, sources and code review',
+                          ),
+                          trailing:
+                              const Icon(LucideIcons.chevronRight, size: 17),
+                          onTap: () => context.push('/github'),
+                        ),
+                        Divider(height: 1, color: scheme.outlineVariant),
+                        ListTile(
+                          leading:
+                              const Icon(LucideIcons.shieldCheck, size: 19),
+                          title: const Text(
+                            'Agent access',
+                            style: TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                          subtitle: const Text(
+                            'MCP tokens and topic permissions',
+                          ),
+                          trailing:
+                              const Icon(LucideIcons.chevronRight, size: 17),
+                          onTap: () => context.go('/agents'),
+                        ),
+                        Divider(height: 1, color: scheme.outlineVariant),
+                        SwitchListTile(
+                          secondary: const Icon(LucideIcons.moon, size: 19),
+                          title: const Text(
+                            'Digital Librarian theme',
+                            style: TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                          subtitle: const Text(
+                            'Use the dark command-center appearance',
+                          ),
+                          value: ref.watch(themeModeProvider) == ThemeMode.dark,
+                          onChanged: (enabled) {
+                            final notifier =
+                                ref.read(themeModeProvider.notifier);
+                            if (enabled) {
+                              notifier.setDark();
+                            } else {
+                              notifier.setLight();
+                            }
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
                   const SizedBox(height: 18),
                   Container(
                     padding: const EdgeInsets.all(20),

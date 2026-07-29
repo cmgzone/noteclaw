@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>NoteClaw - Memory Dashboard</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                            "surface-container-low": "#131b2e",
+                            "on-tertiary": "#3c0091",
+                            "outline-variant": "#424754",
+                            "surface-container-highest": "#2d3449",
+                            "surface-container-lowest": "#060e20",
+                            "on-surface": "#dae2fd",
+                            "on-primary": "#002e6a",
+                            "surface-variant": "#2d3449",
+                            "surface-container-high": "#222a3d",
+                            "on-tertiary-container": "#340080",
+                            "surface-bright": "#31394d",
+                            "on-secondary-fixed": "#002113",
+                            "secondary-fixed": "#6ffbbe",
+                            "surface-container": "#171f33",
+                            "secondary-fixed-dim": "#4edea3",
+                            "secondary": "#4edea3",
+                            "on-secondary": "#003824",
+                            "tertiary-container": "#a078ff",
+                            "inverse-surface": "#dae2fd",
+                            "primary-fixed-dim": "#adc6ff",
+                            "on-primary-fixed-variant": "#004395",
+                            "on-tertiary-fixed": "#23005c",
+                            "on-primary-fixed": "#001a42",
+                            "inverse-on-surface": "#283044",
+                            "on-secondary-container": "#00311f",
+                            "primary": "#adc6ff",
+                            "on-secondary-fixed-variant": "#005236",
+                            "secondary-container": "#00a572",
+                            "primary-fixed": "#d8e2ff",
+                            "on-error": "#690005",
+                            "surface": "#0b1326",
+                            "tertiary-fixed-dim": "#d0bcff",
+                            "on-background": "#dae2fd",
+                            "surface-dim": "#0b1326",
+                            "on-surface-variant": "#c2c6d6",
+                            "on-primary-container": "#00285d",
+                            "surface-tint": "#adc6ff",
+                            "primary-container": "#4d8eff",
+                            "error-container": "#93000a",
+                            "tertiary": "#d0bcff",
+                            "tertiary-fixed": "#e9ddff",
+                            "outline": "#8c909f",
+                            "inverse-primary": "#005ac2",
+                            "error": "#ffb4ab",
+                            "background": "#0b1326",
+                            "on-error-container": "#ffdad6",
+                            "on-tertiary-fixed-variant": "#5516be"
+                    },
+                    "borderRadius": {
+                            "DEFAULT": "0.125rem",
+                            "lg": "0.25rem",
+                            "xl": "0.5rem",
+                            "full": "0.75rem"
+                    },
+                    "spacing": {
+                            "container-max": "1440px",
+                            "margin-mobile": "16px",
+                            "unit": "4px",
+                            "gutter": "16px",
+                            "margin-desktop": "32px"
+                    },
+                    "fontFamily": {
+                            "headline-lg": ["Inter"],
+                            "headline-md": ["Inter"],
+                            "code-sm": ["JetBrains Mono"],
+                            "headline-lg-mobile": ["Inter"],
+                            "label-caps": ["JetBrains Mono"],
+                            "body-md": ["Inter"]
+                    },
+                    "fontSize": {
+                            "headline-lg": ["32px", {"lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "600"}],
+                            "headline-md": ["24px", {"lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                            "code-sm": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                            "headline-lg-mobile": ["24px", {"lineHeight": "32px", "fontWeight": "600"}],
+                            "label-caps": ["12px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "500"}],
+                            "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "400"}]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        body { background-color: theme('colors.background'); color: theme('colors.on-background'); }
+        .glass-card {
+            background-color: theme('colors.surface-container-high');
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(12px);
+            box-shadow: inset 1px 1px 0px 0px rgba(255, 255, 255, 0.05);
+        }
+        .pulse-indicator {
+            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: .4; }
+        }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+</head>
+<body class="font-body-md antialiased pb-24 md:pb-0 h-screen flex flex-col md:flex-row overflow-hidden bg-[#020617]">
+<!-- Sidebar / Top Nav Container -->
+<div class="flex-none hidden md:flex md:w-64 md:flex-col md:border-r border-white/10 bg-surface-container/80 backdrop-blur-md z-40 relative">
+<div class="p-6 flex items-center space-x-3">
+<img alt="NoteClaw Logo" class="w-8 h-8 object-contain" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAWBRj7FYGUqckd9yukmI_40W5oHaDL7Pji0A5vlvJ6y9t1OC1a-GrWhWcTHwcEKdTFnqXZ-vvnUguMq3Osd3ldWilhNLC_9nibWgVK5hvJ8RVyShd99loot-L0Ych8O5OmsW-6S-dB7P8dWGg70e_Uw1Y8aQnxMra2WGNTotDfpAmONrXm2_-Uy0NNrT7urhO_q0re0v_vQ2bYhmFyLJz9pHbrYUYiaZMQaka5CpIS1E-eSykNTdwpkQ"/>
+<span class="text-headline-md font-headline-md font-bold text-on-surface">NoteClaw</span>
+</div>
+<div class="px-6 pb-4">
+<div class="flex items-center space-x-2 text-secondary text-code-sm font-code-sm px-2 py-1 bg-secondary-fixed/10 rounded border border-secondary-fixed/20">
+<div class="w-2 h-2 rounded-full bg-secondary pulse-indicator"></div>
+<span class="truncate">Live: Claude 3.5 Sonnet connected via MCP</span>
+</div>
+</div>
+<nav class="flex-1 px-4 space-y-2 mt-4">
+<a class="flex items-center space-x-3 px-4 py-3 bg-secondary-container text-on-secondary-container rounded-lg hover:opacity-80 transition-opacity scale-95 duration-150" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">book_2</span>
+<span class="text-label-caps font-label-caps">Memory</span>
+</a>
+<a class="flex items-center space-x-3 px-4 py-3 text-on-surface-variant hover:text-secondary transition-colors rounded-lg" href="#">
+<span class="material-symbols-outlined">hub</span>
+<span class="text-label-caps font-label-caps">Agents</span>
+</a>
+<a class="flex items-center space-x-3 px-4 py-3 text-on-surface-variant hover:text-secondary transition-colors rounded-lg" href="#">
+<span class="material-symbols-outlined">forum</span>
+<span class="text-label-caps font-label-caps">Chat</span>
+</a>
+<a class="flex items-center space-x-3 px-4 py-3 text-on-surface-variant hover:text-secondary transition-colors rounded-lg" href="#">
+<span class="material-symbols-outlined">settings</span>
+<span class="text-label-caps font-label-caps">Settings</span>
+</a>
+</nav>
+<div class="p-6 mt-auto">
+<div class="flex items-center space-x-3">
+<div class="w-10 h-10 rounded-full overflow-hidden border border-outline/30 bg-surface-container-high">
+<img class="w-full h-full object-cover" data-alt="A futuristic, digital avatar portrait of a technical user. Dark cyberpunk aesthetic, deep blues and neon teal accents. High contrast, sharp focus, professional yet slightly anonymous. Minimalist geometric background." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAf_vtfH5Ie6kfMCHC5iHydrUak5fdK79FM68r2C_qS4lE9LIXZiDEpxla4zvzqbLvUGxbvauovFj_iXjIgifBQ6Y8idDa_tAr3yo9YS5moTwcWUTpRyd_f9HfmNKmji2wjs4OjLpUbsqoBOIRBNYeHMK8FytlPo7qGTxVL4iT5ZNviXIznb8W1okoA6P27BXO7-FHhkfMDv7xO0Id44cfj1yBmXObr2TM7vFSTn_rU473rezpMrP9fzg"/>
+</div>
+<div>
+<div class="text-code-sm font-code-sm text-on-surface">user_774</div>
+<div class="text-label-caps font-label-caps text-on-surface-variant">Librarian</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Mobile Top App Bar -->
+<header class="md:hidden flex justify-between items-center px-margin-mobile h-16 w-full z-50 bg-surface/60 dark:bg-surface/60 backdrop-blur-xl border-b border-white/10 sticky top-0">
+<div class="flex items-center space-x-2">
+<div class="w-8 h-8 rounded-full overflow-hidden border border-outline/30 bg-surface-container-high">
+<img class="w-full h-full object-cover" data-alt="A futuristic, digital avatar portrait of a technical user. Dark cyberpunk aesthetic, deep blues and neon teal accents. High contrast, sharp focus, professional yet slightly anonymous. Minimalist geometric background." src="https://lh3.googleusercontent.com/aida-public/AB6AXuApxs5Nr5W_rOUzHLGKDu4Qw5lmWR0Zq2znPgOyrEufRpXmdIQbxKLGaSHf3qCOCAs66YIVay2exgiyu_m2HjMcy0szz1KoG2297DNuXVMvBGx_m7k1TdGkrvvxQZRackdrIBTp_qwrAfKwSq6naoWInx1OW0hcHnTrCCNrOUBwyfJ06Un3J5U6t5P3ws9oPPWxQ-zNAWsJQQHUPSdHkPhzvTZ1pIqShaT5RN43FYHr2b6dXpPdF9BmrA"/>
+</div>
+<span class="text-headline-md font-headline-md font-bold text-on-surface dark:text-on-surface hidden">NoteClaw</span>
+<img alt="NoteClaw Logo" class="w-6 h-6 object-contain" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAWBRj7FYGUqckd9yukmI_40W5oHaDL7Pji0A5vlvJ6y9t1OC1a-GrWhWcTHwcEKdTFnqXZ-vvnUguMq3Osd3ldWilhNLC_9nibWgVK5hvJ8RVyShd99loot-L0Ych8O5OmsW-6S-dB7P8dWGg70e_Uw1Y8aQnxMra2WGNTotDfpAmONrXm2_-Uy0NNrT7urhO_q0re0v_vQ2bYhmFyLJz9pHbrYUYiaZMQaka5CpIS1E-eSykNTdwpkQ"/>
+</div>
+<span class="text-headline-lg-mobile font-headline-lg-mobile text-on-surface font-bold tracking-tight">NoteClaw</span>
+<button class="text-on-surface-variant hover:opacity-80 transition-opacity">
+<span class="material-symbols-outlined">search</span>
+</button>
+</header>
+<!-- Main Content Canvas -->
+<main class="flex-1 flex flex-col h-full overflow-y-auto relative bg-[#020617]">
+<!-- Mobile Connection Ribbon -->
+<div class="md:hidden px-margin-mobile py-2 border-b border-white/5 bg-surface-container-low/50">
+<div class="flex items-center justify-center space-x-2 text-secondary text-label-caps font-label-caps">
+<div class="w-1.5 h-1.5 rounded-full bg-secondary pulse-indicator"></div>
+<span class="truncate">Live: Claude 3.5 Sonnet</span>
+</div>
+</div>
+<div class="p-margin-mobile md:p-margin-desktop max-w-container-max mx-auto w-full space-y-6 md:space-y-8 flex-1">
+<!-- Search Bar -->
+<div class="relative hidden md:block">
+<div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-on-surface-variant">
+<span class="material-symbols-outlined">search</span>
+</div>
+<input class="w-full pl-12 pr-4 py-3 bg-surface-container/50 border border-outline-variant/30 rounded-lg text-code-sm font-code-sm text-on-surface placeholder-on-surface-variant focus:outline-none focus:border-secondary focus:ring-1 focus:ring-secondary transition-all glass-card" placeholder="Search your agent's memory..." type="text"/>
+</div>
+<!-- Pinned Notebooks -->
+<section class="space-y-4">
+<h2 class="text-label-caps font-label-caps text-on-surface-variant uppercase tracking-wider pl-1">Pinned Notebooks</h2>
+<div class="flex overflow-x-auto pb-4 -mx-margin-mobile px-margin-mobile md:mx-0 md:px-0 space-x-4 no-scrollbar snap-x">
+<!-- Card 1 -->
+<div class="flex-none w-[280px] md:w-[320px] snap-start">
+<div class="glass-card rounded-xl p-5 flex flex-col h-32 hover:border-secondary/50 transition-colors cursor-pointer group">
+<div class="flex justify-between items-start mb-auto">
+<h3 class="text-code-sm font-code-sm text-on-surface font-semibold group-hover:text-primary transition-colors">Project: Phoenix</h3>
+<span class="material-symbols-outlined text-on-surface-variant text-[18px]">push_pin</span>
+</div>
+<div class="flex justify-between items-end mt-4">
+<div class="text-label-caps font-label-caps text-on-surface-variant">Updated 2h ago</div>
+<div class="flex items-center space-x-1 bg-surface-container-highest px-2 py-0.5 rounded text-label-caps font-label-caps text-on-surface">
+<span class="material-symbols-outlined text-[14px]">smart_toy</span>
+<span>3 Agents</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Card 2 -->
+<div class="flex-none w-[280px] md:w-[320px] snap-start">
+<div class="glass-card rounded-xl p-5 flex flex-col h-32 hover:border-secondary/50 transition-colors cursor-pointer group">
+<div class="flex justify-between items-start mb-auto">
+<h3 class="text-code-sm font-code-sm text-on-surface font-semibold group-hover:text-primary transition-colors">Personal Knowledge Base</h3>
+<span class="material-symbols-outlined text-on-surface-variant text-[18px]">push_pin</span>
+</div>
+<div class="flex justify-between items-end mt-4">
+<div class="text-label-caps font-label-caps text-on-surface-variant">Updated 1d ago</div>
+<div class="flex items-center space-x-1 bg-surface-container-highest px-2 py-0.5 rounded text-label-caps font-label-caps text-on-surface">
+<span class="material-symbols-outlined text-[14px]">smart_toy</span>
+<span>1 Agent</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Card 3 -->
+<div class="flex-none w-[280px] md:w-[320px] snap-start">
+<div class="glass-card rounded-xl p-5 flex flex-col h-32 hover:border-secondary/50 transition-colors cursor-pointer group border-dashed border-outline-variant/40 bg-surface-container-lowest/50 justify-center items-center">
+<span class="material-symbols-outlined text-on-surface-variant mb-2">add</span>
+<span class="text-label-caps font-label-caps text-on-surface-variant">Pin Notebook</span>
+</div>
+</div>
+</div>
+</section>
+<!-- All Memories -->
+<section class="space-y-4">
+<div class="flex justify-between items-center pl-1">
+<h2 class="text-label-caps font-label-caps text-on-surface-variant uppercase tracking-wider">All Memories</h2>
+<button class="text-label-caps font-label-caps text-secondary hover:text-primary transition-colors">View All</button>
+</div>
+<div class="flex flex-col space-y-3">
+<!-- List Item 1 -->
+<div class="glass-card rounded-lg p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-surface-container-highest/50 transition-colors cursor-pointer">
+<div class="flex-1 min-w-0">
+<div class="flex items-center space-x-2 mb-1">
+<div class="text-code-sm font-code-sm text-on-surface truncate">API Architecture Notes</div>
+<span class="px-1.5 py-0.5 rounded bg-surface-container-lowest border border-outline-variant/30 text-[10px] font-label-caps text-tertiary-fixed-dim uppercase tracking-wider">#code</span>
+</div>
+<p class="text-label-caps font-label-caps text-on-surface-variant truncate">REST vs GraphQL analysis, auth token refresh strategies discussed with ArchitectBot.</p>
+</div>
+<div class="flex items-center justify-between sm:justify-end sm:w-32 text-on-surface-variant">
+<div class="flex items-center -space-x-2">
+<div class="w-6 h-6 rounded-full bg-primary-container border border-surface flex items-center justify-center text-[10px] text-on-primary-container font-bold z-10">A1</div>
+<div class="w-6 h-6 rounded-full bg-secondary-container border border-surface flex items-center justify-center text-[10px] text-on-secondary-container font-bold z-0">S2</div>
+</div>
+<span class="text-[10px] font-label-caps">Just now</span>
+</div>
+</div>
+<!-- List Item 2 -->
+<div class="glass-card rounded-lg p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-surface-container-highest/50 transition-colors cursor-pointer">
+<div class="flex-1 min-w-0">
+<div class="flex items-center space-x-2 mb-1">
+<div class="text-code-sm font-code-sm text-on-surface truncate">Q3 Market Analysis</div>
+<span class="px-1.5 py-0.5 rounded bg-surface-container-lowest border border-outline-variant/30 text-[10px] font-label-caps text-secondary-fixed-dim uppercase tracking-wider">#finance</span>
+</div>
+<p class="text-label-caps font-label-caps text-on-surface-variant truncate">Synthesized competitor earnings reports and projected tech sector growth.</p>
+</div>
+<div class="flex items-center justify-between sm:justify-end sm:w-32 text-on-surface-variant">
+<div class="flex items-center -space-x-2">
+<div class="w-6 h-6 rounded-full bg-tertiary-container border border-surface flex items-center justify-center text-[10px] text-on-tertiary-container font-bold z-10">F4</div>
+</div>
+<span class="text-[10px] font-label-caps">4h ago</span>
+</div>
+</div>
+<!-- List Item 3 -->
+<div class="glass-card rounded-lg p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-surface-container-highest/50 transition-colors cursor-pointer opacity-70">
+<div class="flex-1 min-w-0">
+<div class="flex items-center space-x-2 mb-1">
+<div class="text-code-sm font-code-sm text-on-surface truncate">UX Patterns Research</div>
+<span class="px-1.5 py-0.5 rounded bg-surface-container-lowest border border-outline-variant/30 text-[10px] font-label-caps text-primary-fixed-dim uppercase tracking-wider">#research</span>
+</div>
+<p class="text-label-caps font-label-caps text-on-surface-variant truncate">Bento grid layouts, glassmorphism adoption rates in enterprise SaaS.</p>
+</div>
+<div class="flex items-center justify-between sm:justify-end sm:w-32 text-on-surface-variant">
+<div class="flex items-center -space-x-2">
+<div class="w-6 h-6 rounded-full bg-surface-bright border border-surface flex items-center justify-center text-[10px] text-on-surface font-bold z-10">U9</div>
+</div>
+<span class="text-[10px] font-label-caps">Yesterday</span>
+</div>
+</div>
+</div>
+</section>
+<div class="h-24 md:h-12 w-full"></div> <!-- Spacer for FAB/BottomNav -->
+</div>
+<!-- Floating Action Button -->
+<button class="fixed md:absolute bottom-24 md:bottom-8 right-4 md:right-8 w-14 h-14 bg-primary text-on-primary rounded-xl flex justify-center items-center shadow-lg hover:bg-primary-fixed transition-colors z-40 transform hover:scale-105 active:scale-95 group">
+<span class="material-symbols-outlined text-[28px] group-hover:rotate-90 transition-transform duration-300">add</span>
+</button>
+</main>
+<!-- Mobile Bottom Nav Bar -->
+<nav class="md:hidden fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-4 py-2 bg-surface-container/80 dark:bg-surface-container-low/80 backdrop-blur-md border-t border-white/10 pb-safe">
+<button class="flex flex-col items-center justify-center bg-secondary-container text-on-secondary-container rounded-full px-4 py-1 translate-y-[-2px] transition-transform">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">book_2</span>
+<span class="text-[10px] font-label-caps mt-1">Memory</span>
+</button>
+<button class="flex flex-col items-center justify-center text-outline p-2 hover:text-secondary transition-colors">
+<span class="material-symbols-outlined">hub</span>
+<span class="text-[10px] font-label-caps mt-1">Agents</span>
+</button>
+<button class="flex flex-col items-center justify-center text-outline p-2 hover:text-secondary transition-colors">
+<span class="material-symbols-outlined">forum</span>
+<span class="text-[10px] font-label-caps mt-1">Chat</span>
+</button>
+<button class="flex flex-col items-center justify-center text-outline p-2 hover:text-secondary transition-colors">
+<span class="material-symbols-outlined">settings</span>
+<span class="text-[10px] font-label-caps mt-1">Settings</span>
+</button>
+</nav>
+<!-- Inline script for safe area padding on iOS -->
+<style>
+        .pb-safe { padding-bottom: env(safe-area-inset-bottom, 0.5rem); }
+    </style>
+</body></html>

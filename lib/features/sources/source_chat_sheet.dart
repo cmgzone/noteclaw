@@ -150,14 +150,14 @@ class _SourceChatSheetState extends ConsumerState<SourceChatSheet> {
         ref.watch(sourceConversationProvider(widget.source.id));
 
     return ClipRRect(
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
         child: Container(
           height: MediaQuery.of(context).size.height * 0.85,
           decoration: BoxDecoration(
             color: scheme.surface.withValues(alpha: 0.95),
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
             border: Border.all(
               color: scheme.outline.withValues(alpha: 0.1),
             ),
@@ -242,14 +242,14 @@ class _SourceChatSheetState extends ConsumerState<SourceChatSheet> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Chat with $agentName',
+                  'Shared session · $agentName',
                   style: text.titleMedium?.copyWith(
                     fontWeight: FontWeight.bold,
                   ),
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  widget.source.title,
+                  '${widget.source.title} · MCP collaboration',
                   style: text.bodySmall?.copyWith(
                     color: scheme.onSurface.withValues(alpha: 0.6),
                   ),
