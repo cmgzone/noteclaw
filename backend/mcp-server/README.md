@@ -15,6 +15,11 @@ by NoteClaw.
 - `get_websocket_info` — get the live WebSocket endpoint and connection template
 - `review_code` — review code for correctness, security, and maintainability
 - `web_search` — run a focused live-web search with optional domain controls
+- `fact_check` — verify a claim with current web evidence and cited sources
+- `github_status` — check the account's GitHub connection
+- `github_repositories_list` — list repositories the user can access
+- `github_code_search` — search connected GitHub repositories
+- `github_file_save_to_notebook` — import a GitHub file as a notebook source
 - `deep_research_start` — start a cited background research job
 - `deep_research_status` — check job progress and obtain the completed session ID
 - `deep_research_result` — retrieve the completed report and citations
@@ -100,9 +105,11 @@ Example MCP client configuration:
    `ping` event with `{"type":"pong"}`.
 8. Call `review_code` when the agent needs a focused quality check before
    shipping a change.
-9. Call `web_search` for a quick current-information lookup, or start a longer
-   run with `deep_research_start`.
-10. Poll `deep_research_status`, retrieve the cited report with
+9. Call `web_search` for a quick current-information lookup, `fact_check` to
+   verify a specific claim, or start a longer run with `deep_research_start`.
+10. Use the GitHub tools only after the account owner has connected GitHub in
+   the NoteClaw app. Imported files become notebook sources.
+11. Poll `deep_research_status`, retrieve the cited report with
    `deep_research_result`, then persist it with `research_save_to_notebook`.
 
 ## Research configuration

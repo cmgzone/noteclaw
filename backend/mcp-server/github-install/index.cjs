@@ -43321,6 +43321,30 @@ var WebSearchSchema = external_exports.object({
   allowedDomains: external_exports.array(external_exports.string().min(1)).max(10).optional().default([]),
   blockedDomains: external_exports.array(external_exports.string().min(1)).max(20).optional().default([])
 });
+var FactCheckSchema = external_exports.object({
+  claim: external_exports.string().min(1).max(4e3),
+  maxSources: external_exports.number().int().min(2).max(8).optional().default(5)
+});
+var GitHubRepositoriesListSchema = external_exports.object({
+  type: external_exports.enum(["all", "owner", "member"]).optional().default("all"),
+  sort: external_exports.enum(["created", "updated", "pushed", "full_name"]).optional().default("updated"),
+  page: external_exports.number().int().min(1).optional().default(1),
+  perPage: external_exports.number().int().min(1).max(100).optional().default(30)
+});
+var GitHubCodeSearchSchema = external_exports.object({
+  query: external_exports.string().min(1).max(1e3),
+  repo: external_exports.string().min(3).optional(),
+  language: external_exports.string().min(1).optional(),
+  path: external_exports.string().min(1).optional(),
+  perPage: external_exports.number().int().min(1).max(100).optional().default(30)
+});
+var GitHubFileSaveSchema = external_exports.object({
+  notebookId: external_exports.string().min(1),
+  owner: external_exports.string().min(1),
+  repo: external_exports.string().min(1),
+  path: external_exports.string().min(1),
+  branch: external_exports.string().min(1).optional()
+});
 var researchDepths = ["quick", "standard", "deep"];
 var researchTemplates = [
   "general",
@@ -43576,6 +43600,99 @@ var tools = [
     }
   },
   {
+    name: "fact_check",
+    description: "Verify one factual claim against current web sources and return a verdict, confidence, explanation, and citations. This combines one live web search with one model-powered analysis and uses the account credit balance.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        claim: {
+          type: "string",
+          maxLength: 4e3,
+          description: "The specific factual claim to verify."
+        },
+        maxSources: {
+          type: "integer",
+          minimum: 2,
+          maximum: 8,
+          default: 5
+        }
+      },
+      required: ["claim"]
+    }
+  },
+  {
+    name: "github_status",
+    description: "Check whether this NoteClaw account has an active GitHub connection. GitHub credentials are never returned to the agent.",
+    inputSchema: {
+      type: "object",
+      properties: {}
+    }
+  },
+  {
+    name: "github_repositories_list",
+    description: "List repositories available through the GitHub account connected by the NoteClaw user. Repository access and GitHub rate limits are enforced.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        type: {
+          type: "string",
+          enum: ["all", "owner", "member"],
+          default: "all"
+        },
+        sort: {
+          type: "string",
+          enum: ["created", "updated", "pushed", "full_name"],
+          default: "updated"
+        },
+        page: { type: "integer", minimum: 1, default: 1 },
+        perPage: {
+          type: "integer",
+          minimum: 1,
+          maximum: 100,
+          default: 30
+        }
+      }
+    }
+  },
+  {
+    name: "github_code_search",
+    description: "Search code in repositories available to the user\u2019s connected GitHub account. Narrow searches by repository, language, or path.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string", maxLength: 1e3 },
+        repo: {
+          type: "string",
+          description: "Optional owner/repository name."
+        },
+        language: { type: "string" },
+        path: { type: "string" },
+        perPage: {
+          type: "integer",
+          minimum: 1,
+          maximum: 100,
+          default: 30
+        }
+      },
+      required: ["query"]
+    }
+  },
+  {
+    name: "github_file_save_to_notebook",
+    description: "Import one GitHub file as a source in a NoteClaw memory notebook. The repository must be accessible through the user\u2019s connected GitHub account.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        notebookId: { type: "string" },
+        owner: { type: "string" },
+        repo: { type: "string" },
+        path: { type: "string" },
+        branch: { type: "string" }
+      },
+      required: ["notebookId", "owner", "repo", "path"]
+    }
+  },
+  {
     name: "deep_research_start",
     description: "Start an asynchronous multi-step web research job. It generates research angles, collects sources, ranks credibility, and synthesizes a cited report. Standard and quick depth cost 5 NoteClaw credits; deep depth costs 10. Failed jobs are refunded. Use notebookId with useNotebookContext to align research with saved memories.",
     inputSchema: {
@@ -43667,10 +43784,18 @@ function createNoteClawMcpServer(options) {
     },
     timeout: 3e4
   });
+  const accountApi = axios_default.create({
+    baseURL: `${backendUrl2}/api`,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${options.apiToken}`
+    },
+    timeout: 3e4
+  });
   const server = new Server(
     {
       name: "noteclaw-memory",
-      version: "2.1.0"
+      version: "2.2.0"
     },
     {
       capabilities: {
@@ -43824,6 +43949,87 @@ function createNoteClawMcpServer(options) {
           });
           return textResult(response.data);
         }
+        case "fact_check": {
+          const input = FactCheckSchema.parse(args);
+          const searchResponse = await api.post(
+            "/research/search",
+            {
+              query: input.claim,
+              maxResults: input.maxSources
+            },
+            { timeout: 6e4 }
+          );
+          const sources = Array.isArray(searchResponse.data?.results) ? searchResponse.data.results : [];
+          const evidence = sources.map(
+            (source, index) => `[${index + 1}] ${String(source.title || "Untitled")}
+URL: ${String(source.url || "")}
+Snippet: ${String(source.snippet || "")}`
+          ).join("\n\n");
+          const prompt = `You are a rigorous fact checker. Evaluate the claim using only the provided current web evidence. Return one valid JSON object with fields claim, verdict (True, False, Misleading, or Unverified), confidence (0 to 1), explanation, and citationNumbers (an array of the evidence numbers you relied on). Do not use Markdown fences.
+
+CLAIM:
+${input.claim}
+
+WEB EVIDENCE:
+${evidence || "No sources found."}`;
+          const analysisResponse = await accountApi.post(
+            "/ai/chat",
+            {
+              messages: [{ role: "user", content: prompt }],
+              provider: "gemini",
+              billingFeature: "chat_message"
+            },
+            { timeout: 9e4 }
+          );
+          const rawAnalysis = String(analysisResponse.data?.response || "").trim();
+          const analysis = parseJsonObject(rawAnalysis);
+          return textResult({
+            success: true,
+            ...analysis,
+            sources,
+            credits: {
+              webSearch: searchResponse.data?.creditsCharged,
+              factAnalysis: 1
+            },
+            citationGuidance: "Match citationNumbers to the returned sources and cite their URLs."
+          });
+        }
+        case "github_status": {
+          const response = await accountApi.get("/github/status");
+          return textResult(response.data);
+        }
+        case "github_repositories_list": {
+          const input = GitHubRepositoriesListSchema.parse(args);
+          const query = new URLSearchParams({
+            type: input.type,
+            sort: input.sort,
+            page: String(input.page),
+            perPage: String(input.perPage)
+          });
+          const response = await accountApi.get(
+            `/github/repos?${query.toString()}`
+          );
+          return textResult(response.data);
+        }
+        case "github_code_search": {
+          const input = GitHubCodeSearchSchema.parse(args);
+          const query = new URLSearchParams({
+            q: input.query,
+            perPage: String(input.perPage)
+          });
+          if (input.repo) query.set("repo", input.repo);
+          if (input.language) query.set("language", input.language);
+          if (input.path) query.set("path", input.path);
+          const response = await accountApi.get(
+            `/github/search?${query.toString()}`
+          );
+          return textResult(response.data);
+        }
+        case "github_file_save_to_notebook": {
+          const input = GitHubFileSaveSchema.parse(args);
+          const response = await accountApi.post("/github/add-source", input);
+          return textResult(response.data);
+        }
         case "deep_research_start": {
           const input = DeepResearchStartSchema.parse(args);
           const response = await api.post("/research/jobs", input);
@@ -43884,6 +44090,22 @@ function textResult(value) {
         text: JSON.stringify(value, null, 2)
       }
     ]
+  };
+}
+function parseJsonObject(value) {
+  const withoutFence = value.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+  try {
+    const parsed = JSON.parse(withoutFence);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed;
+    }
+  } catch {
+  }
+  return {
+    verdict: "Unverified",
+    confidence: 0,
+    explanation: withoutFence || "No fact-check analysis was returned.",
+    citationNumbers: []
   };
 }
 function formatError2(error48) {

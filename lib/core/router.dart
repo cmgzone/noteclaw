@@ -8,7 +8,10 @@ import '../features/auth/email_verification_required_screen.dart';
 import '../features/auth/email_verification_screen.dart';
 import '../features/auth/password_reset_screen.dart';
 import '../features/auth/terms_of_service_screen.dart';
+import '../features/fact_check/fact_check_screen.dart';
+import '../features/github/github_connect_screen.dart';
 import '../features/memory/memory_notebook_screen.dart';
+import '../features/search/web_search_screen.dart';
 import '../features/settings/agent_connections_screen.dart';
 import '../features/settings/account_settings_screen.dart';
 import '../features/settings/privacy_policy_screen.dart';
@@ -53,6 +56,27 @@ GoRouter createRouter(ProviderContainer container) {
         ),
       ),
       GoRoute(path: '/agent-connections', redirect: (_, __) => '/home'),
+      GoRoute(
+        path: '/research',
+        name: 'deep-research',
+        pageBuilder: (context, state) => buildTransitionPage(
+          child: const PaidAccessGate(
+            child: WebSearchScreen(initialDeepResearch: true),
+          ),
+        ),
+      ),
+      GoRoute(
+        path: '/fact-check',
+        name: 'fact-check',
+        pageBuilder: (context, state) =>
+            buildTransitionPage(child: const FactCheckScreen()),
+      ),
+      GoRoute(
+        path: '/github',
+        name: 'github',
+        pageBuilder: (context, state) =>
+            buildTransitionPage(child: const GitHubConnectScreen()),
+      ),
       GoRoute(
         path: '/settings/account',
         name: 'account-settings',

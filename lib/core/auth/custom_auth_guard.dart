@@ -19,6 +19,9 @@ const protectedRoutePrefixes = [
   '/home',
   '/agent-connections',
   '/memory-notebooks',
+  '/research',
+  '/fact-check',
+  '/github',
   '/subscription',
   '/plan-selection',
 ];

@@ -20,7 +20,12 @@ import '../notebook/notebook.dart';
 import '../notebook/notebook_provider.dart';
 
 class WebSearchScreen extends ConsumerStatefulWidget {
-  const WebSearchScreen({super.key});
+  const WebSearchScreen({
+    super.key,
+    this.initialDeepResearch = false,
+  });
+
+  final bool initialDeepResearch;
 
   @override
   ConsumerState<WebSearchScreen> createState() => _WebSearchScreenState();
@@ -64,6 +69,7 @@ class _WebSearchScreenState extends ConsumerState<WebSearchScreen> {
   @override
   void initState() {
     super.initState();
+    _isDeepResearch = widget.initialDeepResearch;
     _searchController.addListener(_handleSearchChanged);
     _loadSearchHistory();
   }
@@ -866,7 +872,7 @@ $content''',
         ),
         action: SnackBarAction(
           label: 'Open',
-          onPressed: () => context.push('/notebook/$notebookId'),
+          onPressed: () => context.push('/memory-notebooks/$notebookId'),
         ),
       ),
     );
@@ -1417,7 +1423,8 @@ $content''',
             children: [
               Expanded(
                 child: FilledButton.icon(
-                  onPressed: !_isResearching && hasQuery ? _performSearch : null,
+                  onPressed:
+                      !_isResearching && hasQuery ? _performSearch : null,
                   icon: _isResearching
                       ? const SizedBox(
                           width: 18,
@@ -3739,7 +3746,7 @@ $content''',
         content: Text('Report saved to "$notebookTitle".'),
         action: SnackBarAction(
           label: 'Open',
-          onPressed: () => context.push('/notebook/$notebookId'),
+          onPressed: () => context.push('/memory-notebooks/$notebookId'),
         ),
       ),
     );

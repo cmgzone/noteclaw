@@ -8,10 +8,19 @@ import '../../core/api/api_service.dart';
 import '../../core/auth/custom_auth_service.dart';
 import '../../core/config/env_config.dart';
 import '../memory/memory_models.dart';
+import '../sources/source.dart';
+import '../sources/source_chat_sheet.dart';
 import '../subscription/widgets/subscription_overview.dart';
 import 'api_tokens_section.dart';
 
-enum _WorkspaceMenuAction { account, refresh, signOut }
+enum _WorkspaceMenuAction {
+  research,
+  factCheck,
+  github,
+  account,
+  refresh,
+  signOut,
+}
 
 class MemoryWorkspaceState {
   const MemoryWorkspaceState({
@@ -117,6 +126,166 @@ class AgentConnectionsScreen extends ConsumerWidget {
     if (context.mounted) context.go('/login');
   }
 
+  void _showConnectAgent(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) => FractionallySizedBox(
+        heightFactor: 0.92,
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 920),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 12, 10),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Connect an agent',
+                          style: Theme.of(sheetContext).textTheme.headlineSmall,
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.pop(sheetContext),
+                        tooltip: 'Close',
+                        icon: const Icon(LucideIcons.x),
+                      ),
+                    ],
+                  ),
+                ),
+                const Expanded(
+                  child: SingleChildScrollView(
+                    padding: EdgeInsets.fromLTRB(20, 4, 20, 32),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _TokenAccessCard(),
+                        SizedBox(height: 14),
+                        _ConnectionCard(),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showTopicAccess(
+    BuildContext context,
+    Map<String, dynamic> matrix,
+  ) {
+    showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) => FractionallySizedBox(
+        heightFactor: 0.88,
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 760),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 12, 10),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Agent topic access',
+                          style: Theme.of(sheetContext).textTheme.headlineSmall,
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.pop(sheetContext),
+                        tooltip: 'Close',
+                        icon: const Icon(LucideIcons.x),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(20, 4, 20, 32),
+                    child: _TopicAccessPanel(matrix: matrix),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _talkToAgent(
+    BuildContext context,
+    WidgetRef ref,
+    MemoryNotebook notebook,
+  ) async {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.showSnackBar(
+      SnackBar(
+        duration: const Duration(seconds: 1),
+        content: Text('Opening ${notebook.session.displayAgentName}…'),
+      ),
+    );
+
+    try {
+      final response =
+          await ref.read(apiServiceProvider).getMemoryNotebook(notebook.id);
+      final detail = MemoryNotebookDetail.fromJson(response);
+      if (!context.mounted) return;
+
+      if (detail.sources.isEmpty) {
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text(
+              'This agent needs to save its first memory before conversation can start.',
+            ),
+          ),
+        );
+        return;
+      }
+
+      final memorySource = detail.sources.first;
+      final source = Source(
+        id: memorySource.id,
+        notebookId: notebook.id,
+        title: memorySource.title,
+        type: memorySource.sourceType,
+        addedAt: memorySource.updatedAt ?? DateTime.now(),
+        content: memorySource.content,
+        summary: memorySource.summary,
+        metadata: {
+          'agentSessionId': notebook.session.id,
+          'agentName': notebook.session.displayAgentName,
+          'namespace': memorySource.namespace,
+        },
+      );
+      showSourceChatSheet(
+        context,
+        source: source,
+        agentName: notebook.session.displayAgentName,
+      );
+    } catch (error) {
+      if (!context.mounted) return;
+      messenger.showSnackBar(
+        SnackBar(content: Text(_friendlyError(error))),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final workspace = ref.watch(memoryWorkspaceProvider);
@@ -133,6 +302,15 @@ class AgentConnectionsScreen extends ConsumerWidget {
             icon: const Icon(LucideIcons.moreVertical, size: 20),
             onSelected: (action) async {
               switch (action) {
+                case _WorkspaceMenuAction.research:
+                  context.push('/research');
+                  break;
+                case _WorkspaceMenuAction.factCheck:
+                  context.push('/fact-check');
+                  break;
+                case _WorkspaceMenuAction.github:
+                  context.push('/github');
+                  break;
                 case _WorkspaceMenuAction.account:
                   context.push('/settings/account');
                   break;
@@ -148,6 +326,34 @@ class AgentConnectionsScreen extends ConsumerWidget {
               }
             },
             itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: _WorkspaceMenuAction.research,
+                child: ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(LucideIcons.search, size: 18),
+                  title: Text('Deep research'),
+                ),
+              ),
+              const PopupMenuItem(
+                value: _WorkspaceMenuAction.factCheck,
+                child: ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(LucideIcons.badgeCheck, size: 18),
+                  title: Text('Fact check'),
+                ),
+              ),
+              const PopupMenuItem(
+                value: _WorkspaceMenuAction.github,
+                child: ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(LucideIcons.github, size: 18),
+                  title: Text('GitHub'),
+                ),
+              ),
+              const PopupMenuDivider(),
               const PopupMenuItem(
                 value: _WorkspaceMenuAction.account,
                 child: ListTile(
@@ -194,50 +400,21 @@ class AgentConnectionsScreen extends ConsumerWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    _WorkspaceHeader(state: workspace),
-                    const SizedBox(height: 16),
-                    _MetricStrip(state: workspace),
-                    const SizedBox(height: 18),
-                    const SubscriptionOverviewCard(),
-                    const SizedBox(height: 18),
-                    LayoutBuilder(
-                      builder: (context, constraints) {
-                        const tokens = _TokenAccessCard();
-                        const connection = _ConnectionCard();
-
-                        if (constraints.maxWidth < 880) {
-                          return const Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              tokens,
-                              SizedBox(height: 14),
-                              connection,
-                            ],
-                          );
-                        }
-
-                        return const Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(flex: 6, child: tokens),
-                            SizedBox(width: 18),
-                            Expanded(flex: 5, child: connection),
-                          ],
-                        );
-                      },
+                    _WorkspaceHeader(
+                      state: workspace,
+                      onConnectAgent: () => _showConnectAgent(context),
+                      onResearch: () => context.push('/research'),
+                      onManageAccess: () =>
+                          _showTopicAccess(context, workspace.topicAccess),
                     ),
-                    const SizedBox(height: 28),
-                    _TopicAccessPanel(
-                      matrix: workspace.topicAccess,
-                    ),
-                    const SizedBox(height: 28),
+                    const SizedBox(height: 22),
                     LayoutBuilder(
                       builder: (context, constraints) {
                         final notebooks = _NotebookSection(state: workspace);
-                        const capabilities = Column(
-                          children: [
-                            _AgentToolsCard(),
-                          ],
+                        final agents = _ConnectedAgentsSection(
+                          state: workspace,
+                          onTalk: (notebook) =>
+                              _talkToAgent(context, ref, notebook),
                         );
 
                         if (constraints.maxWidth < 880) {
@@ -246,7 +423,7 @@ class AgentConnectionsScreen extends ConsumerWidget {
                             children: [
                               notebooks,
                               const SizedBox(height: 18),
-                              capabilities,
+                              agents,
                             ],
                           );
                         }
@@ -256,7 +433,7 @@ class AgentConnectionsScreen extends ConsumerWidget {
                           children: [
                             Expanded(flex: 7, child: notebooks),
                             const SizedBox(width: 18),
-                            const Expanded(flex: 4, child: capabilities),
+                            Expanded(flex: 4, child: agents),
                           ],
                         );
                       },
@@ -323,53 +500,42 @@ class _Brand extends StatelessWidget {
 }
 
 class _WorkspaceHeader extends StatelessWidget {
-  const _WorkspaceHeader({required this.state});
+  const _WorkspaceHeader({
+    required this.state,
+    required this.onConnectAgent,
+    required this.onResearch,
+    required this.onManageAccess,
+  });
 
   final MemoryWorkspaceState state;
+  final VoidCallback onConnectAgent;
+  final VoidCallback onResearch;
+  final VoidCallback onManageAccess;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return _Panel(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(20),
       color: scheme.surface,
       child: LayoutBuilder(
         builder: (context, constraints) {
           final copy = Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(
-                  color: scheme.primary.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  'PRIVATE WORKSPACE',
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: scheme.primary,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0.9,
-                      ),
-                ),
-              ),
-              const SizedBox(height: 14),
               Text(
-                'Shared memory for every agent on your project.',
-                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                'Your memory',
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                       fontWeight: FontWeight.w800,
-                      letterSpacing: -0.8,
-                      height: 1.12,
+                      letterSpacing: -0.5,
                     ),
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 5),
               Text(
-                'Agents on this account can restore durable settings, share '
-                'project context in real time, and request focused code reviews.',
+                '${state.notebooks.length} notebook${state.notebooks.length == 1 ? '' : 's'} '
+                'on this account',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: scheme.onSurfaceVariant,
-                      height: 1.55,
                     ),
               ),
             ],
@@ -410,13 +576,37 @@ class _WorkspaceHeader extends StatelessWidget {
             ),
           );
 
+          final actions = Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              FilledButton.icon(
+                onPressed: onConnectAgent,
+                icon: const Icon(LucideIcons.plug, size: 17),
+                label: const Text('Connect agent'),
+              ),
+              OutlinedButton.icon(
+                onPressed: onResearch,
+                icon: const Icon(LucideIcons.search, size: 17),
+                label: const Text('Deep research'),
+              ),
+              IconButton.outlined(
+                onPressed: onManageAccess,
+                tooltip: 'Manage agent topic access',
+                icon: const Icon(LucideIcons.shieldCheck, size: 18),
+              ),
+            ],
+          );
+
           if (constraints.maxWidth < 680) {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 copy,
-                const SizedBox(height: 20),
+                const SizedBox(height: 16),
                 Align(alignment: Alignment.centerLeft, child: status),
+                const SizedBox(height: 14),
+                actions,
               ],
             );
           }
@@ -425,103 +615,17 @@ class _WorkspaceHeader extends StatelessWidget {
             children: [
               Expanded(child: copy),
               const SizedBox(width: 28),
-              status,
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  status,
+                  const SizedBox(height: 12),
+                  actions,
+                ],
+              ),
             ],
           );
         },
-      ),
-    );
-  }
-}
-
-class _MetricStrip extends StatelessWidget {
-  const _MetricStrip({required this.state});
-
-  final MemoryWorkspaceState state;
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final count = constraints.maxWidth >= 700
-            ? 3
-            : constraints.maxWidth >= 430
-                ? 2
-                : 1;
-        const gap = 12.0;
-        final width = (constraints.maxWidth - gap * (count - 1)) / count;
-        return Wrap(
-          spacing: gap,
-          runSpacing: gap,
-          children: [
-            _Metric(
-              width: width,
-              icon: LucideIcons.library,
-              value: '${state.notebooks.length}',
-              label: 'Memory notebooks',
-            ),
-            _Metric(
-              width: width,
-              icon: LucideIcons.layers,
-              value: '${state.sourceCount}',
-              label: 'Namespace sources',
-            ),
-            _Metric(
-              width: width,
-              icon: LucideIcons.radio,
-              value: '${state.liveConnections}',
-              label: 'Live agent clients',
-            ),
-          ],
-        );
-      },
-    );
-  }
-}
-
-class _Metric extends StatelessWidget {
-  const _Metric({
-    required this.width,
-    required this.icon,
-    required this.value,
-    required this.label,
-  });
-
-  final double width;
-  final IconData icon;
-  final String value;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return SizedBox(
-      width: width,
-      child: _Panel(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            Icon(icon, size: 19, color: scheme.primary),
-            const SizedBox(width: 12),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  value,
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w800,
-                      ),
-                ),
-                Text(
-                  label,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                      ),
-                ),
-              ],
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -848,6 +952,141 @@ class _TopicAccessPanelState extends ConsumerState<_TopicAccessPanel> {
   }
 }
 
+class _ConnectedAgentsSection extends StatelessWidget {
+  const _ConnectedAgentsSection({
+    required this.state,
+    required this.onTalk,
+  });
+
+  final MemoryWorkspaceState state;
+  final ValueChanged<MemoryNotebook> onTalk;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final agents = state.notebooks
+        .where((notebook) => notebook.isAgentNotebook)
+        .toList(growable: false);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _SectionHeader(
+          title: 'Connected agents',
+          subtitle: 'Talk to agents sharing this account.',
+          trailing: state.isLoading && agents.isNotEmpty
+              ? const SizedBox(
+                  width: 17,
+                  height: 17,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : null,
+        ),
+        const SizedBox(height: 12),
+        if (state.isLoading && agents.isEmpty)
+          const _LoadingPanel()
+        else if (agents.isEmpty)
+          const _EmptyPanel(
+            icon: LucideIcons.bot,
+            title: 'No connected agents',
+            description:
+                'Use Connect agent to add an MCP client to this account.',
+          )
+        else
+          _Panel(
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            child: Column(
+              children: [
+                for (var index = 0; index < agents.length; index++) ...[
+                  _AgentRow(
+                    notebook: agents[index],
+                    onTalk: () => onTalk(agents[index]),
+                  ),
+                  if (index < agents.length - 1)
+                    Divider(
+                      height: 1,
+                      indent: 62,
+                      color: scheme.outlineVariant,
+                    ),
+                ],
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _AgentRow extends StatelessWidget {
+  const _AgentRow({
+    required this.notebook,
+    required this.onTalk,
+  });
+
+  final MemoryNotebook notebook;
+  final VoidCallback onTalk;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final session = notebook.session;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: scheme.primary.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(11),
+            ),
+            child: Icon(LucideIcons.bot, size: 19, color: scheme.primary),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        session.displayAgentName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                    const SizedBox(width: 7),
+                    _LiveDot(active: session.websocketConnected),
+                  ],
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  session.agentIdentifier,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                        fontFamily: 'monospace',
+                      ),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            onPressed: onTalk,
+            tooltip: 'Talk to ${session.displayAgentName}',
+            icon: const Icon(LucideIcons.messageCircle, size: 19),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _NotebookSection extends StatelessWidget {
   const _NotebookSection({required this.state});
 
@@ -1044,123 +1283,6 @@ class _NotebookCard extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-class _AgentToolsCard extends StatelessWidget {
-  const _AgentToolsCard();
-
-  @override
-  Widget build(BuildContext context) {
-    return const _Panel(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _SectionHeader(
-            title: 'Agent tools',
-            subtitle: 'A compact MCP surface with a clear purpose.',
-          ),
-          SizedBox(height: 16),
-          _ToolRow(
-            icon: LucideIcons.database,
-            title: 'Durable memory',
-            description: 'Read, write, compact, and restore project context.',
-            label: '7 tools',
-          ),
-          Divider(height: 25),
-          _ToolRow(
-            icon: LucideIcons.code2,
-            title: 'Code review',
-            description:
-                'Check correctness, security, and maintainability before shipping.',
-            label: 'review_code',
-          ),
-          Divider(height: 25),
-          _ToolRow(
-            icon: LucideIcons.search,
-            title: 'Web & deep research',
-            description:
-                'Search current sources, build cited reports, and save them to notebooks.',
-            label: '5 tools',
-          ),
-          Divider(height: 25),
-          _ToolRow(
-            icon: LucideIcons.radio,
-            title: 'Live collaboration',
-            description:
-                'Multiple agents share one session over authenticated WebSocket.',
-            label: 'real time',
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ToolRow extends StatelessWidget {
-  const _ToolRow({
-    required this.icon,
-    required this.title,
-    required this.description,
-    required this.label,
-  });
-
-  final IconData icon;
-  final String title;
-  final String description;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          width: 38,
-          height: 38,
-          decoration: BoxDecoration(
-            color: scheme.primary.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Icon(icon, color: scheme.primary, size: 18),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      title,
-                      style: const TextStyle(fontWeight: FontWeight.w800),
-                    ),
-                  ),
-                  Text(
-                    label,
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: scheme.primary,
-                          fontWeight: FontWeight.w700,
-                          fontFamily: label.contains('_') ? 'monospace' : null,
-                        ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Text(
-                description,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                      height: 1.45,
-                    ),
-              ),
-            ],
-          ),
-        ),
-      ],
     );
   }
 }

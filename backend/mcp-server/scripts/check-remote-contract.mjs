@@ -81,6 +81,43 @@ app.get(
   },
 );
 
+app.post('/api/coding-agent/research/search', (req, res) => {
+  res.json({
+    success: true,
+    query: req.body.query,
+    creditsCharged: 1,
+    results: [
+      {
+        position: 1,
+        title: 'Contract evidence',
+        url: 'https://example.com/evidence',
+        snippet: 'Current evidence for the contract claim.',
+      },
+    ],
+  });
+});
+
+app.post('/api/ai/chat', (_req, res) => {
+  res.json({
+    success: true,
+    response: JSON.stringify({
+      claim: 'The contract tool works',
+      verdict: 'True',
+      confidence: 0.99,
+      explanation: 'The mock evidence supports the claim.',
+      citationNumbers: [1],
+    }),
+  });
+});
+
+app.get('/api/github/status', (_req, res) => {
+  res.json({
+    success: true,
+    connected: true,
+    connection: { username: 'contract-user' },
+  });
+});
+
 let backendUrl = '';
 app.post('/mcp', async (req, res) => {
   const server = createNoteClawMcpServer({
@@ -135,6 +172,8 @@ try {
     'memory_get',
     'memory_put',
     'get_websocket_info',
+    'fact_check',
+    'github_status',
   ]) {
     if (!toolNames.has(required)) {
       throw new Error(`Remote MCP is missing ${required}`);
@@ -177,8 +216,41 @@ try {
     throw new Error('Remote MCP tool call returned an invalid payload');
   }
 
+  const factResult = await client.callTool({
+    name: 'fact_check',
+    arguments: {
+      claim: 'The contract tool works',
+    },
+  });
+  const factText = factResult.content.find(
+    (item) => item.type === 'text',
+  )?.text;
+  const factPayload = factText ? JSON.parse(factText) : null;
+  if (
+    factResult.isError ||
+    factPayload?.verdict !== 'True' ||
+    factPayload?.sources?.[0]?.url !== 'https://example.com/evidence'
+  ) {
+    throw new Error('Remote MCP fact-check tool returned an invalid payload');
+  }
+
+  const githubResult = await client.callTool({
+    name: 'github_status',
+    arguments: {},
+  });
+  const githubText = githubResult.content.find(
+    (item) => item.type === 'text',
+  )?.text;
+  const githubPayload = githubText ? JSON.parse(githubText) : null;
+  if (
+    githubResult.isError ||
+    githubPayload?.connection?.username !== 'contract-user'
+  ) {
+    throw new Error('Remote MCP GitHub tool returned an invalid payload');
+  }
+
   console.log(
-    `Remote MCP contract verified: ${listed.tools.length} tools, ${resources.resources.length} notebook resource, and authenticated tool execution`,
+    `Remote MCP contract verified: ${listed.tools.length} tools, ${resources.resources.length} notebook resource, memory execution, fact checking, and GitHub access`,
   );
 } finally {
   await client.close();
