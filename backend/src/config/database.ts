@@ -188,11 +188,31 @@ export async function initializeDatabase() {
                 ADD COLUMN IF NOT EXISTS analysis_rating SMALLINT,
                 ADD COLUMN IF NOT EXISTS analyzed_at TIMESTAMPTZ;
 
-            UPDATE sources s
-            SET user_id = n.user_id::text
-            FROM notebooks n
-            WHERE s.notebook_id = n.id
-              AND s.user_id IS NULL;
+            DO $$
+            DECLARE
+                source_user_id_type TEXT;
+            BEGIN
+                SELECT data_type
+                INTO source_user_id_type
+                FROM information_schema.columns
+                WHERE table_schema = current_schema()
+                  AND table_name = 'sources'
+                  AND column_name = 'user_id';
+
+                IF source_user_id_type = 'uuid' THEN
+                    UPDATE sources s
+                    SET user_id = n.user_id
+                    FROM notebooks n
+                    WHERE s.notebook_id = n.id
+                      AND s.user_id IS NULL;
+                ELSE
+                    UPDATE sources s
+                    SET user_id = n.user_id::text
+                    FROM notebooks n
+                    WHERE s.notebook_id = n.id
+                      AND s.user_id IS NULL;
+                END IF;
+            END $$;
 
             CREATE INDEX IF NOT EXISTS idx_sources_user_id ON sources(user_id);
             CREATE INDEX IF NOT EXISTS idx_sources_type ON sources(type);
