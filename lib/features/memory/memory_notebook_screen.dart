@@ -188,7 +188,7 @@ class _NotebookHeader extends StatelessWidget {
                     const SizedBox(height: 5),
                     Text(
                       notebook.description.isEmpty
-                          ? 'Durable memory written by ${session.agentName}.'
+                          ? 'Durable memory written by ${session.displayAgentName}.'
                           : notebook.description,
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                             color: scheme.onSurfaceVariant,
@@ -211,7 +211,7 @@ class _NotebookHeader extends StatelessWidget {
               ),
               _Badge(
                 icon: LucideIcons.bot,
-                label: session.agentName,
+                label: session.displayAgentName,
               ),
               _Badge(
                 icon: LucideIcons.radio,

@@ -49,6 +49,21 @@ const REMOTE_MCP_URL = `${
     "https://notebackend.pikpam.com"
 }/mcp`;
 
+type McpTab = "overview" | "tokens" | "topics" | "usage" | "sources" | "settings";
+
+const MCP_TABS = [
+    { id: "overview", label: "Workspace", icon: Bot },
+    { id: "tokens", label: "Access keys", icon: Key },
+    { id: "topics", label: "Topics", icon: BookOpen },
+    { id: "usage", label: "Activity", icon: Activity },
+    { id: "sources", label: "Sources", icon: Code },
+    { id: "settings", label: "Features", icon: Settings },
+] as const satisfies ReadonlyArray<{
+    id: McpTab;
+    label: string;
+    icon: React.ComponentType<{ size?: number; className?: string }>;
+}>;
+
 export default function McpDashboardPage() {
     return (
         <SubscriptionFeatureGate feature="memory_bank">
@@ -70,7 +85,7 @@ function McpDashboardContent() {
     const [aiModels, setAiModels] = useState<AIModelOption[]>([]);
     const [topicAccess, setTopicAccess] = useState<TopicAccessMatrix | null>(null);
     const [isLoading, setIsLoading] = useState(true);
-    const [activeTab, setActiveTab] = useState<"overview" | "tokens" | "topics" | "usage" | "sources" | "settings">("overview");
+    const [activeTab, setActiveTab] = useState<McpTab>("overview");
 
     useEffect(() => {
         if (!authLoading && !isAuthenticated) {
@@ -119,61 +134,104 @@ function McpDashboardContent() {
 
     if (authLoading || (!isAuthenticated && !authLoading)) {
         return (
-            <div className="min-h-screen bg-neutral-950 flex items-center justify-center">
-                <Loader2 className="animate-spin text-blue-500" size={40} />
+            <div className="flex min-h-screen items-center justify-center bg-[#071114]">
+                <Loader2 className="animate-spin text-[#62d3d0]" size={40} />
             </div>
         );
     }
 
+    const liveAgentCount = notebooks.reduce(
+        (total, notebook) => total + (notebook.session?.websocketConnectionCount || 0),
+        0,
+    );
+    const activeTokenCount = tokens.filter((token) => token.isActive).length;
+
     return (
-        <div className="min-h-screen bg-neutral-950 text-white">
+        <div className="min-h-screen bg-[#071114] text-white">
             <DashboardNav user={user} onLogout={handleLogout} />
-            <main className="container mx-auto px-6 py-8">
-                <header className="mb-8">
-                    <Link href="/dashboard" className="flex items-center gap-2 text-neutral-400 hover:text-white mb-4 text-sm">
+            <main className="container mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:py-9">
+                <header className="mb-7">
+                    <Link href="/dashboard" className="mb-4 inline-flex items-center gap-2 text-sm text-neutral-400 transition hover:text-white">
                         <ArrowLeft size={16} />
                         Back to Dashboard
                     </Link>
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <h1 className="text-3xl font-bold tracking-tight flex items-center gap-3">
-                                <Bot className="text-purple-400" />
-                                MCP Usage
-                            </h1>
-                            <p className="text-neutral-400 mt-1">Manage your API tokens and monitor coding agent activity.</p>
+
+                    <div className="relative overflow-hidden rounded-[28px] border border-[#62d3d0]/20 bg-[linear-gradient(135deg,rgba(19,49,56,0.96),rgba(18,24,46,0.98)_58%,rgba(50,20,67,0.96))] p-6 shadow-2xl shadow-black/30 sm:p-8">
+                        <div className="pointer-events-none absolute -right-16 -top-24 h-64 w-64 rounded-full bg-[#62d3d0]/15 blur-3xl" />
+                        <div className="pointer-events-none absolute -bottom-28 left-1/3 h-56 w-56 rounded-full bg-purple-600/20 blur-3xl" />
+
+                        <div className="relative grid gap-7 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-end">
+                            <div>
+                                <div className="mb-5 inline-flex items-center gap-3 rounded-2xl border border-white/10 bg-black/20 p-2 pr-4">
+                                    <Image src="/icon.png" alt="" width={42} height={42} className="rounded-xl" />
+                                    <div>
+                                        <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#8ce4df]">Agent memory control</div>
+                                        <div className="text-xs text-white/60">Private to this NoteClaw account</div>
+                                    </div>
+                                </div>
+                                <h1 className="max-w-3xl text-3xl font-bold tracking-[-0.035em] sm:text-4xl">
+                                    Memory, permissions, and live agent access.
+                                </h1>
+                                <p className="mt-3 max-w-2xl text-sm leading-6 text-white/65 sm:text-base">
+                                    Connect third-party agents to one organized workspace, give each agent topic-level access, and keep every source understandable to the user.
+                                </p>
+                                <div className="mt-6 flex flex-wrap gap-2">
+                                    <span className="inline-flex items-center gap-2 rounded-full border border-[#62d3d0]/25 bg-[#62d3d0]/10 px-3 py-1.5 text-xs font-semibold text-[#a5efea]">
+                                        <span className="h-1.5 w-1.5 rounded-full bg-[#62d3d0]" />
+                                        Hosted MCP ready
+                                    </span>
+                                    <span className="rounded-full border border-white/10 bg-white/[0.06] px-3 py-1.5 text-xs text-white/70">
+                                        {liveAgentCount} live agent{liveAgentCount === 1 ? "" : "s"}
+                                    </span>
+                                    <span className="rounded-full border border-white/10 bg-white/[0.06] px-3 py-1.5 text-xs text-white/70">
+                                        {notebooks.length} memory notebook{notebooks.length === 1 ? "" : "s"}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div className="rounded-2xl border border-white/10 bg-black/25 p-5 backdrop-blur-sm">
+                                <div className="text-xs font-bold uppercase tracking-[0.16em] text-white/45">Agent access</div>
+                                <div className="mt-2 text-2xl font-bold">{activeTokenCount}</div>
+                                <div className="text-sm text-white/55">active, revocable access key{activeTokenCount === 1 ? "" : "s"}</div>
+                                <button
+                                    onClick={() => setActiveTab("tokens")}
+                                    className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#62d3d0] px-4 py-3 text-sm font-bold text-[#061012] transition hover:bg-[#8ce4df]"
+                                >
+                                    <Key size={16} />
+                                    Manage agent access
+                                </button>
+                            </div>
                         </div>
-                        <button onClick={loadData} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors text-sm">
-                            <RefreshCw size={16} />
-                            Refresh
-                        </button>
-                    </div>
-                    <div className="mt-4 rounded-lg border border-amber-500/20 bg-amber-500/10 p-4 text-amber-200">
-                        <div className="font-semibold mb-2">Common Errors</div>
-                        <ul className="list-disc list-inside space-y-1 text-sm">
-                            <li>401: Invalid or expired API key. Generate a new token in Settings -&gt; Agent Connections.</li>
-                            <li>403: MCP disabled or insufficient permissions. Check MCP is enabled and your token permissions.</li>
-                            <li>429: Rate limit exceeded. Call get_quota and retry later.</li>
-                            <li>503: Service unavailable. Wait briefly and retry.</li>
-                            <li>Network: Verify the hosted MCP URL and Authorization bearer token.</li>
-                        </ul>
                     </div>
                 </header>
 
-                {/* Tabs */}
-                <div className="mb-6 flex max-w-full gap-2 overflow-x-auto border-b border-white/10 pb-4">
-                    {(["overview", "tokens", "topics", "usage", "sources", "settings"] as const).map((tab) => (
-                        <button
-                            key={tab}
-                            onClick={() => setActiveTab(tab)}
-                            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
-                                activeTab === tab ? "bg-blue-600 text-white" : "bg-white/5 text-neutral-400 hover:bg-white/10"
-                            }`}
-                        >
-                            {tab === "settings" && <Settings size={14} />}
-                            {tab === "topics" && <BookOpen size={14} />}
-                            {tab.charAt(0).toUpperCase() + tab.slice(1)}
-                        </button>
-                    ))}
+                <div className="mb-6 flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.035] p-2 sm:flex-row sm:items-center">
+                    <div className="grid min-w-0 flex-1 grid-cols-2 gap-1 sm:grid-cols-3 xl:grid-cols-6">
+                        {MCP_TABS.map((tab) => {
+                            const TabIcon = tab.icon;
+                            return (
+                                <button
+                                    key={tab.id}
+                                    onClick={() => setActiveTab(tab.id)}
+                                    className={`flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold transition ${
+                                        activeTab === tab.id
+                                            ? "bg-white text-[#0a1619] shadow-lg shadow-black/20"
+                                            : "text-white/55 hover:bg-white/[0.06] hover:text-white"
+                                    }`}
+                                >
+                                    <TabIcon size={15} />
+                                    {tab.label}
+                                </button>
+                            );
+                        })}
+                    </div>
+                    <button
+                        onClick={loadData}
+                        className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium text-white/55 transition hover:bg-white/[0.06] hover:text-white"
+                    >
+                        <RefreshCw size={15} />
+                        Refresh
+                    </button>
                 </div>
 
                 {isLoading ? (
@@ -198,19 +256,22 @@ function McpDashboardContent() {
 
 function DashboardNav({ user, onLogout }: { user: any; onLogout: () => void }) {
     return (
-        <nav className="border-b border-white/5 bg-neutral-900/50 backdrop-blur-xl">
-            <div className="container mx-auto flex h-16 items-center justify-between px-6">
-                <Link href="/" className="flex items-center gap-2">
-                    <Image src="/icon.png" alt="NoteClaw" width={24} height={24} className="rounded-md" />
-                    <span className="font-bold tracking-tight">NoteClaw</span>
+        <nav className="border-b border-white/[0.08] bg-[#081316]/90 backdrop-blur-xl">
+            <div className="container mx-auto flex h-[72px] max-w-7xl items-center justify-between px-4 sm:px-6">
+                <Link href="/" className="flex items-center gap-3">
+                    <Image src="/icon.png" alt="NoteClaw" width={34} height={34} className="rounded-xl shadow-lg shadow-[#62d3d0]/10" />
+                    <span>
+                        <span className="block font-bold leading-none tracking-tight">NoteClaw</span>
+                        <span className="mt-1 block text-[10px] font-semibold uppercase tracking-[0.16em] text-[#62d3d0]/75">Memory bank</span>
+                    </span>
                 </Link>
                 <div className="flex items-center gap-4">
                     <span className="text-sm text-neutral-400 hidden md:block">{user?.email}</span>
-                    <button onClick={onLogout} className="flex items-center gap-2 text-sm font-medium text-neutral-400 hover:text-white transition-colors">
+                    <button onClick={onLogout} className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm font-medium text-neutral-400 transition-colors hover:bg-white/5 hover:text-white">
                         <LogOut size={16} />
                         <span className="hidden md:inline">Log out</span>
                     </button>
-                    <div className="h-8 w-8 rounded-full bg-gradient-to-tr from-blue-500 to-purple-500 flex items-center justify-center text-xs font-bold">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-tr from-[#2878b5] via-[#11aaa8] to-[#7a27a8] text-xs font-bold ring-1 ring-white/15">
                         {user?.displayName?.[0]?.toUpperCase() || user?.email?.[0]?.toUpperCase() || "U"}
                     </div>
                 </div>
@@ -320,11 +381,15 @@ function OverviewTab({ stats, quota, tokens, usage, notebooks }: { stats: McpSta
                             {notebooks.slice(0, 5).map((nb) => (
                                 <div key={nb.id} className="flex items-center justify-between p-3 rounded-lg bg-white/5">
                                     <div>
-                                        <div className="font-medium text-sm">{nb.session?.agentName || "Unknown Agent"}</div>
-                                        <div className="text-xs text-neutral-500">{nb.title}</div>
+                                        <div className="font-medium text-sm">
+                                            {nb.session?.connectedClients?.[0] || nb.session?.mcpClientName || nb.session?.agentName || "Unknown Agent"}
+                                        </div>
+                                        <div className="text-xs text-neutral-500">{nb.session?.agentIdentifier || nb.title}</div>
                                     </div>
-                                    <span className={`text-xs px-2 py-1 rounded-full ${nb.session?.status === "active" ? "bg-green-500/20 text-green-400" : "bg-neutral-500/20 text-neutral-400"}`}>
-                                        {nb.session?.status || "unknown"}
+                                    <span className={`text-xs px-2 py-1 rounded-full ${nb.session?.websocketConnected ? "bg-[#62d3d0]/15 text-[#8ce4df]" : "bg-neutral-500/20 text-neutral-400"}`}>
+                                        {nb.session?.websocketConnected
+                                            ? `${nb.session.websocketConnectionCount || 1} live`
+                                            : nb.session?.status || "offline"}
                                     </span>
                                 </div>
                             ))}
@@ -847,7 +912,7 @@ function TopicsTab({
                                         : "border-transparent bg-white/[0.03] hover:bg-white/[0.06]"
                                 }`}
                             >
-                                <div className="truncate text-sm font-medium">{agent.agentName}</div>
+                                <div className="truncate text-sm font-medium">{agent.mcpClientName || agent.agentName}</div>
                                 <div className="mt-1 truncate text-xs text-neutral-500">{agent.agentIdentifier}</div>
                             </button>
                         ))}

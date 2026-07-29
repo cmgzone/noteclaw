@@ -218,7 +218,7 @@ export async function listAgentTopicAccessMatrix(userId: string) {
   await ensureAgentTopicAccessReady();
   const [agentsResult, topicsResult] = await Promise.all([
     pool.query(
-      `SELECT id, agent_name, agent_identifier, status, notebook_id
+      `SELECT id, agent_name, agent_identifier, status, notebook_id, metadata
        FROM agent_sessions
        WHERE user_id = $1
        ORDER BY last_activity DESC`,
@@ -256,13 +256,21 @@ export async function listAgentTopicAccessMatrix(userId: string) {
   );
 
   return {
-    agents: agentsResult.rows.map((row) => ({
-      id: row.id,
-      agentName: row.agent_name,
-      agentIdentifier: row.agent_identifier,
-      status: row.status,
-      defaultNotebookId: row.notebook_id,
-    })),
+    agents: agentsResult.rows.map((row) => {
+      const metadata =
+        typeof row.metadata === 'string'
+          ? JSON.parse(row.metadata)
+          : row.metadata || {};
+      return {
+        id: row.id,
+        agentName: row.agent_name,
+        mcpClientName:
+          metadata.lastMcpClientName || metadata.clientName || null,
+        agentIdentifier: row.agent_identifier,
+        status: row.status,
+        defaultNotebookId: row.notebook_id,
+      };
+    }),
     topics: topicsResult.rows.map((row) => ({
       id: row.id,
       title: row.title,

@@ -42,26 +42,38 @@ class MemoryAgentSession {
   const MemoryAgentSession({
     required this.id,
     required this.agentName,
+    required this.mcpClientName,
     required this.agentIdentifier,
     required this.status,
     required this.websocketConnected,
     required this.websocketConnectionCount,
+    required this.connectedClients,
     this.lastActivity,
   });
 
   final String id;
   final String agentName;
+  final String mcpClientName;
   final String agentIdentifier;
   final String status;
   final bool websocketConnected;
   final int websocketConnectionCount;
+  final List<String> connectedClients;
   final DateTime? lastActivity;
+
+  String get displayAgentName {
+    if (connectedClients.isNotEmpty) return connectedClients.join(', ');
+    if (mcpClientName.isNotEmpty) return mcpClientName;
+    return agentName;
+  }
 
   factory MemoryAgentSession.fromJson(Map<String, dynamic> json) {
     return MemoryAgentSession(
       id: json['id']?.toString() ?? '',
       agentName:
           (json['agentName'] ?? json['agent_name'])?.toString() ?? 'Agent',
+      mcpClientName:
+          (json['mcpClientName'] ?? json['mcp_client_name'])?.toString() ?? '',
       agentIdentifier:
           (json['agentIdentifier'] ?? json['agent_identifier'])?.toString() ??
               '',
@@ -74,6 +86,12 @@ class MemoryAgentSession {
             json['websocket_connection_count'] ??
             (json['websocketConnected'] == true ? 1 : 0),
       ),
+      connectedClients: json['connectedClients'] is List
+          ? (json['connectedClients'] as List)
+              .map((value) => value.toString())
+              .where((value) => value.isNotEmpty)
+              .toList(growable: false)
+          : const [],
       lastActivity: _asDate(json['lastActivity'] ?? json['last_activity']),
     );
   }
@@ -120,8 +138,7 @@ class MemorySource {
       updatedAt: _asDate(json['updatedAt'] ?? json['updated_at']),
       memoryStats: _asMap(json['memoryStats'] ?? json['memory_stats']),
       sourceType: json['type']?.toString() ?? 'memory',
-      isMemorySource:
-          json['isMemorySource'] as bool? ??
+      isMemorySource: json['isMemorySource'] as bool? ??
           json['is_memory_source'] as bool? ??
           json['type'] == 'memory',
     );

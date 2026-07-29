@@ -132,8 +132,17 @@ class AgentWebSocketService {
       }
 
       const connectionId = randomUUID();
+      const registeredClientIdentifier =
+        typeof session.metadata?.lastMcpClientName === 'string'
+          ? session.metadata.lastMcpClientName.trim()
+          : typeof session.metadata?.clientName === 'string'
+            ? session.metadata.clientName.trim()
+            : '';
       const clientIdentifier =
-        requestedClientIdentifier || `client:${connectionId}`;
+        requestedClientIdentifier ||
+        registeredClientIdentifier ||
+        session.agentName ||
+        `client:${connectionId}`;
       const sessionConnections =
         this.connections.get(session.id) || new Map<string, AgentConnection>();
       const connection: AgentConnection = {
@@ -354,6 +363,21 @@ class AgentWebSocketService {
     return [...sessionConnections.values()].filter(
       (connection) => connection.ws.readyState === WebSocket.OPEN,
     ).length;
+  }
+
+  getConnectedClients(sessionId: string): string[] {
+    const sessionConnections = this.connections.get(sessionId);
+    if (!sessionConnections) {
+      return [];
+    }
+
+    return [
+      ...new Set(
+        [...sessionConnections.values()]
+          .filter((connection) => connection.ws.readyState === WebSocket.OPEN)
+          .map((connection) => connection.clientIdentifier),
+      ),
+    ].sort();
   }
 
   getConnectedAgents(userId: string): string[] {

@@ -1517,9 +1517,13 @@ router.get('/notebooks', authenticateToken, async (req: Request, res: Response) 
         let sessionInfo: {
           id: string;
           agentName: string;
+          mcpClientName: string | null;
           agentIdentifier: string;
           status: 'active' | 'expired' | 'disconnected';
           lastActivity: Date;
+          websocketConnected: boolean;
+          websocketConnectionCount: number;
+          connectedClients: string[];
         } | null = null;
         if (notebook.agentSessionId) {
           const session = await agentSessionService.getSession(notebook.agentSessionId);
@@ -1527,9 +1531,21 @@ router.get('/notebooks', authenticateToken, async (req: Request, res: Response) 
             sessionInfo = {
               id: session.id,
               agentName: session.agentName,
+              mcpClientName:
+                typeof session.metadata?.lastMcpClientName === 'string'
+                  ? session.metadata.lastMcpClientName
+                  : typeof session.metadata?.clientName === 'string'
+                    ? session.metadata.clientName
+                    : null,
               agentIdentifier: session.agentIdentifier,
               status: session.status,
               lastActivity: session.lastActivity,
+              websocketConnected:
+                agentWebSocketService.isAgentConnected(session.id),
+              websocketConnectionCount:
+                agentWebSocketService.getConnectionCount(session.id),
+              connectedClients:
+                agentWebSocketService.getConnectedClients(session.id),
             };
           }
         }
@@ -2874,9 +2890,13 @@ router.post('/memory/bootstrap', authenticateToken, async (req: Request, res: Re
       typeof req.body?.clientName === 'string'
         ? req.body.clientName.replace(/\s+/g, ' ').trim().slice(0, 80)
         : '';
+    const requestedClientVersion =
+      typeof req.body?.clientVersion === 'string'
+        ? req.body.clientVersion.replace(/\s+/g, ' ').trim().slice(0, 40)
+        : '';
     const agentName =
-      token?.name?.trim().slice(0, 80) ||
       requestedClientName ||
+      token?.name?.trim().slice(0, 80) ||
       'NoteClaw MCP Agent';
     const automaticIdentifier = `mcp-token:${authReq.tokenId}`;
     const boundSessionId = getBoundTokenSessionId(req);
@@ -2904,18 +2924,68 @@ router.post('/memory/bootstrap', authenticateToken, async (req: Request, res: Re
               : 'mcp',
           autoProvisioned: true,
           clientName: requestedClientName || null,
-          clientVersion:
-            typeof req.body?.clientVersion === 'string'
-              ? req.body.clientVersion.slice(0, 40)
-              : null,
+          clientVersion: requestedClientVersion || null,
+          lastMcpClientName: requestedClientName || null,
+          lastMcpClientVersion: requestedClientVersion || null,
         },
       });
+    } else if (requestedClientName) {
+      const autoProvisioned = session.metadata?.autoProvisioned === true;
+      await pool.query(
+        `UPDATE agent_sessions
+         SET agent_name = CASE WHEN $1 THEN $2 ELSE agent_name END,
+             metadata = COALESCE(metadata, '{}'::jsonb) || $3::jsonb,
+             last_activity = NOW()
+         WHERE id = $4 AND user_id = $5`,
+        [
+          autoProvisioned,
+          requestedClientName,
+          JSON.stringify({
+            clientName: requestedClientName,
+            clientVersion: requestedClientVersion || null,
+            lastMcpClientName: requestedClientName,
+            lastMcpClientVersion: requestedClientVersion || null,
+            lastMcpTransport:
+              typeof req.body?.transport === 'string'
+                ? req.body.transport.slice(0, 40)
+                : 'mcp',
+            lastMcpInitializedAt: new Date().toISOString(),
+          }),
+          session.id,
+          userId,
+        ],
+      );
+      session =
+        (await agentSessionService.getSession(session.id)) || session;
     }
 
-    const notebook = await agentNotebookService.createOrGetMemoryNotebook(
+    let notebook = await agentNotebookService.createOrGetMemoryNotebook(
       userId,
       session,
     );
+    const tokenGeneratedTitle = token?.name?.trim()
+      ? `${token.name.trim()} Memory`
+      : '';
+    if (
+      tokenGeneratedTitle &&
+      notebook.title === tokenGeneratedTitle &&
+      session.agentName !== token?.name?.trim()
+    ) {
+      const renamedNotebook = await pool.query(
+        `UPDATE notebooks
+         SET title = $1, updated_at = NOW()
+         WHERE id = $2 AND user_id = $3
+         RETURNING title, updated_at`,
+        [`${session.agentName} Memory`, notebook.id, userId],
+      );
+      if (renamedNotebook.rows[0]) {
+        notebook = {
+          ...notebook,
+          title: renamedNotebook.rows[0].title,
+          updatedAt: renamedNotebook.rows[0].updated_at,
+        };
+      }
+    }
     await grantDefaultAgentTopic(userId, session.id, notebook.id);
     authReq.tokenMetadata = await tokenService.bindTokenToAgentSession(
       authReq.tokenId,
@@ -3445,12 +3515,20 @@ router.get('/memory/notebooks', authenticateToken, async (req: Request, res: Res
           session: {
             id: session.id,
             agentName: session.agentName,
+            mcpClientName:
+              typeof session.metadata?.lastMcpClientName === 'string'
+                ? session.metadata.lastMcpClientName
+                : typeof session.metadata?.clientName === 'string'
+                  ? session.metadata.clientName
+                  : null,
             agentIdentifier: session.agentIdentifier,
             status: session.status,
             websocketConnected:
               agentWebSocketService.isAgentConnected(session.id),
             websocketConnectionCount:
               agentWebSocketService.getConnectionCount(session.id),
+            connectedClients:
+              agentWebSocketService.getConnectedClients(session.id),
           },
         };
       }),
@@ -3562,6 +3640,10 @@ router.get(
       }
 
       const row = notebookResult.rows[0];
+      const sessionMetadata =
+        typeof row.session_metadata === 'string'
+          ? JSON.parse(row.session_metadata)
+          : row.session_metadata || {};
       if ((req as AuthRequest).authMethod === 'api_token') {
         const boundSessionId = getBoundTokenSessionId(req);
         if (!boundSessionId) {
@@ -3593,11 +3675,7 @@ router.get(
       );
 
       if (sources.length === 0 && row.session_id) {
-        const metadata =
-          typeof row.session_metadata === 'string'
-            ? JSON.parse(row.session_metadata)
-            : row.session_metadata || {};
-        const metadataBank = getMetadataMemoryBank(metadata);
+        const metadataBank = getMetadataMemoryBank(sessionMetadata);
         sources = Object.entries(metadataBank).map(([namespace, memory]) =>
           buildMemorySourceProjection(
             {
@@ -3605,7 +3683,7 @@ router.get(
               memory,
               version: 0,
               created_at: row.created_at,
-              updated_at: metadata.memoryUpdatedAt || row.updated_at,
+              updated_at: sessionMetadata.memoryUpdatedAt || row.updated_at,
             },
             row.id,
           ),
@@ -3656,6 +3734,12 @@ router.get(
             ? {
                 id: row.session_id,
                 agentName: row.agent_name,
+                mcpClientName:
+                  typeof sessionMetadata.lastMcpClientName === 'string'
+                    ? sessionMetadata.lastMcpClientName
+                    : typeof sessionMetadata.clientName === 'string'
+                      ? sessionMetadata.clientName
+                      : null,
                 agentIdentifier: row.agent_identifier,
                 status: row.session_status,
                 lastActivity: row.last_activity,
@@ -3663,6 +3747,8 @@ router.get(
                   agentWebSocketService.isAgentConnected(row.session_id),
                 websocketConnectionCount:
                   agentWebSocketService.getConnectionCount(row.session_id),
+                connectedClients:
+                  agentWebSocketService.getConnectedClients(row.session_id),
               }
             : null,
         },

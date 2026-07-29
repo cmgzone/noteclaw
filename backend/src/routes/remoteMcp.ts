@@ -1,4 +1,5 @@
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import axios from 'axios';
 import { Router, type Response } from 'express';
 
 import { createNoteClawMcpServer } from '../../mcp-server/dist/serverFactory.js';
@@ -73,6 +74,46 @@ router.post('/', async (req: AuthRequest, res) => {
     process.env.BACKEND_URL ||
     `${req.protocol}://${req.get('host')}`
   ).replace(/\/+$/, '');
+
+  const messages = Array.isArray(req.body) ? req.body : [req.body];
+  const initializeRequest = messages.find(
+    (message) => message?.method === 'initialize',
+  );
+  const reportedClientInfo = initializeRequest?.params?.clientInfo;
+  if (
+    reportedClientInfo &&
+    typeof reportedClientInfo.name === 'string' &&
+    reportedClientInfo.name.trim()
+  ) {
+    try {
+      await axios.post(
+        `${backendUrl}/api/coding-agent/memory/bootstrap`,
+        {
+          clientName: reportedClientInfo.name,
+          clientVersion:
+            typeof reportedClientInfo.version === 'string'
+              ? reportedClientInfo.version
+              : null,
+          transport: 'mcp-streamable-http',
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${apiToken}`,
+          },
+          timeout: 30_000,
+        },
+      );
+    } catch (error) {
+      console.error('Could not register the reported MCP client identity:', error);
+      return jsonRpcError(
+        res,
+        500,
+        'Could not register the MCP client identity',
+      );
+    }
+  }
+
   const server = createNoteClawMcpServer({
     backendUrl,
     apiToken,

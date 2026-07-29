@@ -33,6 +33,12 @@ class MemoryWorkspaceState {
       );
   int get liveNotebooks =>
       notebooks.where((notebook) => notebook.session.websocketConnected).length;
+  List<String> get liveAgentNames => notebooks
+      .expand((notebook) => notebook.session.connectedClients)
+      .where((name) => name.trim().isNotEmpty)
+      .toSet()
+      .toList(growable: false)
+    ..sort();
 }
 
 class MemoryWorkspaceNotifier extends StateNotifier<MemoryWorkspaceState> {
@@ -160,6 +166,33 @@ class AgentConnectionsScreen extends ConsumerWidget {
                     const SizedBox(height: 16),
                     _MetricStrip(state: workspace),
                     const SizedBox(height: 18),
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        const tokens = _TokenAccessCard();
+                        const connection = _ConnectionCard();
+
+                        if (constraints.maxWidth < 880) {
+                          return const Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              tokens,
+                              SizedBox(height: 14),
+                              connection,
+                            ],
+                          );
+                        }
+
+                        return const Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(flex: 6, child: tokens),
+                            SizedBox(width: 18),
+                            Expanded(flex: 5, child: connection),
+                          ],
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 28),
                     _TopicAccessPanel(
                       matrix: workspace.topicAccess,
                     ),
@@ -167,11 +200,9 @@ class AgentConnectionsScreen extends ConsumerWidget {
                     LayoutBuilder(
                       builder: (context, constraints) {
                         final notebooks = _NotebookSection(state: workspace);
-                        const access = Column(
+                        const capabilities = Column(
                           children: [
                             _AgentToolsCard(),
-                            SizedBox(height: 14),
-                            _ConnectionCard(),
                           ],
                         );
 
@@ -181,7 +212,7 @@ class AgentConnectionsScreen extends ConsumerWidget {
                             children: [
                               notebooks,
                               const SizedBox(height: 18),
-                              access,
+                              capabilities,
                             ],
                           );
                         }
@@ -191,13 +222,11 @@ class AgentConnectionsScreen extends ConsumerWidget {
                           children: [
                             Expanded(flex: 7, child: notebooks),
                             const SizedBox(width: 18),
-                            const Expanded(flex: 4, child: access),
+                            const Expanded(flex: 4, child: capabilities),
                           ],
                         );
                       },
                     ),
-                    const SizedBox(height: 18),
-                    const _TokenAccessCard(),
                   ],
                 ),
               ),
@@ -333,7 +362,9 @@ class _WorkspaceHeader extends StatelessWidget {
                     ),
                     Text(
                       state.liveConnections > 0
-                          ? '${state.liveConnections} active connection${state.liveConnections == 1 ? '' : 's'}'
+                          ? state.liveAgentNames.isNotEmpty
+                              ? state.liveAgentNames.take(2).join(' · ')
+                              : '${state.liveConnections} active connection${state.liveConnections == 1 ? '' : 's'}'
                           : 'Waiting for an agent',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                             color: scheme.onSurfaceVariant,
@@ -405,7 +436,7 @@ class _MetricStrip extends StatelessWidget {
               width: width,
               icon: LucideIcons.radio,
               value: '${state.liveConnections}',
-              label: 'Agents live',
+              label: 'Live agent clients',
             ),
           ],
         );
@@ -708,7 +739,7 @@ class _TopicAccessPanelState extends ConsumerState<_TopicAccessPanel> {
                     (agent) => DropdownMenuItem<String>(
                       value: agent['id']?.toString(),
                       child: Text(
-                        '${agent['agentName'] ?? 'Agent'} · '
+                        '${agent['mcpClientName'] ?? agent['agentName'] ?? 'Agent'} · '
                         '${agent['agentIdentifier'] ?? ''}',
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -917,7 +948,7 @@ class _NotebookCard extends StatelessWidget {
                   const SizedBox(height: 5),
                   Text(
                     notebook.isAgentNotebook
-                        ? notebook.session.agentIdentifier
+                        ? '${notebook.session.displayAgentName} · ${notebook.session.agentIdentifier}'
                         : (notebook.description.isNotEmpty
                             ? notebook.description
                             : 'Notebook memories and sources'),

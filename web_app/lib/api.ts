@@ -114,6 +114,7 @@ export interface ApiToken {
 export interface TopicAccessAgent {
     id: string;
     agentName: string;
+    mcpClientName?: string | null;
     agentIdentifier: string;
     status: string;
     defaultNotebookId: string | null;
@@ -193,9 +194,13 @@ export interface AgentNotebook {
     session?: {
         id: string;
         agentName: string;
+        mcpClientName?: string | null;
         agentIdentifier: string;
         status: string;
         lastActivity: string;
+        websocketConnected?: boolean;
+        websocketConnectionCount?: number;
+        connectedClients?: string[];
     };
 }
 
@@ -243,11 +248,13 @@ export interface Notebook {
     session?: {
         id: string;
         agentName: string;
+        mcpClientName?: string | null;
         agentIdentifier: string;
         status: string;
         lastActivity?: string;
         websocketConnected: boolean;
         websocketConnectionCount: number;
+        connectedClients?: string[];
     };
 }
 
