@@ -147,14 +147,56 @@ export async function initializeDatabase() {
             CREATE TABLE IF NOT EXISTS sources (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                 notebook_id UUID NOT NULL REFERENCES notebooks(id) ON DELETE CASCADE,
+                user_id TEXT,
                 type TEXT NOT NULL,
                 title TEXT NOT NULL,
                 content TEXT,
                 url TEXT,
+                image_url TEXT,
+                mime_type TEXT,
+                metadata JSONB NOT NULL DEFAULT '{}',
+                summary TEXT,
                 media_data BYTEA,
+                media_url TEXT,
+                media_path TEXT,
+                media_size BIGINT,
+                code_analysis JSONB,
+                analysis_summary TEXT,
+                analysis_rating SMALLINT,
+                analyzed_at TIMESTAMPTZ,
                 created_at TIMESTAMPTZ DEFAULT NOW(),
                 updated_at TIMESTAMPTZ DEFAULT NOW()
             );
+        `);
+
+        // Keep databases created by older NoteClaw versions compatible with
+        // every current source reader. CREATE TABLE IF NOT EXISTS does not add
+        // columns to an existing table, so fresh deployments upgraded from the
+        // original core schema otherwise fail when memory notebooks are opened.
+        await client.query(`
+            ALTER TABLE sources
+                ADD COLUMN IF NOT EXISTS user_id TEXT,
+                ADD COLUMN IF NOT EXISTS image_url TEXT,
+                ADD COLUMN IF NOT EXISTS mime_type TEXT,
+                ADD COLUMN IF NOT EXISTS metadata JSONB NOT NULL DEFAULT '{}',
+                ADD COLUMN IF NOT EXISTS summary TEXT,
+                ADD COLUMN IF NOT EXISTS media_url TEXT,
+                ADD COLUMN IF NOT EXISTS media_path TEXT,
+                ADD COLUMN IF NOT EXISTS media_size BIGINT,
+                ADD COLUMN IF NOT EXISTS code_analysis JSONB,
+                ADD COLUMN IF NOT EXISTS analysis_summary TEXT,
+                ADD COLUMN IF NOT EXISTS analysis_rating SMALLINT,
+                ADD COLUMN IF NOT EXISTS analyzed_at TIMESTAMPTZ;
+
+            UPDATE sources s
+            SET user_id = n.user_id::text
+            FROM notebooks n
+            WHERE s.notebook_id = n.id
+              AND s.user_id IS NULL;
+
+            CREATE INDEX IF NOT EXISTS idx_sources_user_id ON sources(user_id);
+            CREATE INDEX IF NOT EXISTS idx_sources_type ON sources(type);
+            CREATE INDEX IF NOT EXISTS idx_sources_mime_type ON sources(mime_type);
         `);
 
         await client.query(`

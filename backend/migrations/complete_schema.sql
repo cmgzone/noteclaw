@@ -39,12 +39,23 @@ CREATE TABLE IF NOT EXISTS notebooks (
 CREATE TABLE IF NOT EXISTS sources (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     notebook_id UUID NOT NULL REFERENCES notebooks(id) ON DELETE CASCADE,
+    user_id TEXT,
     type TEXT NOT NULL,
     title TEXT NOT NULL,
     content TEXT,
     url TEXT,
+    image_url TEXT,
     mime_type TEXT,
+    metadata JSONB NOT NULL DEFAULT '{}',
+    summary TEXT,
     media_data BYTEA,
+    media_url TEXT,
+    media_path TEXT,
+    media_size BIGINT,
+    code_analysis JSONB,
+    analysis_summary TEXT,
+    analysis_rating SMALLINT,
+    analyzed_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
