@@ -43674,15 +43674,69 @@ function createNoteClawMcpServer(options) {
     },
     {
       capabilities: {
-        tools: {}
+        tools: {},
+        resources: {}
       },
-      instructions: "Open or resume a memory session before reading or writing memory. Use stable agent and client identifiers so project context survives updates."
+      instructions: "A token-scoped memory session is created automatically on connection. Call memory_session_open to give it a stable project identity before writing memory. Use stable agent and client identifiers so project context survives updates."
     }
   );
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }));
+  let bootstrapPromise = null;
+  const ensureBootstrap = () => {
+    if (!bootstrapPromise) {
+      const client = server.getClientVersion();
+      bootstrapPromise = api.post("/memory/bootstrap", {
+        clientName: client?.name || null,
+        clientVersion: client?.version || null,
+        transport: "mcp"
+      }).then(() => void 0);
+    }
+    return bootstrapPromise;
+  };
+  server.setRequestHandler(ListToolsRequestSchema, async () => {
+    await ensureBootstrap();
+    return { tools };
+  });
+  server.setRequestHandler(ListResourcesRequestSchema, async () => {
+    await ensureBootstrap();
+    const response = await api.get("/memory/topics");
+    const topics = Array.isArray(response.data?.topics) ? response.data.topics : [];
+    return {
+      resources: topics.map((topic) => ({
+        uri: `noteclaw://notebooks/${encodeURIComponent(String(topic.notebookId))}`,
+        name: String(topic.title || "NoteClaw memory notebook"),
+        title: String(topic.title || "NoteClaw memory notebook"),
+        description: typeof topic.description === "string" ? topic.description : "Topic-driven NoteClaw memory and sources",
+        mimeType: "application/json"
+      }))
+    };
+  });
+  server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+    await ensureBootstrap();
+    const uri = new URL(request.params.uri);
+    if (uri.protocol !== "noteclaw:" || uri.hostname !== "notebooks") {
+      throw new Error("Unsupported NoteClaw resource URI");
+    }
+    const notebookId = decodeURIComponent(uri.pathname.replace(/^\/+/, ""));
+    if (!notebookId) {
+      throw new Error("Notebook ID is required");
+    }
+    const response = await api.get(
+      `/memory/topics/${encodeURIComponent(notebookId)}/context`
+    );
+    return {
+      contents: [
+        {
+          uri: request.params.uri,
+          mimeType: "application/json",
+          text: JSON.stringify(response.data, null, 2)
+        }
+      ]
+    };
+  });
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args = {} } = request.params;
     try {
+      await ensureBootstrap();
       switch (name) {
         case "memory_session_open": {
           const input = MemorySessionOpenSchema.parse(args);

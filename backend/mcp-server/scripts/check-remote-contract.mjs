@@ -33,6 +33,54 @@ app.post('/api/coding-agent/memory/sessions', (req, res) => {
   });
 });
 
+let bootstrapCalls = 0;
+app.post('/api/coding-agent/memory/bootstrap', (req, res) => {
+  bootstrapCalls += 1;
+  res.json({
+    success: true,
+    created: bootstrapCalls === 1,
+    session: {
+      id: 'remote-contract-session',
+      agentName: req.body.clientName || 'Contract verifier',
+      agentIdentifier: 'mcp-token:remote-contract',
+      status: 'active',
+    },
+    notebook: {
+      id: 'remote-contract-notebook',
+      title: 'Remote contract memory',
+    },
+  });
+});
+
+app.get('/api/coding-agent/memory/topics', (_req, res) => {
+  res.json({
+    success: true,
+    count: 1,
+    topics: [
+      {
+        notebookId: 'remote-contract-notebook',
+        title: 'Remote contract memory',
+        description: 'Contract-test topic',
+      },
+    ],
+  });
+});
+
+app.get(
+  '/api/coding-agent/memory/topics/:notebookId/context',
+  (req, res) => {
+    res.json({
+      success: true,
+      topic: {
+        id: req.params.notebookId,
+        title: 'Remote contract memory',
+      },
+      sources: [],
+      memories: [],
+    });
+  },
+);
+
 let backendUrl = '';
 app.post('/mcp', async (req, res) => {
   const server = createNoteClawMcpServer({
@@ -93,6 +141,26 @@ try {
     }
   }
 
+  const resources = await client.listResources();
+  if (
+    bootstrapCalls < 1 ||
+    resources.resources.length !== 1 ||
+    resources.resources[0]?.uri !==
+      'noteclaw://notebooks/remote-contract-notebook'
+  ) {
+    throw new Error('Remote MCP did not expose its bootstrapped notebook');
+  }
+
+  const resource = await client.readResource({
+    uri: resources.resources[0].uri,
+  });
+  if (
+    resource.contents[0]?.mimeType !== 'application/json' ||
+    !('text' in resource.contents[0])
+  ) {
+    throw new Error('Remote MCP notebook resource returned invalid content');
+  }
+
   const result = await client.callTool({
     name: 'memory_session_open',
     arguments: {
@@ -110,7 +178,7 @@ try {
   }
 
   console.log(
-    `Remote MCP contract verified: ${listed.tools.length} tools and authenticated tool execution`,
+    `Remote MCP contract verified: ${listed.tools.length} tools, ${resources.resources.length} notebook resource, and authenticated tool execution`,
   );
 } finally {
   await client.close();

@@ -805,11 +805,11 @@ function TopicsTab({
         return (
             <div className="rounded-2xl border border-white/10 bg-neutral-900/60 p-8 text-center">
                 <Bot className="mx-auto mb-4 text-[#62d3d0]" size={28} />
-                <h3 className="text-lg font-semibold">Open an agent session first</h3>
+                <h3 className="text-lg font-semibold">Connect an MCP agent first</h3>
                 <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-neutral-400">
-                    Create an API token, connect the MCP server, and call
-                    {" "}<code className="text-neutral-200">memory_session_open</code>.
-                    The agent will then appear here with its own topic selected.
+                    Create an API token and connect the MCP server. Its private
+                    notebook and default topic are created automatically on the
+                    first connection.
                 </p>
             </div>
         );

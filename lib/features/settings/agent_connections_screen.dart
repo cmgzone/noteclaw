@@ -692,7 +692,7 @@ class _TopicAccessPanelState extends ConsumerState<_TopicAccessPanel> {
           const SizedBox(height: 18),
           if (agents.isEmpty)
             Text(
-              'Connect an agent and call memory_session_open to manage its topics.',
+              'Connect an MCP agent to create its private notebook and manage its topics.',
               style: TextStyle(color: scheme.onSurfaceVariant),
             )
           else ...[
@@ -1194,9 +1194,9 @@ class _ConnectionCard extends StatelessWidget {
           const SizedBox(height: 12),
           const _ConnectionStep(
             number: '3',
-            title: 'Open the memory session',
+            title: 'Discover the memory notebook',
             description:
-                'Ask the agent to call memory_session_open with a stable project identifier.',
+                'The first connection creates a private notebook automatically. Compatible clients list permitted notebooks as MCP Resources.',
           ),
           const SizedBox(height: 16),
           ExpansionTile(

@@ -48,8 +48,9 @@ remote Streamable HTTP:
 ```
 
 The endpoint is stateless and requires a revocable NoteClaw API token on every
-request. The token is still permanently bound to the first agent session it
-opens.
+request. The first MCP discovery request creates a private token-scoped agent
+session and notebook. Permitted notebook topics are exposed as MCP Resources.
+The token remains permanently bound to that session.
 
 ### Local stdio fallback
 
@@ -83,22 +84,25 @@ Example MCP client configuration:
 
 ## Typical agent flow
 
-1. Give each agent its own NoteClaw token, then call `memory_session_open` with
-   a stable `agentIdentifier`. Agents intentionally sharing one project session
-   can use the same project identifier.
-2. Call `memory_topics_list`, then `memory_topic_get` for the notebook topics
+1. Give each agent its own NoteClaw token and connect. NoteClaw automatically
+   creates its private memory notebook and exposes permitted topics as MCP
+   Resources.
+2. Optionally call `memory_session_open` with a stable `agentIdentifier` to
+   replace the automatic token identity with a durable project identity.
+   Reconnecting with that token resumes the same session.
+3. Call `memory_topics_list`, then `memory_topic_get` for the notebook topics
    the account owner allowed this agent to read.
-3. Call `memory_get` at startup to restore the agent's own settings and context.
-4. Call `memory_put` as work progresses. Include the returned namespace version
+4. Call `memory_get` at startup to restore the agent's own settings and context.
+5. Call `memory_put` as work progresses. Include the returned namespace version
    as `expectedVersion` and identify the writer with `actorIdentifier`.
-5. Call `memory_compact` when history becomes large.
-6. Call `get_websocket_info`, connect with the same token, and reply to every
+6. Call `memory_compact` when history becomes large.
+7. Call `get_websocket_info`, connect with the same token, and reply to every
    `ping` event with `{"type":"pong"}`.
-7. Call `review_code` when the agent needs a focused quality check before
+8. Call `review_code` when the agent needs a focused quality check before
    shipping a change.
-8. Call `web_search` for a quick current-information lookup, or start a longer
+9. Call `web_search` for a quick current-information lookup, or start a longer
    run with `deep_research_start`.
-9. Poll `deep_research_status`, retrieve the cited report with
+10. Poll `deep_research_status`, retrieve the cited report with
    `deep_research_result`, then persist it with `research_save_to_notebook`.
 
 ## Research configuration

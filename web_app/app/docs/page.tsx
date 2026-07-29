@@ -209,8 +209,10 @@ function QuickStartSection() {
 }`}
           />
           <div className="mt-3 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-200 text-sm">
-            The API, database, WebSocket service, search, and research providers remain
-            hosted by NoteClaw.
+            The first connection creates a private agent notebook automatically.
+            Compatible clients can discover permitted notebooks as MCP Resources.
+            The API, database, WebSocket service, search, and research providers
+            remain hosted by NoteClaw.
           </div>
         </Step>
 
@@ -244,7 +246,9 @@ function QuickStartSection() {
           <p className="text-neutral-400 mb-4">
             Once configured, your coding agent can use the MCP tools to verify code and save it to your notebooks.
             The remote endpoint or local bridge will automatically connect to the
-            NoteClaw memory backend.
+            NoteClaw memory backend. Calling <code className="text-blue-400">memory_session_open</code>
+            is optional and assigns a durable project identifier to the automatically
+            created session.
           </p>
         </Step>
 
@@ -830,7 +834,8 @@ function ConfigurationSection() {
           </h3>
           <p className="text-neutral-400 mb-4">
             Connect your agent directly to NoteClaw. There is nothing to install
-            or host.
+            or host. The connection creates its private notebook automatically,
+            and compatible clients list permitted notebooks as MCP Resources.
           </p>
           <CodeBlock
             language="json"

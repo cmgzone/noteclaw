@@ -2,6 +2,7 @@ import { fileURLToPath } from 'node:url';
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import express from 'express';
 
 const serverPath = fileURLToPath(
   new URL('../dist/index.js', import.meta.url),
@@ -27,9 +28,53 @@ const client = new Client({
   name: 'noteclaw-contract-check',
   version: '1.0.0',
 });
+const expectedToken = 'nclaw_stdio_contract_test';
+const mockBackend = express();
+mockBackend.use(express.json());
+mockBackend.use((req, res, next) => {
+  if (req.get('authorization') !== `Bearer ${expectedToken}`) {
+    return res.status(401).json({ success: false, error: 'Unauthorized' });
+  }
+  next();
+});
+mockBackend.post('/api/coding-agent/memory/bootstrap', (req, res) => {
+  res.json({
+    success: true,
+    created: true,
+    session: {
+      id: 'stdio-contract-session',
+      agentName: req.body.clientName || 'Contract verifier',
+      agentIdentifier: 'mcp-token:stdio-contract',
+      status: 'active',
+    },
+    notebook: {
+      id: 'stdio-contract-notebook',
+      title: 'Stdio contract memory',
+    },
+  });
+});
+
+const httpServer = mockBackend.listen(0, '127.0.0.1');
+await new Promise((resolve, reject) => {
+  httpServer.once('listening', resolve);
+  httpServer.once('error', reject);
+});
+const address = httpServer.address();
+if (!address || typeof address === 'string') {
+  throw new Error('Could not determine mock backend address');
+}
+
+const childEnvironment = Object.fromEntries(
+  Object.entries(process.env).filter((entry) => typeof entry[1] === 'string'),
+);
 const transport = new StdioClientTransport({
   command: process.execPath,
   args: [serverPath],
+  env: {
+    ...childEnvironment,
+    BACKEND_URL: `http://127.0.0.1:${address.port}`,
+    NOTECLAW_API_TOKEN: expectedToken,
+  },
   stderr: 'ignore',
 });
 
@@ -48,4 +93,7 @@ try {
   console.log(JSON.stringify(actualTools));
 } finally {
   await client.close();
+  await new Promise((resolve, reject) => {
+    httpServer.close((error) => (error ? reject(error) : resolve()));
+  });
 }

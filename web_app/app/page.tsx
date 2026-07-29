@@ -94,16 +94,16 @@ const steps = [
   {
     number: "02",
     icon: ServerCog,
-    title: "Open a stable session",
+    title: "Connect and discover",
     description:
-      "Call memory_session_open with a durable agent identifier. Reconnecting returns the same session.",
+      "The first connection creates a private agent notebook and exposes it as an MCP Resource. No manual setup is required.",
   },
   {
     number: "03",
     icon: RefreshCw,
     title: "Restore, work, and sync",
     description:
-      "Read memory at startup, write changes as work progresses, and listen for live WebSocket events.",
+      "Optionally assign a stable project identifier, then read memory, write changes, and listen for live WebSocket events.",
   },
 ];
 

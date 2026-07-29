@@ -315,9 +315,9 @@ function EmptyMemoryState() {
             </div>
             <h2 className="text-xl font-semibold">No project memory yet</h2>
             <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-neutral-500">
-                Connect an MCP agent and open a stable project session. NoteClaw will
-                create its notebook automatically and organize every namespace as a
-                memory source.
+                Connect an MCP agent. NoteClaw creates its private notebook on the
+                first connection, exposes permitted notebooks as MCP Resources, and
+                organizes every namespace as a memory source.
             </p>
             <Link
                 href="/dashboard/mcp"

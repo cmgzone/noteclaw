@@ -2855,6 +2855,98 @@ const touchMemoryNotebook = async (
   );
 };
 
+router.post('/memory/bootstrap', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthRequest;
+    const userId = authReq.userId as string;
+    if (!(await requirePlanFeatureAccess(userId, res, 'memory_bank', false))) {
+      return;
+    }
+    if (authReq.authMethod !== 'api_token' || !authReq.tokenId) {
+      return res.status(400).json({
+        success: false,
+        error: 'An MCP API token is required to bootstrap an agent session.',
+      });
+    }
+
+    const token = await tokenService.getToken(authReq.tokenId);
+    const requestedClientName =
+      typeof req.body?.clientName === 'string'
+        ? req.body.clientName.replace(/\s+/g, ' ').trim().slice(0, 80)
+        : '';
+    const agentName =
+      token?.name?.trim().slice(0, 80) ||
+      requestedClientName ||
+      'NoteClaw MCP Agent';
+    const automaticIdentifier = `mcp-token:${authReq.tokenId}`;
+    const boundSessionId = getBoundTokenSessionId(req);
+    let session = boundSessionId
+      ? await agentSessionService.getSession(boundSessionId)
+      : null;
+    const created = !session;
+
+    if (session && session.userId !== userId) {
+      return res.status(403).json({
+        success: false,
+        error: 'The token session does not belong to this account.',
+      });
+    }
+
+    if (!session) {
+      session = await agentSessionService.createSession(userId, {
+        agentName,
+        agentIdentifier: automaticIdentifier,
+        metadata: {
+          purpose: 'memory-bank',
+          transport:
+            typeof req.body?.transport === 'string'
+              ? req.body.transport.slice(0, 40)
+              : 'mcp',
+          autoProvisioned: true,
+          clientName: requestedClientName || null,
+          clientVersion:
+            typeof req.body?.clientVersion === 'string'
+              ? req.body.clientVersion.slice(0, 40)
+              : null,
+        },
+      });
+    }
+
+    const notebook = await agentNotebookService.createOrGetMemoryNotebook(
+      userId,
+      session,
+    );
+    await grantDefaultAgentTopic(userId, session.id, notebook.id);
+    authReq.tokenMetadata = await tokenService.bindTokenToAgentSession(
+      authReq.tokenId,
+      userId,
+      session.id,
+    );
+
+    res.json({
+      success: true,
+      created,
+      session: {
+        id: session.id,
+        agentName: session.agentName,
+        agentIdentifier: session.agentIdentifier,
+        status: session.status,
+      },
+      notebook: {
+        id: notebook.id,
+        title: notebook.title,
+        description: notebook.description,
+      },
+    });
+  } catch (error: any) {
+    console.error('Bootstrap MCP memory session error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to bootstrap the MCP memory session.',
+    });
+  }
+});
+
 router.post('/memory/sessions', authenticateToken, async (req: Request, res: Response) => {
   try {
     const userId = (req as any).userId;
@@ -2890,13 +2982,12 @@ router.post('/memory/sessions', authenticateToken, async (req: Request, res: Res
     const authReq = req as AuthRequest;
     const existingBoundSessionId = getBoundTokenSessionId(req);
     if (authReq.authMethod === 'api_token' && existingBoundSessionId) {
-      const boundSession = await agentSessionService.getSession(
+      let boundSession = await agentSessionService.getSession(
         existingBoundSessionId,
       );
       if (
         !boundSession ||
-        boundSession.userId !== userId ||
-        boundSession.agentIdentifier !== agentIdentifier.trim()
+        boundSession.userId !== userId
       ) {
         return res.status(403).json({
           success: false,
@@ -2904,6 +2995,55 @@ router.post('/memory/sessions', authenticateToken, async (req: Request, res: Res
           error:
             'This token is already assigned to a different agent. Create a separate token for this agent.',
         });
+      }
+
+      if (boundSession.agentIdentifier !== agentIdentifier.trim()) {
+        const canAdoptRequestedIdentity =
+          boundSession.metadata?.autoProvisioned === true &&
+          boundSession.agentIdentifier === `mcp-token:${authReq.tokenId}`;
+        if (!canAdoptRequestedIdentity) {
+          return res.status(403).json({
+            success: false,
+            code: 'TOKEN_SESSION_MISMATCH',
+            error:
+              'This token is already assigned to a different agent. Create a separate token for this agent.',
+          });
+        }
+
+        const conflictingSession = await agentSessionService.getSessionByAgent(
+          userId,
+          agentIdentifier.trim(),
+        );
+        if (conflictingSession && conflictingSession.id !== boundSession.id) {
+          return res.status(409).json({
+            success: false,
+            code: 'AGENT_IDENTIFIER_IN_USE',
+            error:
+              'Another agent session already uses this identifier. Use that agent token or choose a new identifier.',
+          });
+        }
+
+        await pool.query(
+          `UPDATE agent_sessions
+           SET agent_name = $1,
+               agent_identifier = $2,
+               metadata =
+                 (COALESCE(metadata, '{}'::jsonb) - 'autoProvisioned')
+                 || $3::jsonb
+                 || '{"autoProvisioned": false}'::jsonb,
+               last_activity = NOW()
+           WHERE id = $4 AND user_id = $5`,
+          [
+            agentName.trim(),
+            agentIdentifier.trim(),
+            JSON.stringify(metadata),
+            boundSession.id,
+            userId,
+          ],
+        );
+        boundSession =
+          (await agentSessionService.getSession(boundSession.id)) ||
+          boundSession;
       }
     }
 

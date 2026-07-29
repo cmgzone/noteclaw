@@ -83,4 +83,5 @@ created in the app:
 Users do not need to host the MCP server. A local stdio connector remains
 available for clients that do not yet support remote Streamable HTTP. See
 `backend/mcp-server/README.md` for the fallback, memory tools, and WebSocket
-protocol.
+protocol. On first discovery, NoteClaw creates a private token-scoped memory
+notebook and exposes permitted notebook topics as MCP Resources.
