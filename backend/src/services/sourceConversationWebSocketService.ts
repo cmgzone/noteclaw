@@ -7,11 +7,12 @@
 import { IncomingMessage } from 'http';
 import jwt from 'jsonwebtoken';
 import { parse } from 'url';
-import { WebSocket, WebSocketServer } from 'ws';
+import { WebSocket, type WebSocketServer } from 'ws';
 import pool from '../config/database.js';
 import { getJwtSecret } from '../config/secrets.js';
 import { TOKEN_PREFIX, tokenService } from './tokenService.js';
 import type { SourceMessage } from './sourceConversationService.js';
+import { createPathWebSocketServer } from './webSocketUpgradeRouter.js';
 
 interface SourceConversationConnection {
   ws: WebSocket;
@@ -43,10 +44,10 @@ class SourceConversationWebSocketService {
   private connectionCounter = 0;
 
   initialize(server: any): void {
-    this.wss = new WebSocketServer({
+    this.wss = createPathWebSocketServer(
       server,
-      path: '/ws/source-conversations',
-    });
+      '/ws/source-conversations',
+    );
 
     this.wss.on('error', (error) => {
       console.error('Source conversation WebSocket server error:', error);

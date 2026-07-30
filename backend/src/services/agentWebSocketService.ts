@@ -10,7 +10,7 @@ import { IncomingMessage } from 'http';
 import { randomUUID } from 'crypto';
 import jwt from 'jsonwebtoken';
 import { parse } from 'url';
-import { WebSocket, WebSocketServer } from 'ws';
+import { WebSocket, type WebSocketServer } from 'ws';
 
 import pool from '../config/database.js';
 import { getJwtSecret } from '../config/secrets.js';
@@ -21,6 +21,7 @@ import {
 import { userHasPlanFeature } from './planFeatureService.js';
 import { sourceConversationService } from './sourceConversationService.js';
 import { TOKEN_PREFIX, tokenService } from './tokenService.js';
+import { createPathWebSocketServer } from './webSocketUpgradeRouter.js';
 
 interface AgentConnection {
   connectionId: string;
@@ -48,10 +49,7 @@ class AgentWebSocketService {
   private pingInterval: NodeJS.Timeout | null = null;
 
   initialize(server: any): void {
-    this.wss = new WebSocketServer({
-      server,
-      path: '/ws/agent',
-    });
+    this.wss = createPathWebSocketServer(server, '/ws/agent');
 
     this.wss.on('error', (error) => {
       console.error('Agent WebSocket server error:', error);
