@@ -1843,7 +1843,7 @@ router.get('/websocket/info', optionalAuth, async (req: Request, res: Response) 
       url: `${wsUrl}/ws/agent`,
       protocol: wsUrl.startsWith('wss://') ? 'wss' : 'ws',
       authentication:
-        'Query parameters: token plus sessionId or agentIdentifier; add clientIdentifier to identify each connected agent',
+        'Query parameter: token. A bound MCP token resumes its session automatically; sessionId or agentIdentifier may select a session for account JWTs. Add clientIdentifier to identify each connected agent.',
       messageTypes: {
         serverToAgent: [
           'memory_ready',
@@ -1870,6 +1870,7 @@ router.get('/websocket/info', optionalAuth, async (req: Request, res: Response) 
       },
     },
     example: {
+      connectWithBoundToken: `const ws = new WebSocket('${wsUrl}/ws/agent?token=nclaw_xxx&clientIdentifier=codex')`,
       connect: `const ws = new WebSocket('${wsUrl}/ws/agent?token=nclaw_xxx&sessionId=xxx&clientIdentifier=codex')`,
       connectByAgentIdentifier: `const ws = new WebSocket('${wsUrl}/ws/agent?token=nclaw_xxx&agentIdentifier=project-id&clientIdentifier=claude')`,
       memoryChanged: JSON.stringify({

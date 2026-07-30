@@ -104,9 +104,22 @@ class AgentWebSocketService {
         return;
       }
 
+      const boundSessionId =
+        auth.authMethod === 'api_token' &&
+        typeof auth.tokenMetadata?.boundAgentSessionId === 'string'
+          ? auth.tokenMetadata.boundAgentSessionId
+          : '';
+      if (auth.authMethod === 'api_token' && !boundSessionId) {
+        ws.close(
+          4005,
+          'Open the memory session with MCP before connecting WebSocket',
+        );
+        return;
+      }
+
       const session = await this.resolveSession(
         auth.userId,
-        requestedSessionId,
+        requestedSessionId || boundSessionId,
         requestedAgentIdentifier,
       );
       if (!session) {
@@ -114,17 +127,6 @@ class AgentWebSocketService {
         return;
       }
       if (auth.authMethod === 'api_token') {
-        const boundSessionId =
-          typeof auth.tokenMetadata?.boundAgentSessionId === 'string'
-            ? auth.tokenMetadata.boundAgentSessionId
-            : '';
-        if (!boundSessionId) {
-          ws.close(
-            4005,
-            'Open the memory session with MCP before connecting WebSocket',
-          );
-          return;
-        }
         if (boundSessionId !== session.id) {
           ws.close(4003, 'This token belongs to another agent session');
           return;

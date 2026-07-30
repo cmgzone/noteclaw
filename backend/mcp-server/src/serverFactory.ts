@@ -1057,7 +1057,7 @@ export function createNoteClawMcpServer(
   const server = new Server(
     {
       name: 'noteclaw-memory',
-      version: '2.5.0',
+      version: '2.5.1',
     },
     {
       capabilities: {
@@ -1395,10 +1395,10 @@ export function createNoteClawMcpServer(
         const data = response.data as Record<string, any>;
         const socketUrl = data.websocket?.url as string | undefined;
         const target = input.agentSessionId
-          ? `sessionId=${encodeURIComponent(input.agentSessionId)}`
+          ? `&sessionId=${encodeURIComponent(input.agentSessionId)}`
           : input.agentIdentifier
-            ? `agentIdentifier=${encodeURIComponent(input.agentIdentifier)}`
-            : 'agentIdentifier=YOUR_AGENT_IDENTIFIER';
+            ? `&agentIdentifier=${encodeURIComponent(input.agentIdentifier)}`
+            : '';
         const client = input.clientIdentifier
           ? `&clientIdentifier=${encodeURIComponent(input.clientIdentifier)}`
           : '&clientIdentifier=YOUR_CLIENT_IDENTIFIER';
@@ -1406,12 +1406,13 @@ export function createNoteClawMcpServer(
         return textResult({
           ...data,
           connectionTemplate: socketUrl
-            ? `${socketUrl}?token=YOUR_API_TOKEN&${target}${client}`
+            ? `${socketUrl}?token=YOUR_API_TOKEN${target}${client}`
             : undefined,
           note:
             'Use the same API token configured for this MCP server. ' +
-            'Multiple clients can connect to the same session when each uses ' +
-            'a stable clientIdentifier. The token is intentionally not echoed.',
+            'A token bound by MCP resumes its session automatically. Multiple ' +
+            'clients can connect to that session when each uses a stable ' +
+            'clientIdentifier. The token is intentionally not echoed.',
         });
       }
 
