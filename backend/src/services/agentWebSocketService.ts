@@ -12,12 +12,14 @@ import jwt from 'jsonwebtoken';
 import { parse } from 'url';
 import { WebSocket, WebSocketServer } from 'ws';
 
+import pool from '../config/database.js';
 import { getJwtSecret } from '../config/secrets.js';
 import {
   agentSessionService,
   type AgentSession,
 } from './agentSessionService.js';
 import { userHasPlanFeature } from './planFeatureService.js';
+import { sourceConversationService } from './sourceConversationService.js';
 import { TOKEN_PREFIX, tokenService } from './tokenService.js';
 
 interface AgentConnection {
@@ -165,9 +167,9 @@ class AgentWebSocketService {
         );
       });
 
-      ws.on('message', (data) =>
-        this.handleMessage(session.id, connectionId, data),
-      );
+      ws.on('message', (data) => {
+        void this.handleMessage(session.id, connectionId, data);
+      });
       ws.on('close', () =>
         this.handleDisconnect(session.id, connectionId, ws),
       );
@@ -252,18 +254,31 @@ class AgentWebSocketService {
     }
   }
 
-  private handleMessage(
+  private async handleMessage(
     sessionId: string,
     connectionId: string,
     data: WebSocket.RawData,
-  ): void {
+  ): Promise<void> {
     const connection = this.connections.get(sessionId)?.get(connectionId);
     if (!connection) {
       return;
     }
 
+    let message: WebSocketMessage;
     try {
-      const message = JSON.parse(data.toString()) as WebSocketMessage;
+      message = JSON.parse(data.toString()) as WebSocketMessage;
+    } catch {
+      this.sendToConnection(connection, {
+        type: 'error',
+        payload: {
+          code: 'invalid_json',
+          message: 'WebSocket messages must be valid JSON.',
+        },
+      });
+      return;
+    }
+
+    try {
       if (message.type === 'pong') {
         connection.lastPong = new Date();
         return;
@@ -277,23 +292,157 @@ class AgentWebSocketService {
         return;
       }
 
+      if (message.type === 'followup_response') {
+        await this.handleFollowupResponse(connection, message);
+        return;
+      }
+
       this.sendToConnection(connection, {
         type: 'error',
         payload: {
           code: 'unsupported_message',
           message:
-            'Memory commands use MCP tools. WebSocket accepts ping and pong.',
+            'Memory commands use MCP tools. WebSocket accepts ping, pong, and followup_response.',
         },
       });
-    } catch {
+    } catch (error) {
+      console.error(
+        `[Agent WS] Failed to handle ${message.type} for ${sessionId}:`,
+        error,
+      );
       this.sendToConnection(connection, {
         type: 'error',
+        messageId: message.messageId,
         payload: {
-          code: 'invalid_json',
-          message: 'WebSocket messages must be valid JSON.',
+          code: 'message_processing_failed',
+          message: 'The WebSocket message could not be processed.',
         },
       });
     }
+  }
+
+  private async handleFollowupResponse(
+    connection: AgentConnection,
+    message: WebSocketMessage,
+  ): Promise<void> {
+    const payload =
+      message.payload && typeof message.payload === 'object'
+        ? message.payload as Record<string, any>
+        : {};
+    const messageId =
+      (typeof message.messageId === 'string' ? message.messageId : '')
+      || (typeof payload.messageId === 'string' ? payload.messageId : '');
+    const response =
+      typeof payload.response === 'string' ? payload.response.trim() : '';
+    const codeUpdate =
+      payload.codeUpdate && typeof payload.codeUpdate === 'object'
+        ? payload.codeUpdate as Record<string, any>
+        : null;
+
+    if (!messageId || !response) {
+      this.sendToConnection(connection, {
+        type: 'error',
+        messageId: messageId || undefined,
+        payload: {
+          code: 'invalid_followup_response',
+          message:
+            'followup_response requires messageId and payload.response.',
+        },
+      });
+      return;
+    }
+
+    const originalResult = await pool.query(
+      `SELECT cm.role, sc.source_id, sc.agent_session_id, s.type AS source_type
+       FROM conversation_messages cm
+       JOIN source_conversations sc ON sc.id = cm.conversation_id
+       JOIN sources s ON s.id = sc.source_id
+       JOIN notebooks n ON n.id = s.notebook_id
+       WHERE cm.id = $1
+         AND sc.agent_session_id = $2
+         AND n.user_id = $3`,
+      [messageId, connection.agentSessionId, connection.userId],
+    );
+    if (originalResult.rows.length === 0) {
+      this.sendToConnection(connection, {
+        type: 'error',
+        messageId,
+        payload: {
+          code: 'followup_not_found',
+          message: 'The chat message was not found for this agent session.',
+        },
+      });
+      return;
+    }
+
+    const original = originalResult.rows[0];
+    if (original.role !== 'user') {
+      this.sendToConnection(connection, {
+        type: 'error',
+        messageId,
+        payload: {
+          code: 'invalid_followup_target',
+          message: 'Agents can only respond to user messages.',
+        },
+      });
+      return;
+    }
+
+    const agentMessage = await sourceConversationService.addMessage(
+      original.source_id,
+      'agent',
+      response,
+      {
+        agentSessionId: connection.agentSessionId,
+        metadata: {
+          codeUpdate,
+          inReplyTo: messageId,
+          deliveredViaWebSocket: true,
+          clientIdentifier: connection.clientIdentifier,
+        },
+      },
+    );
+    await sourceConversationService.markMessagesAsRead([messageId]);
+
+    let codeUpdated = false;
+    if (
+      original.source_type !== 'agent_chat'
+      && typeof codeUpdate?.code === 'string'
+      && codeUpdate.code.length > 0
+    ) {
+      await pool.query(
+        `UPDATE sources
+         SET content = $1,
+             metadata = jsonb_set(
+               COALESCE(metadata, '{}')::jsonb,
+               '{lastCodeUpdate}',
+               $2::jsonb
+             ),
+             updated_at = NOW()
+         WHERE id = $3 AND user_id = $4`,
+        [
+          codeUpdate.code,
+          JSON.stringify({
+            description: codeUpdate.description,
+            updatedAt: new Date().toISOString(),
+          }),
+          original.source_id,
+          connection.userId,
+        ],
+      );
+      codeUpdated = true;
+    }
+
+    this.sendToConnection(connection, {
+      type: 'followup_response_accepted',
+      messageId,
+      payload: {
+        messageId,
+        agentMessage,
+        codeUpdated,
+        timestamp: new Date().toISOString(),
+      },
+    });
   }
 
   notifyMemoryChanged(
@@ -336,8 +485,7 @@ class AgentWebSocketService {
   }
 
   /**
-   * Compatibility for dormant legacy HTTP routes. The memory MCP server does
-   * not expose follow-up tools.
+   * Delivers a user chat turn immediately to every live client in the session.
    */
   async sendFollowupToAgent(
     sessionId: string,

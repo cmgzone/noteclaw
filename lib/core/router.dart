@@ -14,6 +14,11 @@ import '../features/fact_check/fact_check_screen.dart';
 import '../features/github/github_connect_screen.dart';
 import '../features/home/memory_dashboard_screen.dart';
 import '../features/memory/memory_notebook_screen.dart';
+import '../features/planning/ui/plan_detail_screen.dart';
+import '../features/planning/ui/planning_ai_screen.dart';
+import '../features/planning/ui/plans_list_screen.dart';
+import '../features/planning/ui/project_prototype_screen.dart';
+import '../features/planning/ui/ui_design_generator_screen.dart';
 import '../features/search/web_search_screen.dart';
 import '../features/settings/agent_connections_screen.dart';
 import '../features/settings/account_settings_screen.dart';
@@ -78,6 +83,68 @@ GoRouter createRouter(ProviderContainer container) {
         ),
       ),
       GoRoute(path: '/chat', redirect: (_, __) => '/memory-chat'),
+      GoRoute(
+        path: '/planning',
+        name: 'planning',
+        pageBuilder: (context, state) => buildTransitionPage(
+          child: const PaidAccessGate(
+            child: PlansListScreen(),
+          ),
+        ),
+      ),
+      GoRoute(
+        path: '/planning/assistant',
+        name: 'planning-assistant',
+        pageBuilder: (context, state) => buildTransitionPage(
+          child: const PaidAccessGate(
+            child: PlanningAIScreen(),
+          ),
+        ),
+      ),
+      GoRoute(
+        path: '/planning/:planId/ai',
+        name: 'plan-assistant',
+        pageBuilder: (context, state) => buildTransitionPage(
+          child: PaidAccessGate(
+            child: PlanningAIScreen(
+              planId: state.pathParameters['planId'],
+            ),
+          ),
+        ),
+      ),
+      GoRoute(
+        path: '/planning/:planId/prototype',
+        name: 'plan-prototype',
+        pageBuilder: (context, state) => buildTransitionPage(
+          child: PaidAccessGate(
+            child: ProjectPrototypeScreen(
+              planId: state.pathParameters['planId'] ?? '',
+            ),
+          ),
+        ),
+      ),
+      GoRoute(
+        path: '/planning/:planId/ui-designer',
+        name: 'plan-ui-designer',
+        pageBuilder: (context, state) => buildTransitionPage(
+          child: PaidAccessGate(
+            child: UIDesignGeneratorScreen(
+              planId: state.pathParameters['planId'] ?? '',
+            ),
+          ),
+        ),
+      ),
+      GoRoute(
+        path: '/planning/:planId',
+        name: 'plan-detail',
+        pageBuilder: (context, state) => buildTransitionPage(
+          child: PaidAccessGate(
+            child: PlanDetailScreen(
+              planId: state.pathParameters['planId'] ?? '',
+            ),
+          ),
+        ),
+      ),
       GoRoute(
         path: '/research',
         name: 'deep-research',

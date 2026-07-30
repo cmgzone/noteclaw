@@ -233,7 +233,7 @@ class LiveStatus extends StatelessWidget {
   }
 }
 
-enum MemoryDestination { memory, agents, chat, settings }
+enum MemoryDestination { memory, agents, chat, planning, settings }
 
 class MemoryNavigationBar extends StatelessWidget {
   const MemoryNavigationBar({
@@ -247,6 +247,7 @@ class MemoryNavigationBar extends StatelessWidget {
     '/home',
     '/agents',
     '/memory-chat',
+    '/planning',
     '/settings/account'
   ];
 
@@ -271,6 +272,11 @@ class MemoryNavigationBar extends StatelessWidget {
           icon: Icon(LucideIcons.messagesSquare, size: 19),
           selectedIcon: Icon(LucideIcons.messageSquare, size: 19),
           label: 'Chat',
+        ),
+        NavigationDestination(
+          icon: Icon(LucideIcons.clipboardList, size: 19),
+          selectedIcon: Icon(LucideIcons.listChecks, size: 19),
+          label: 'Plan',
         ),
         NavigationDestination(
           icon: Icon(LucideIcons.settings, size: 19),

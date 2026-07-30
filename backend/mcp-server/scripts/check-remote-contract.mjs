@@ -81,6 +81,83 @@ app.get(
   },
 );
 
+app.get('/api/coding-agent/followups', (_req, res) => {
+  res.json({
+    success: true,
+    count: 1,
+    messages: [
+      {
+        id: 'remote-chat-message',
+        role: 'user',
+        content: 'Please review the notebook context.',
+        notebookId: 'remote-contract-notebook',
+        notebookContext: {
+          topic: {
+            id: 'remote-contract-notebook',
+            title: 'Remote contract memory',
+          },
+          sources: [],
+          memories: [],
+        },
+      },
+    ],
+  });
+});
+
+app.post('/api/coding-agent/followups/:messageId/respond', (req, res) => {
+  res.json({
+    success: true,
+    message: {
+      id: 'remote-chat-response',
+      role: 'agent',
+      content: req.body.response,
+      metadata: { inReplyTo: req.params.messageId },
+    },
+  });
+});
+
+app.get('/api/planning', (_req, res) => {
+  res.json({
+    success: true,
+    count: 1,
+    plans: [
+      {
+        id: 'remote-contract-plan',
+        title: 'Contract plan',
+        status: 'active',
+      },
+    ],
+  });
+});
+
+app.post('/api/planning', (req, res) => {
+  res.status(201).json({
+    success: true,
+    plan: {
+      id: 'remote-created-plan',
+      title: req.body.title,
+      description: req.body.description,
+      isPrivate: req.body.isPrivate,
+      status: 'draft',
+    },
+  });
+});
+
+app.post(
+  '/api/planning/:planId/tasks/:taskId/status',
+  (req, res) => {
+    res.json({
+      success: true,
+      task: {
+        id: req.params.taskId,
+        planId: req.params.planId,
+        status: req.body.status,
+        reason: req.body.reason,
+      },
+    });
+  },
+);
+
 app.post('/api/coding-agent/research/search', (req, res) => {
   res.json({
     success: true,
@@ -168,9 +245,15 @@ try {
   const listed = await client.listTools();
   const toolNames = new Set(listed.tools.map((tool) => tool.name));
   for (const required of [
+    'noteclaw_instructions_get',
     'memory_session_open',
     'memory_get',
     'memory_put',
+    'agent_chat_messages_list',
+    'agent_chat_respond',
+    'planning_plans_list',
+    'planning_plan_create',
+    'planning_task_status_update',
     'get_websocket_info',
     'fact_check',
     'github_status',
@@ -183,21 +266,44 @@ try {
   const resources = await client.listResources();
   if (
     bootstrapCalls < 1 ||
-    resources.resources.length !== 1 ||
-    resources.resources[0]?.uri !==
-      'noteclaw://notebooks/remote-contract-notebook'
+    resources.resources.length !== 2 ||
+    !resources.resources.some(
+      (item) => item.uri === 'noteclaw://notebooks/remote-contract-notebook',
+    ) ||
+    !resources.resources.some(
+      (item) => item.uri === 'noteclaw://instructions/AGENTS.md',
+    )
   ) {
-    throw new Error('Remote MCP did not expose its bootstrapped notebook');
+    throw new Error(
+      'Remote MCP did not expose its AGENTS.md guide and bootstrapped notebook',
+    );
   }
 
+  const notebookResource = resources.resources.find(
+    (item) => item.uri === 'noteclaw://notebooks/remote-contract-notebook',
+  );
+  if (!notebookResource) {
+    throw new Error('Remote MCP notebook resource was not listed');
+  }
   const resource = await client.readResource({
-    uri: resources.resources[0].uri,
+    uri: notebookResource.uri,
   });
   if (
     resource.contents[0]?.mimeType !== 'application/json' ||
     !('text' in resource.contents[0])
   ) {
     throw new Error('Remote MCP notebook resource returned invalid content');
+  }
+
+  const instructionsResource = await client.readResource({
+    uri: 'noteclaw://instructions/AGENTS.md',
+  });
+  if (
+    instructionsResource.contents[0]?.mimeType !== 'text/markdown' ||
+    !('text' in instructionsResource.contents[0]) ||
+    !instructionsResource.contents[0].text.includes('Planning mode')
+  ) {
+    throw new Error('Remote MCP AGENTS.md resource returned invalid content');
   }
 
   const result = await client.callTool({
@@ -214,6 +320,100 @@ try {
     payload?.session?.id !== 'remote-contract-session'
   ) {
     throw new Error('Remote MCP tool call returned an invalid payload');
+  }
+
+  const chatListResult = await client.callTool({
+    name: 'agent_chat_messages_list',
+    arguments: {},
+  });
+  const chatListText = chatListResult.content.find(
+    (item) => item.type === 'text',
+  )?.text;
+  const chatListPayload = chatListText ? JSON.parse(chatListText) : null;
+  if (
+    chatListResult.isError ||
+    chatListPayload?.messages?.[0]?.id !== 'remote-chat-message'
+  ) {
+    throw new Error('Remote MCP agent chat list returned an invalid payload');
+  }
+
+  const chatResponseResult = await client.callTool({
+    name: 'agent_chat_respond',
+    arguments: {
+      messageId: 'remote-chat-message',
+      response: 'The notebook context is available.',
+    },
+  });
+  const chatResponseText = chatResponseResult.content.find(
+    (item) => item.type === 'text',
+  )?.text;
+  const chatResponsePayload = chatResponseText
+    ? JSON.parse(chatResponseText)
+    : null;
+  if (
+    chatResponseResult.isError ||
+    chatResponsePayload?.message?.content !==
+      'The notebook context is available.'
+  ) {
+    throw new Error('Remote MCP agent chat response returned an invalid payload');
+  }
+
+  const planningListResult = await client.callTool({
+    name: 'planning_plans_list',
+    arguments: {},
+  });
+  const planningListText = planningListResult.content.find(
+    (item) => item.type === 'text',
+  )?.text;
+  const planningListPayload = planningListText
+    ? JSON.parse(planningListText)
+    : null;
+  if (
+    planningListResult.isError ||
+    planningListPayload?.plans?.[0]?.id !== 'remote-contract-plan'
+  ) {
+    throw new Error('Remote MCP planning list returned an invalid payload');
+  }
+
+  const planningCreateResult = await client.callTool({
+    name: 'planning_plan_create',
+    arguments: {
+      title: 'Created through MCP',
+      description: 'Contract planning workflow',
+    },
+  });
+  const planningCreateText = planningCreateResult.content.find(
+    (item) => item.type === 'text',
+  )?.text;
+  const planningCreatePayload = planningCreateText
+    ? JSON.parse(planningCreateText)
+    : null;
+  if (
+    planningCreateResult.isError ||
+    planningCreatePayload?.plan?.title !== 'Created through MCP'
+  ) {
+    throw new Error('Remote MCP planning create returned an invalid payload');
+  }
+
+  const planningStatusResult = await client.callTool({
+    name: 'planning_task_status_update',
+    arguments: {
+      planId: 'remote-contract-plan',
+      taskId: 'remote-contract-task',
+      status: 'in_progress',
+    },
+  });
+  const planningStatusText = planningStatusResult.content.find(
+    (item) => item.type === 'text',
+  )?.text;
+  const planningStatusPayload = planningStatusText
+    ? JSON.parse(planningStatusText)
+    : null;
+  if (
+    planningStatusResult.isError ||
+    planningStatusPayload?.task?.status !== 'in_progress'
+  ) {
+    throw new Error('Remote MCP planning status returned an invalid payload');
   }
 
   const factResult = await client.callTool({
@@ -250,7 +450,7 @@ try {
   }
 
   console.log(
-    `Remote MCP contract verified: ${listed.tools.length} tools, ${resources.resources.length} notebook resource, memory execution, fact checking, and GitHub access`,
+    `Remote MCP contract verified: ${listed.tools.length} tools, AGENTS.md and notebook resources, planning, live agent chat, memory execution, fact checking, and GitHub access`,
   );
 } finally {
   await client.close();

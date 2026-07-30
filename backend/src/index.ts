@@ -16,8 +16,11 @@ import githubRoutes from './routes/github.js';
 import mcpDownloadRoutes from './routes/mcpDownload.js';
 import remoteMcpRoutes from './routes/remoteMcp.js';
 import subscriptionRoutes from './routes/subscriptions.js';
+import planningRoutes from './routes/planning.js';
 
 import { agentWebSocketService } from './services/agentWebSocketService.js';
+import { planningWebSocketService } from './services/planningWebSocketService.js';
+import { sourceConversationWebSocketService } from './services/sourceConversationWebSocketService.js';
 import { initializeDatabase } from './config/database.js';
 
 // Load environment variables
@@ -110,6 +113,7 @@ app.use('/api/coding-agent', codingAgentRoutes);
 app.use('/api/github', githubRoutes);
 app.use('/api/mcp', mcpDownloadRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
+app.use('/api/planning', planningRoutes);
 // 404 handler
 app.use((req, res) => {
     console.log(`[404] Route not found: ${req.method} ${req.path}`);
@@ -128,8 +132,10 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 // Start server with WebSocket support
 const server = createServer(app);
 
-// Initialize WebSocket service for real-time agent communication
+// Initialize real-time agent, source-chat, and planning communication.
 agentWebSocketService.initialize(server);
+sourceConversationWebSocketService.initialize(server);
+planningWebSocketService.initialize(server);
 
 let activePort = requestedPort;
 let portAttempts = 0;

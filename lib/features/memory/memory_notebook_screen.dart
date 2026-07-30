@@ -80,7 +80,7 @@ class _MemoryNotebookScreenState extends ConsumerState<MemoryNotebookScreen> {
           }
 
           final detail = snapshot.data!;
-          final sources = detail.sources;
+          final sources = detail.visibleSources;
           final selected = sources.isEmpty
               ? null
               : sources.firstWhere(
@@ -199,7 +199,7 @@ class _NotebookHeader extends StatelessWidget {
               _Badge(
                 icon: LucideIcons.layers,
                 label:
-                    '${detail.sources.length} source${detail.sources.length == 1 ? '' : 's'}',
+                    '${detail.visibleSources.length} source${detail.visibleSources.length == 1 ? '' : 's'}',
               ),
               _Badge(
                 icon: LucideIcons.bot,

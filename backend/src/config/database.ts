@@ -1,5 +1,6 @@
 import { Pool as PgPool } from 'pg';
 import { Pool as NeonPool, neonConfig } from '@neondatabase/serverless';
+import { readFile } from 'node:fs/promises';
 import dotenv from 'dotenv';
 import ws from 'ws';
 
@@ -909,6 +910,13 @@ export async function initializeDatabase() {
             CREATE INDEX IF NOT EXISTS idx_github_cache_repo
                 ON github_source_cache(owner, repo);
         `);
+
+        const planningMigration = await readFile(
+            new URL('../../migrations/add_planning_mode.sql', import.meta.url),
+            'utf8',
+        );
+        await client.query(planningMigration);
+        console.log('Planning mode tables initialized');
 
         const initialAdminEmail = process.env.INITIAL_ADMIN_EMAIL?.trim().toLowerCase();
         const initialAdminPasswordHash = process.env.INITIAL_ADMIN_PASSWORD_HASH?.trim();

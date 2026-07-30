@@ -157,6 +157,10 @@ class MemoryNotebookDetail {
   final MemoryNotebook notebook;
   final List<MemorySource> sources;
 
+  List<MemorySource> get visibleSources => sources
+      .where((source) => source.sourceType != 'agent_chat')
+      .toList(growable: false);
+
   factory MemoryNotebookDetail.fromJson(Map<String, dynamic> json) {
     final notebook = MemoryNotebook.fromJson(_asMap(json['notebook']));
     final sourceRows = json['sources'] is List

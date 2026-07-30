@@ -309,6 +309,51 @@ const sanitizeImageAttachments = (value: unknown): ImageAttachmentPayload[] => {
     .slice(0, 4);
 };
 
+const formatTopicContextForAgent = (
+  context: Awaited<ReturnType<typeof getOwnedTopicContext>> | null,
+): string => {
+  if (!context) return '';
+
+  const parts = [
+    `# Notebook: ${context.topic.title}`,
+    context.topic.description ? context.topic.description : '',
+  ].filter(Boolean);
+
+  for (const source of context.sources) {
+    parts.push(
+      `\n## Source: ${source.title}`,
+      `Type: ${source.type}`,
+      source.url ? `URL: ${source.url}` : '',
+      String(source.content || '').trim() || '(No text content)',
+    );
+  }
+
+  for (const memory of context.memories) {
+    parts.push(
+      `\n## Memory: ${memory.namespace}`,
+      JSON.stringify(memory.memory, null, 2),
+    );
+  }
+
+  return parts.filter(Boolean).join('\n').slice(0, 100_000);
+};
+
+const getAgentChatTopicContext = async (
+  userId: string,
+  agentSessionId: string,
+  notebookId: unknown,
+) => {
+  const normalizedNotebookId =
+    typeof notebookId === 'string' ? notebookId.trim() : '';
+  if (!normalizedNotebookId) return null;
+
+  return getGrantedTopicContext(
+    userId,
+    agentSessionId,
+    normalizedNotebookId,
+  );
+};
+
 const titleCase = (value: string | null | undefined): string =>
   (value ?? '')
     .split(/[_\-\s]+/)
@@ -1092,14 +1137,31 @@ router.post('/sources/with-context', authenticateToken, async (req: Request, res
 router.get('/followups', authenticateToken, async (req: Request, res: Response) => {
   try {
     const userId = (req as any).userId;
-    const { agentSessionId, agentIdentifier } = req.query;
+    const requestedSessionId =
+      typeof req.query.agentSessionId === 'string'
+        ? req.query.agentSessionId.trim()
+        : '';
+    const requestedAgentIdentifier =
+      typeof req.query.agentIdentifier === 'string'
+        ? req.query.agentIdentifier.trim()
+        : '';
+    const agentSessionId = requestedSessionId || getBoundTokenSessionId(req);
 
     // Get the agent session
     let session;
     if (agentSessionId) {
-      session = await agentSessionService.getSession(agentSessionId as string);
-    } else if (agentIdentifier) {
-      session = await agentSessionService.getSessionByAgent(userId, agentIdentifier as string);
+      session = await agentSessionService.getSession(agentSessionId);
+    } else if (requestedAgentIdentifier) {
+      session = await agentSessionService.getSessionByAgent(
+        userId,
+        requestedAgentIdentifier,
+      );
+    } else {
+      return res.status(400).json({
+        success: false,
+        error:
+          'agentSessionId or agentIdentifier is required. MCP tokens use their bound session automatically.',
+      });
     }
 
     if (!session) {
@@ -1110,26 +1172,66 @@ router.get('/followups', authenticateToken, async (req: Request, res: Response) 
     if (session.userId !== userId) {
       return res.status(403).json({ error: 'Access denied' });
     }
+    if (!requireTokenSessionAccess(req, res, session.id)) return;
 
     // Get pending messages for this agent session
     const pendingMessages = await sourceConversationService.getPendingUserMessages(session.id);
+    const topicContextCache = new Map<string, Promise<any>>();
+    const conversationCache = new Map<string, Promise<any>>();
 
     // Enrich messages with source info
     const enrichedMessages = await Promise.all(
       pendingMessages.map(async (msg) => {
         const sourceResult = await pool.query(
-          `SELECT title, content, metadata FROM sources WHERE id = $1`,
-          [msg.sourceId]
+          `SELECT s.title, s.content, s.metadata, s.type, s.notebook_id,
+                  n.title AS notebook_title
+           FROM sources s
+           JOIN notebooks n ON n.id = s.notebook_id
+           WHERE s.id = $1 AND n.user_id = $2`,
+          [msg.sourceId, userId],
         );
         const source = sourceResult.rows[0];
         const imageAttachments = Array.isArray(msg.metadata?.imageAttachments)
           ? msg.metadata.imageAttachments
           : [];
+        const notebookId =
+          typeof source?.notebook_id === 'string'
+            ? source.notebook_id
+            : source?.notebook_id?.toString() || '';
+        let notebookContext = null;
+        if (notebookId) {
+          if (!topicContextCache.has(notebookId)) {
+            topicContextCache.set(
+              notebookId,
+              getAgentChatTopicContext(userId, session.id, notebookId),
+            );
+          }
+          notebookContext = await topicContextCache.get(notebookId)!;
+        }
+        const formattedContext = formatTopicContextForAgent(notebookContext);
+        if (!conversationCache.has(msg.sourceId)) {
+          conversationCache.set(
+            msg.sourceId,
+            sourceConversationService.getConversation(msg.sourceId),
+          );
+        }
+        const conversation = await conversationCache.get(msg.sourceId)!;
+        const sourceMetadata =
+          typeof source?.metadata === 'string'
+            ? JSON.parse(source.metadata)
+            : source?.metadata || {};
         return {
           ...msg,
           sourceTitle: source?.title || 'Unknown',
-          sourceCode: source?.content || '',
-          sourceLanguage: source?.metadata?.language || 'unknown',
+          sourceCode:
+            source?.type === 'agent_chat'
+              ? formattedContext
+              : source?.content || formattedContext,
+          sourceLanguage: sourceMetadata.language || 'unknown',
+          notebookId: notebookId || null,
+          notebookTitle: source?.notebook_title || null,
+          notebookContext,
+          conversationHistory: conversation?.messages || [],
           imageAttachments,
         };
       })
@@ -1169,11 +1271,13 @@ router.post('/followups/:id/respond', authenticateToken, async (req: Request, re
 
     // Get the original message to find the source
     const messageResult = await pool.query(
-      `SELECT cm.*, sc.source_id, sc.agent_session_id
+      `SELECT cm.*, sc.source_id, sc.agent_session_id, s.type AS source_type
        FROM conversation_messages cm
        JOIN source_conversations sc ON cm.conversation_id = sc.id
-       WHERE cm.id = $1`,
-      [messageId]
+       JOIN sources s ON s.id = sc.source_id
+       JOIN notebooks n ON n.id = s.notebook_id
+       WHERE cm.id = $1 AND n.user_id = $2`,
+      [messageId, userId]
     );
 
     if (messageResult.rows.length === 0) {
@@ -1185,12 +1289,27 @@ router.post('/followups/:id/respond', authenticateToken, async (req: Request, re
     const sessionId = agentSessionId || originalMessage.agent_session_id;
 
     // Verify the session belongs to the user
-    if (sessionId) {
-      const session = await agentSessionService.getSession(sessionId);
-      if (session && session.userId !== userId) {
-        return res.status(403).json({ error: 'Access denied' });
-      }
+    if (
+      agentSessionId &&
+      originalMessage.agent_session_id &&
+      agentSessionId !== originalMessage.agent_session_id
+    ) {
+      return res.status(403).json({
+        success: false,
+        error: 'This message belongs to another agent session.',
+      });
     }
+    if (!sessionId) {
+      return res.status(400).json({
+        success: false,
+        error: 'This chat is not associated with an agent session.',
+      });
+    }
+    const session = await agentSessionService.getSession(sessionId);
+    if (!session || session.userId !== userId) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    if (!requireTokenSessionAccess(req, res, sessionId)) return;
 
     // Add the agent's response to the conversation
     const agentMessage = await sourceConversationService.addMessage(
@@ -1210,7 +1329,7 @@ router.post('/followups/:id/respond', authenticateToken, async (req: Request, re
     await sourceConversationService.markMessagesAsRead([messageId]);
 
     // If there's a code update, update the source
-    if (codeUpdate?.code) {
+    if (codeUpdate?.code && originalMessage.source_type !== 'agent_chat') {
       await pool.query(
         `UPDATE sources 
          SET content = $1, 
@@ -1328,8 +1447,8 @@ router.post('/followups/send', authenticateToken, async (req: Request, res: Resp
     const sourceResult = await pool.query(
       `SELECT s.*, n.agent_session_id 
        FROM sources s
-       LEFT JOIN notebooks n ON s.notebook_id = n.id
-       WHERE s.id = $1 AND s.user_id = $2`,
+       JOIN notebooks n ON s.notebook_id = n.id
+       WHERE s.id = $1 AND n.user_id = $2`,
       [sourceId, userId]
     );
 
@@ -1362,6 +1481,13 @@ router.post('/followups/send', authenticateToken, async (req: Request, res: Resp
     // Get conversation history
     const conversation = await sourceConversationService.getConversation(sourceId);
     const conversationHistory = conversation?.messages || [];
+    const notebookContext = await getAgentChatTopicContext(
+      userId,
+      agentSessionId,
+      source.notebook_id,
+    );
+    const formattedNotebookContext =
+      formatTopicContextForAgent(notebookContext);
 
     // Check if this is a GitHub source to use enhanced payload
     const isGitHubSource = source.type === 'github' || metadata.type === 'github';
@@ -1378,14 +1504,22 @@ router.post('/followups/send', authenticateToken, async (req: Request, res: Resp
         userId,
       });
       payload.messageId = userMessage.id;
+      payload.notebookId = source.notebook_id || null;
+      payload.notebookContext = notebookContext;
       console.log(`[Coding Agent] Built GitHub-enhanced payload for source ${sourceId}`);
     } else {
       // Build standard payload for non-GitHub sources
       payload = {
         sourceId,
         sourceTitle: source.title || 'Untitled',
-        sourceCode: source.content || '',
+        sourceCode:
+          source.type === 'agent_chat'
+            ? formattedNotebookContext
+            : source.content || formattedNotebookContext,
         sourceLanguage: metadata.language || 'unknown',
+        notebookId: source.notebook_id || null,
+        notebookTitle: notebookContext?.topic.title || null,
+        notebookContext,
         message,
         messageId: userMessage.id,
         conversationHistory,
@@ -1411,21 +1545,9 @@ router.post('/followups/send', authenticateToken, async (req: Request, res: Resp
 
     // Fall back to webhook if WebSocket not available
     if (!delivered) {
-      // Use appropriate payload builder based on source type
-      let webhookPayload;
-      if (isGitHubSource) {
-        // For GitHub sources, use the already-built enhanced payload
-        webhookPayload = payload;
-      } else {
-        // For non-GitHub sources, build standard webhook payload
-        webhookPayload = await webhookService.buildPayload(
-          sourceId,
-          message,
-          conversationHistory,
-          userId,
-          imageAttachments
-        );
-      }
+      // Reuse the same enriched payload so webhook agents receive the notebook
+      // sources and memories that live WebSocket agents receive.
+      const webhookPayload = payload;
 
       const webhookResponse = await webhookService.sendFollowup(agentSessionId, webhookPayload);
 
@@ -1623,8 +1745,8 @@ router.get('/conversations/:sourceId', authenticateToken, async (req: Request, r
     const sourceResult = await pool.query(
       `SELECT s.id, s.metadata, n.agent_session_id
        FROM sources s
-       LEFT JOIN notebooks n ON s.notebook_id = n.id
-       WHERE s.id = $1 AND s.user_id = $2`,
+       JOIN notebooks n ON s.notebook_id = n.id
+       WHERE s.id = $1 AND n.user_id = $2`,
       [sourceId, userId]
     );
 
@@ -1727,16 +1849,20 @@ router.get('/websocket/info', optionalAuth, async (req: Request, res: Response) 
           'memory_ready',
           'memory_changed',
           'memory_compacted',
+          'followup_message',
+          'followup_response_accepted',
           'agent_joined',
           'agent_left',
           'ping',
           'error',
         ],
-        agentToServer: ['pong', 'ping'],
+        agentToServer: ['pong', 'ping', 'followup_response'],
       },
       behavior: {
         memoryCommands:
           'Open sessions and read or write memory with MCP tools. WebSocket delivers live presence and memory-change events.',
+        liveChat:
+          'Listen for followup_message. Reply with type followup_response, the same messageId, and payload.response. MCP agents may instead use agent_chat_messages_list and agent_chat_respond.',
         collaboration:
           'Multiple clients may connect to one memory session. Give every client a stable clientIdentifier.',
         keepAlive:
@@ -1752,6 +1878,13 @@ router.get('/websocket/info', optionalAuth, async (req: Request, res: Response) 
           namespace: 'default',
           mode: 'merge',
           memoryUpdatedAt: new Date().toISOString(),
+        },
+      }),
+      followupResponse: JSON.stringify({
+        type: 'followup_response',
+        messageId: 'message-id-from-followup_message',
+        payload: {
+          response: 'I reviewed the notebook context and here is the answer.',
         },
       }),
       keepAliveReply: JSON.stringify({ type: 'pong' }),
@@ -3548,7 +3681,8 @@ router.get('/memory/notebooks', authenticateToken, async (req: Request, res: Res
          n.updated_at,
          COUNT(s.id)::int AS source_count
        FROM notebooks n
-       LEFT JOIN sources s ON s.notebook_id = n.id
+       LEFT JOIN sources s
+         ON s.notebook_id = n.id AND s.type <> 'agent_chat'
        WHERE n.user_id = $1
          AND NOT (n.id::text = ANY($2::text[]))
        GROUP BY n.id
@@ -3795,9 +3929,16 @@ router.post(
           error: 'This notebook is not connected to a coding agent.',
         });
       }
+      const agentName = notebook.agent_name || 'Coding agent';
+      const channelContent = [
+        `Realtime conversation channel for ${notebook.title}.`,
+        `Connected agent: ${agentName}.`,
+        'User messages arrive as followup_message WebSocket events and through the agent_chat_messages_list MCP tool.',
+        'Read the notebook knowledge with memory_topic_get, then answer with agent_chat_respond or a followup_response WebSocket message.',
+      ].join('\n');
 
       let sourceResult = await pool.query(
-        `SELECT id, notebook_id, type, title, metadata, created_at, updated_at
+        `SELECT id, notebook_id, type, title, content, metadata, created_at, updated_at
          FROM sources
          WHERE notebook_id = $1
            AND user_id = $2
@@ -3810,25 +3951,33 @@ router.post(
 
       if (sourceResult.rows.length === 0) {
         const sourceId = uuidv4();
-        const agentName = notebook.agent_name || 'Coding agent';
         sourceResult = await pool.query(
           `INSERT INTO sources (
              id, notebook_id, user_id, type, title, content, metadata,
              created_at, updated_at
            )
-           VALUES ($1, $2, $3, 'agent_chat', $4, '', $5::jsonb, NOW(), NOW())
-           RETURNING id, notebook_id, type, title, metadata, created_at, updated_at`,
+           VALUES ($1, $2, $3, 'agent_chat', $4, $5, $6::jsonb, NOW(), NOW())
+           RETURNING id, notebook_id, type, title, content, metadata, created_at, updated_at`,
           [
             sourceId,
             notebook.id,
             userId,
             `Live chat with ${agentName}`,
+            channelContent,
             JSON.stringify({
               agentSessionId,
               systemSource: true,
               purpose: 'realtime_coding_agent_chat',
             }),
           ],
+        );
+      } else if (!String(sourceResult.rows[0].content || '').trim()) {
+        sourceResult = await pool.query(
+          `UPDATE sources
+           SET content = $1, updated_at = NOW()
+           WHERE id = $2
+           RETURNING id, notebook_id, type, title, content, metadata, created_at, updated_at`,
+          [channelContent, sourceResult.rows[0].id],
         );
       }
 
@@ -3840,6 +3989,7 @@ router.post(
           notebookId: source.notebook_id,
           type: source.type,
           title: source.title,
+          content: source.content,
           metadata:
             typeof source.metadata === 'string'
               ? JSON.parse(source.metadata)

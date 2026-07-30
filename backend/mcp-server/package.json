@@ -1,6 +1,6 @@
 {
   "name": "@noteclaw/mcp-server",
-  "version": "2.3.0",
+  "version": "2.5.0",
   "type": "module",
   "description": "Durable MCP memory bank with hosted Streamable HTTP, local stdio, and live WebSocket events",
   "main": "dist/index.js",
@@ -8,7 +8,8 @@
     "noteclaw-mcp": "./dist/index.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "AGENTS.md"
   ],
   "publishConfig": {
     "access": "public"

@@ -5,11 +5,21 @@ by NoteClaw.
 
 ## Tools
 
+- `noteclaw_instructions_get` — retrieve the canonical `AGENTS.md` usage guide
 - `memory_session_open` — create or resume an agent session
 - `memory_sessions_list` — list the current token-bound session and memory health
 - `memory_topics_list` — list only the notebook topics granted to this agent
 - `memory_topic_get` — read a granted topic's sources and memory namespaces
 - `memory_chat` — ask a question grounded in a granted notebook topic
+- `agent_chat_messages_list` — read pending messages sent by the user to this coding agent
+- `agent_chat_respond` — answer a user message and stream it back to the app
+- `planning_plans_list` / `planning_plan_get` — discover and read project plans
+- `planning_plan_create` — create a requirements-and-task planning workspace
+- `planning_requirement_create` — add requirements and acceptance criteria
+- `planning_design_note_create` — record design and implementation decisions
+- `planning_task_create` / `planning_task_update` — manage actionable tasks
+- `planning_task_status_update` — record task execution state
+- `planning_task_output_add` — attach agent work and completion evidence
 - `memory_get` — read a named memory namespace
 - `memory_put` — merge, replace, or append durable memory
 - `memory_compact` — roll older history into checkpoint summaries
@@ -56,7 +66,8 @@ remote Streamable HTTP:
 The endpoint is stateless and requires a revocable NoteClaw API token on every
 request. The first MCP discovery request creates a private token-scoped agent
 session and notebook. Permitted notebook topics are exposed as MCP Resources.
-The token remains permanently bound to that session.
+The canonical guide is exposed as `noteclaw://instructions/AGENTS.md`. The
+token remains permanently bound to that session.
 
 ### Local stdio fallback
 
@@ -93,26 +104,32 @@ Example MCP client configuration:
 1. Give each agent its own NoteClaw token and connect. NoteClaw automatically
    creates its private memory notebook and exposes permitted topics as MCP
    Resources.
-2. Optionally call `memory_session_open` with a stable `agentIdentifier` to
+2. Read `noteclaw://instructions/AGENTS.md`, or call
+   `noteclaw_instructions_get` when the client cannot read MCP Resources.
+3. Optionally call `memory_session_open` with a stable `agentIdentifier` to
    replace the automatic token identity with a durable project identity.
    Reconnecting with that token resumes the same session.
-3. Call `memory_topics_list`, then `memory_topic_get` for the notebook topics
+4. Call `memory_topics_list`, then `memory_topic_get` for the notebook topics
    the account owner allowed this agent to read.
-4. Call `memory_chat` when the agent needs a synthesized answer grounded in a
+5. Call `memory_chat` when the agent needs a synthesized answer grounded in a
    granted notebook and its durable memory sources.
-5. Call `memory_get` at startup to restore the agent's own settings and context.
-6. Call `memory_put` as work progresses. Include the returned namespace version
+6. Listen for `followup_message` over WebSocket, or poll
+   `agent_chat_messages_list`, then use `agent_chat_respond` to answer the user.
+7. Call `planning_plans_list`; then use the planning tools to update
+   requirements, design decisions, tasks, state, and task outputs.
+8. Call `memory_get` at startup to restore the agent's own settings and context.
+9. Call `memory_put` as work progresses. Include the returned namespace version
    as `expectedVersion` and identify the writer with `actorIdentifier`.
-7. Call `memory_compact` when history becomes large.
-8. Call `get_websocket_info`, connect with the same token, and reply to every
+10. Call `memory_compact` when history becomes large.
+11. Call `get_websocket_info`, connect with the same token, and reply to every
    `ping` event with `{"type":"pong"}`.
-9. Call `review_code` when the agent needs a focused quality check before
+12. Call `review_code` when the agent needs a focused quality check before
    shipping a change.
-10. Call `web_search` for a quick current-information lookup, `fact_check` to
+13. Call `web_search` for a quick current-information lookup, `fact_check` to
    verify a specific claim, or start a longer run with `deep_research_start`.
-11. Use the GitHub tools only after the account owner has connected GitHub in
+14. Use the GitHub tools only after the account owner has connected GitHub in
    the NoteClaw app. Imported files become notebook sources.
-12. Poll `deep_research_status`, retrieve the cited report with
+15. Poll `deep_research_status`, retrieve the cited report with
    `deep_research_result`, then persist it with `research_save_to_notebook`.
 
 ## Research configuration
@@ -190,11 +207,14 @@ The WebSocket sends:
 - `agent_left` when a live client disconnects;
 - `memory_changed` after an MCP memory write;
 - `memory_compacted` after an MCP compaction;
+- `followup_message` when a user sends a chat turn to the coding agent;
+- `followup_response_accepted` after a WebSocket reply is stored;
 - `ping` keep-alives;
 - `error` for invalid or unsupported socket messages.
 
-Memory commands stay on MCP. WebSocket provides live presence and change
-notifications without polling.
+Memory commands stay on MCP. For chat, an agent may answer with
+`{"type":"followup_response","messageId":"...","payload":{"response":"..."}}`.
+The same reply can be sent with `agent_chat_respond` when the client prefers MCP.
 
 ## Build
 

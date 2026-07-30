@@ -9,8 +9,11 @@
 
 import { WebSocket, WebSocketServer } from 'ws';
 import { IncomingMessage } from 'http';
+import jwt from 'jsonwebtoken';
 import { parse } from 'url';
 import pool from '../config/database.js';
+import { getJwtSecret } from '../config/secrets.js';
+import { TOKEN_PREFIX, tokenService } from './tokenService.js';
 
 // ==================== INTERFACES ====================
 
@@ -134,23 +137,22 @@ class PlanningWebSocketService {
    * Verify authentication token
    */
   private async verifyToken(token: string): Promise<string | null> {
-    try {
-      // Query the database to verify the token
-      const result = await pool.query(
-        `SELECT user_id FROM auth_tokens 
-         WHERE token = $1 
-         AND expires_at > NOW() 
-         AND revoked = false`,
-        [token]
-      );
-
-      if (result.rows.length === 0) {
+    if (token.startsWith(TOKEN_PREFIX)) {
+      try {
+        const result = await tokenService.validateToken(token);
+        return result.valid ? (result.userId ?? null) : null;
+      } catch (error) {
+        console.error('Planning WebSocket API token verification error:', error);
         return null;
       }
+    }
 
-      return result.rows[0].user_id;
-    } catch (error) {
-      console.error('Token verification error:', error);
+    try {
+      const decoded = jwt.verify(token, getJwtSecret()) as {
+        userId: string;
+      };
+      return decoded.userId;
+    } catch {
       return null;
     }
   }

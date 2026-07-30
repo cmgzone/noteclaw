@@ -187,7 +187,8 @@ export async function listGrantedAgentTopics(
        COUNT(s.id)::int AS source_count
      FROM agent_notebook_access access
      JOIN notebooks n ON n.id::text = access.notebook_id::text
-     LEFT JOIN sources s ON s.notebook_id = n.id
+     LEFT JOIN sources s
+       ON s.notebook_id = n.id AND s.type <> 'agent_chat'
      WHERE access.user_id = $1
        AND access.agent_session_id = $2
        AND access.revoked_at IS NULL
@@ -233,7 +234,8 @@ export async function listAgentTopicAccessMatrix(userId: string) {
          n.agent_session_id,
          COUNT(s.id)::int AS source_count
        FROM notebooks n
-       LEFT JOIN sources s ON s.notebook_id = n.id
+       LEFT JOIN sources s
+         ON s.notebook_id = n.id AND s.type <> 'agent_chat'
        WHERE n.user_id = $1
        GROUP BY n.id
        ORDER BY n.updated_at DESC, n.title ASC`,
@@ -346,6 +348,7 @@ export async function getOwnedTopicContext(
       `SELECT id, type, title, content, url, metadata, updated_at
        FROM sources
        WHERE notebook_id::text = $1
+         AND type <> 'agent_chat'
        ORDER BY updated_at DESC
        LIMIT 100`,
       [notebookId],

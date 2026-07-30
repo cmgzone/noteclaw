@@ -5,6 +5,7 @@ import 'package:lucide_icons/lucide_icons.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 
 import '../../../theme/app_theme.dart';
+import '../../../ui/digital_librarian.dart';
 import '../models/plan.dart';
 import '../models/plan_task.dart';
 import '../planning_provider.dart';
@@ -141,8 +142,9 @@ class _PlansListScreenState extends ConsumerState<PlansListScreen>
               ),
             ),
             leading: IconButton(
-              icon: const Icon(Icons.arrow_back, color: Colors.white),
-              onPressed: () => context.pop(),
+              icon: const Icon(LucideIcons.bookOpen, color: Colors.white),
+              onPressed: () => context.go('/home'),
+              tooltip: 'Memory',
             ),
             actions: [
               // Connection status indicator
@@ -246,6 +248,9 @@ class _PlansListScreenState extends ConsumerState<PlansListScreen>
         backgroundColor: scheme.primary,
         foregroundColor: scheme.onPrimary,
       ).animate().scale(delay: 300.ms),
+      bottomNavigationBar: const MemoryNavigationBar(
+        selected: MemoryDestination.planning,
+      ),
     );
   }
 

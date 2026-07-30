@@ -7,12 +7,22 @@ import {
   Tool,
 } from '@modelcontextprotocol/sdk/types.js';
 import axios from 'axios';
+import { readFile } from 'node:fs/promises';
 import { z } from 'zod';
 
 export interface NoteClawMcpServerOptions {
   backendUrl: string;
   apiToken: string;
 }
+
+let agentGuidePromise: Promise<string> | null = null;
+const loadAgentGuide = (): Promise<string> => {
+  agentGuidePromise ??= readFile(
+    new URL('../AGENTS.md', import.meta.url),
+    'utf8',
+  );
+  return agentGuidePromise;
+};
 
 const memoryTarget = {
   agentSessionId: z.string().min(1).optional(),
@@ -65,6 +75,100 @@ const MemoryChatSchema = z.object({
     .default([]),
   provider: z.enum(['gemini', 'openrouter']).optional().default('gemini'),
   model: z.string().min(1).optional(),
+});
+
+const AgentChatMessagesListSchema = z.object({
+  agentSessionId: z.string().min(1).optional(),
+});
+
+const AgentChatRespondSchema = z.object({
+  messageId: z.string().min(1),
+  response: z.string().min(1).max(32_000),
+  codeUpdate: z
+    .object({
+      code: z.string().min(1),
+      description: z.string().max(4_000).optional(),
+    })
+    .optional(),
+});
+
+const PlanningPlansListSchema = z.object({
+  status: z.enum(['draft', 'active', 'completed', 'archived']).optional(),
+  includeArchived: z.boolean().optional().default(false),
+  limit: z.number().int().min(1).max(100).optional().default(50),
+  offset: z.number().int().min(0).optional().default(0),
+});
+
+const PlanningPlanGetSchema = z.object({
+  planId: z.string().min(1),
+});
+
+const PlanningPlanCreateSchema = z.object({
+  title: z.string().min(1).max(255),
+  description: z.string().max(16_000).optional(),
+  isPrivate: z.boolean().optional().default(true),
+});
+
+const PlanningRequirementCreateSchema = z.object({
+  planId: z.string().min(1),
+  title: z.string().min(1).max(255),
+  description: z.string().max(16_000).optional(),
+  earsPattern: z
+    .enum(['ubiquitous', 'event', 'state', 'unwanted', 'optional', 'complex'])
+    .optional(),
+  acceptanceCriteria: z.array(z.string().min(1)).max(100).optional().default([]),
+});
+
+const PlanningDesignNoteCreateSchema = z.object({
+  planId: z.string().min(1),
+  content: z.string().min(1).max(64_000),
+  requirementIds: z.array(z.string().min(1)).max(100).optional().default([]),
+});
+
+const taskPriorities = ['low', 'medium', 'high', 'critical'] as const;
+const taskStatuses = [
+  'not_started',
+  'in_progress',
+  'paused',
+  'blocked',
+  'completed',
+] as const;
+
+const PlanningTaskCreateSchema = z.object({
+  planId: z.string().min(1),
+  title: z.string().min(1).max(255),
+  description: z.string().max(16_000).optional(),
+  parentTaskId: z.string().min(1).optional(),
+  requirementIds: z.array(z.string().min(1)).max(100).optional().default([]),
+  priority: z.enum(taskPriorities).optional().default('medium'),
+});
+
+const PlanningTaskUpdateSchema = z.object({
+  planId: z.string().min(1),
+  taskId: z.string().min(1),
+  title: z.string().min(1).max(255).optional(),
+  description: z.string().max(16_000).optional(),
+  requirementIds: z.array(z.string().min(1)).max(100).optional(),
+  priority: z.enum(taskPriorities).optional(),
+  assignedAgentId: z.string().min(1).optional(),
+  timeSpentMinutes: z.number().int().min(0).optional(),
+});
+
+const PlanningTaskStatusUpdateSchema = z.object({
+  planId: z.string().min(1),
+  taskId: z.string().min(1),
+  status: z.enum(taskStatuses),
+  reason: z.string().min(1).max(4_000).optional(),
+});
+
+const PlanningTaskOutputAddSchema = z.object({
+  planId: z.string().min(1),
+  taskId: z.string().min(1),
+  type: z.enum(['comment', 'code', 'file', 'completion']),
+  content: z.string().min(1).max(64_000),
+  agentSessionId: z.string().min(1).optional(),
+  agentName: z.string().min(1).max(255).optional(),
+  metadata: z.record(z.string(), z.any()).optional(),
 });
 
 const MemoryPutSchema = requireMemoryTarget({
@@ -183,6 +287,17 @@ const ResearchSaveToNotebookSchema = z.object({
 });
 
 const tools: Tool[] = [
+  {
+    name: 'noteclaw_instructions_get',
+    description:
+      'Read the canonical AGENTS.md guide for using NoteClaw memory, live chat, ' +
+      'planning mode, and safe multi-agent collaboration. Call this when a ' +
+      'client cannot read MCP resources directly.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+    },
+  },
   {
     name: 'memory_session_open',
     description:
@@ -303,6 +418,236 @@ const tools: Tool[] = [
         },
       },
       required: ['notebookId', 'message'],
+    },
+  },
+  {
+    name: 'agent_chat_messages_list',
+    description:
+      'Read pending user messages sent to this live coding agent. The token-bound ' +
+      'agent session is used automatically. Each message includes its notebook ID, ' +
+      'granted notebook sources and memories, conversation history, and the messageId ' +
+      'needed to answer. Use this as a polling fallback when WebSocket is unavailable.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        agentSessionId: {
+          type: 'string',
+          description:
+            'Optional bound session ID. The current token session is used by default.',
+        },
+      },
+    },
+  },
+  {
+    name: 'agent_chat_respond',
+    description:
+      'Reply to a NoteClaw user chat message. The answer is saved to the source ' +
+      'conversation and pushed to the Flutter or web chat immediately over WebSocket.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        messageId: {
+          type: 'string',
+          description:
+            'Message ID from agent_chat_messages_list or a followup_message WebSocket event.',
+        },
+        response: {
+          type: 'string',
+          description: 'The coding agent answer shown to the user.',
+        },
+        codeUpdate: {
+          type: 'object',
+          description:
+            'Optional replacement code for chats attached to a real code source.',
+          properties: {
+            code: { type: 'string' },
+            description: { type: 'string' },
+          },
+          required: ['code'],
+        },
+      },
+      required: ['messageId', 'response'],
+    },
+  },
+  {
+    name: 'planning_plans_list',
+    description:
+      'List the account project plans before selecting or updating planning work.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        status: {
+          type: 'string',
+          enum: ['draft', 'active', 'completed', 'archived'],
+        },
+        includeArchived: { type: 'boolean', default: false },
+        limit: { type: 'integer', minimum: 1, maximum: 100, default: 50 },
+        offset: { type: 'integer', minimum: 0, default: 0 },
+      },
+    },
+  },
+  {
+    name: 'planning_plan_get',
+    description:
+      'Read a complete project plan, including requirements, design notes, tasks, and progress.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        planId: { type: 'string' },
+      },
+      required: ['planId'],
+    },
+  },
+  {
+    name: 'planning_plan_create',
+    description:
+      'Create a project plan that can be organized into requirements, design notes, and tasks.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        title: { type: 'string', maxLength: 255 },
+        description: { type: 'string' },
+        isPrivate: { type: 'boolean', default: true },
+      },
+      required: ['title'],
+    },
+  },
+  {
+    name: 'planning_requirement_create',
+    description:
+      'Add a structured requirement and acceptance criteria to a project plan.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        planId: { type: 'string' },
+        title: { type: 'string', maxLength: 255 },
+        description: { type: 'string' },
+        earsPattern: {
+          type: 'string',
+          enum: [
+            'ubiquitous',
+            'event',
+            'state',
+            'unwanted',
+            'optional',
+            'complex',
+          ],
+        },
+        acceptanceCriteria: {
+          type: 'array',
+          items: { type: 'string' },
+          maxItems: 100,
+          default: [],
+        },
+      },
+      required: ['planId', 'title'],
+    },
+  },
+  {
+    name: 'planning_design_note_create',
+    description:
+      'Record an implementation or design decision in a project plan and optionally link requirements.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        planId: { type: 'string' },
+        content: { type: 'string' },
+        requirementIds: {
+          type: 'array',
+          items: { type: 'string' },
+          maxItems: 100,
+          default: [],
+        },
+      },
+      required: ['planId', 'content'],
+    },
+  },
+  {
+    name: 'planning_task_create',
+    description:
+      'Create an actionable project task, optionally linked to requirements or a parent task.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        planId: { type: 'string' },
+        title: { type: 'string', maxLength: 255 },
+        description: { type: 'string' },
+        parentTaskId: { type: 'string' },
+        requirementIds: {
+          type: 'array',
+          items: { type: 'string' },
+          maxItems: 100,
+          default: [],
+        },
+        priority: {
+          type: 'string',
+          enum: taskPriorities,
+          default: 'medium',
+        },
+      },
+      required: ['planId', 'title'],
+    },
+  },
+  {
+    name: 'planning_task_update',
+    description:
+      'Update project task details without changing its execution status.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        planId: { type: 'string' },
+        taskId: { type: 'string' },
+        title: { type: 'string', maxLength: 255 },
+        description: { type: 'string' },
+        requirementIds: {
+          type: 'array',
+          items: { type: 'string' },
+          maxItems: 100,
+        },
+        priority: { type: 'string', enum: taskPriorities },
+        assignedAgentId: { type: 'string' },
+        timeSpentMinutes: { type: 'integer', minimum: 0 },
+      },
+      required: ['planId', 'taskId'],
+    },
+  },
+  {
+    name: 'planning_task_status_update',
+    description:
+      'Record a task state transition. A blocked task must include a clear reason.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        planId: { type: 'string' },
+        taskId: { type: 'string' },
+        status: { type: 'string', enum: taskStatuses },
+        reason: { type: 'string' },
+      },
+      required: ['planId', 'taskId', 'status'],
+    },
+  },
+  {
+    name: 'planning_task_output_add',
+    description:
+      'Attach agent evidence such as a comment, code, file reference, or completion result to a task.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        planId: { type: 'string' },
+        taskId: { type: 'string' },
+        type: {
+          type: 'string',
+          enum: ['comment', 'code', 'file', 'completion'],
+        },
+        content: { type: 'string' },
+        agentSessionId: { type: 'string' },
+        agentName: { type: 'string', maxLength: 255 },
+        metadata: {
+          type: 'object',
+          additionalProperties: true,
+        },
+      },
+      required: ['planId', 'taskId', 'type', 'content'],
     },
   },
   {
@@ -712,7 +1057,7 @@ export function createNoteClawMcpServer(
   const server = new Server(
     {
       name: 'noteclaw-memory',
-      version: '2.3.0',
+      version: '2.5.0',
     },
     {
       capabilities: {
@@ -720,9 +1065,12 @@ export function createNoteClawMcpServer(
         resources: {},
       },
       instructions:
-        'A token-scoped memory session is created automatically on connection. ' +
+        'Read the noteclaw://instructions/AGENTS.md resource or call ' +
+        'noteclaw_instructions_get before using NoteClaw. A token-scoped memory ' +
+        'session is created automatically on connection. ' +
         'Call memory_session_open to give it a stable project identity before writing memory. ' +
-        'Use stable agent and client identifiers so project context survives updates.',
+        'Use stable agent and client identifiers so project context survives updates. ' +
+        'Use planning tools for requirements, design decisions, tasks, and outputs.',
     },
   );
 
@@ -753,22 +1101,47 @@ export function createNoteClawMcpServer(
       ? response.data.topics
       : [];
     return {
-      resources: topics.map((topic: Record<string, any>) => ({
-        uri: `noteclaw://notebooks/${encodeURIComponent(String(topic.notebookId))}`,
-        name: String(topic.title || 'NoteClaw memory notebook'),
-        title: String(topic.title || 'NoteClaw memory notebook'),
-        description:
-          typeof topic.description === 'string'
-            ? topic.description
-            : 'Topic-driven NoteClaw memory and sources',
-        mimeType: 'application/json',
-      })),
+      resources: [
+        {
+          uri: 'noteclaw://instructions/AGENTS.md',
+          name: 'AGENTS.md',
+          title: 'NoteClaw agent instructions',
+          description:
+            'Canonical guide for memory, live chat, planning, and multi-agent collaboration.',
+          mimeType: 'text/markdown',
+        },
+        ...topics.map((topic: Record<string, any>) => ({
+          uri: `noteclaw://notebooks/${encodeURIComponent(String(topic.notebookId))}`,
+          name: String(topic.title || 'NoteClaw memory notebook'),
+          title: String(topic.title || 'NoteClaw memory notebook'),
+          description:
+            typeof topic.description === 'string'
+              ? topic.description
+              : 'Topic-driven NoteClaw memory and sources',
+          mimeType: 'application/json',
+        })),
+      ],
     };
   });
 
   server.setRequestHandler(ReadResourceRequestSchema, async (request: any) => {
     await ensureBootstrap();
     const uri = new URL(request.params.uri);
+    if (
+      uri.protocol === 'noteclaw:' &&
+      uri.hostname === 'instructions' &&
+      decodeURIComponent(uri.pathname.replace(/^\/+/, '')) === 'AGENTS.md'
+    ) {
+      return {
+        contents: [
+          {
+            uri: request.params.uri,
+            mimeType: 'text/markdown',
+            text: await loadAgentGuide(),
+          },
+        ],
+      };
+    }
     if (uri.protocol !== 'noteclaw:' || uri.hostname !== 'notebooks') {
       throw new Error('Unsupported NoteClaw resource URI');
     }
@@ -796,6 +1169,14 @@ export function createNoteClawMcpServer(
     try {
       await ensureBootstrap();
       switch (name) {
+      case 'noteclaw_instructions_get': {
+        return textResult({
+          filename: 'AGENTS.md',
+          mimeType: 'text/markdown',
+          content: await loadAgentGuide(),
+        });
+      }
+
       case 'memory_session_open': {
         const input = MemorySessionOpenSchema.parse(args);
         const response = await api.post('/memory/sessions', input);
@@ -842,6 +1223,141 @@ export function createNoteClawMcpServer(
             model: input.model,
           },
           { timeout: 120_000 },
+        );
+        return textResult(response.data);
+      }
+
+      case 'agent_chat_messages_list': {
+        const input = AgentChatMessagesListSchema.parse(args);
+        const query = new URLSearchParams();
+        if (input.agentSessionId) {
+          query.set('agentSessionId', input.agentSessionId);
+        }
+        const suffix = query.size > 0 ? `?${query.toString()}` : '';
+        const response = await api.get(`/followups${suffix}`);
+        return textResult(response.data);
+      }
+
+      case 'agent_chat_respond': {
+        const input = AgentChatRespondSchema.parse(args);
+        const response = await api.post(
+          `/followups/${encodeURIComponent(input.messageId)}/respond`,
+          {
+            response: input.response,
+            codeUpdate: input.codeUpdate,
+          },
+        );
+        return textResult(response.data);
+      }
+
+      case 'planning_plans_list': {
+        const input = PlanningPlansListSchema.parse(args);
+        const query = new URLSearchParams({
+          includeArchived: String(input.includeArchived),
+          limit: String(input.limit),
+          offset: String(input.offset),
+        });
+        if (input.status) query.set('status', input.status);
+        const response = await accountApi.get(
+          `/planning?${query.toString()}`,
+        );
+        return textResult(response.data);
+      }
+
+      case 'planning_plan_get': {
+        const input = PlanningPlanGetSchema.parse(args);
+        const response = await accountApi.get(
+          `/planning/${encodeURIComponent(input.planId)}`,
+        );
+        return textResult(response.data);
+      }
+
+      case 'planning_plan_create': {
+        const input = PlanningPlanCreateSchema.parse(args);
+        const response = await accountApi.post('/planning', input);
+        return textResult(response.data);
+      }
+
+      case 'planning_requirement_create': {
+        const input = PlanningRequirementCreateSchema.parse(args);
+        const response = await accountApi.post(
+          `/planning/${encodeURIComponent(input.planId)}/requirements`,
+          {
+            title: input.title,
+            description: input.description,
+            earsPattern: input.earsPattern,
+            acceptanceCriteria: input.acceptanceCriteria,
+          },
+        );
+        return textResult(response.data);
+      }
+
+      case 'planning_design_note_create': {
+        const input = PlanningDesignNoteCreateSchema.parse(args);
+        const response = await accountApi.post(
+          `/planning/${encodeURIComponent(input.planId)}/design-notes`,
+          {
+            content: input.content,
+            requirementIds: input.requirementIds,
+          },
+        );
+        return textResult(response.data);
+      }
+
+      case 'planning_task_create': {
+        const input = PlanningTaskCreateSchema.parse(args);
+        const response = await accountApi.post(
+          `/planning/${encodeURIComponent(input.planId)}/tasks`,
+          {
+            title: input.title,
+            description: input.description,
+            parentTaskId: input.parentTaskId,
+            requirementIds: input.requirementIds,
+            priority: input.priority,
+          },
+        );
+        return textResult(response.data);
+      }
+
+      case 'planning_task_update': {
+        const input = PlanningTaskUpdateSchema.parse(args);
+        const response = await accountApi.put(
+          `/planning/${encodeURIComponent(input.planId)}/tasks/${encodeURIComponent(input.taskId)}`,
+          {
+            title: input.title,
+            description: input.description,
+            requirementIds: input.requirementIds,
+            priority: input.priority,
+            assignedAgentId: input.assignedAgentId,
+            timeSpentMinutes: input.timeSpentMinutes,
+          },
+        );
+        return textResult(response.data);
+      }
+
+      case 'planning_task_status_update': {
+        const input = PlanningTaskStatusUpdateSchema.parse(args);
+        const response = await accountApi.post(
+          `/planning/${encodeURIComponent(input.planId)}/tasks/${encodeURIComponent(input.taskId)}/status`,
+          {
+            status: input.status,
+            reason: input.reason,
+          },
+        );
+        return textResult(response.data);
+      }
+
+      case 'planning_task_output_add': {
+        const input = PlanningTaskOutputAddSchema.parse(args);
+        const response = await accountApi.post(
+          `/planning/${encodeURIComponent(input.planId)}/tasks/${encodeURIComponent(input.taskId)}/output`,
+          {
+            type: input.type,
+            content: input.content,
+            agentSessionId: input.agentSessionId,
+            agentName: input.agentName,
+            metadata: input.metadata,
+          },
         );
         return textResult(response.data);
       }

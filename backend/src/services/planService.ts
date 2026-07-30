@@ -195,7 +195,7 @@ class PlanService {
     allowPublic: boolean = false
   ): Promise<Plan | null> {
     const query = allowPublic
-      ? `SELECT * FROM plans WHERE id = $1 AND (user_id = $2 OR is_public = true)`
+      ? `SELECT * FROM plans WHERE id = $1 AND (user_id = $2 OR is_private = false)`
       : `SELECT * FROM plans WHERE id = $1 AND user_id = $2`;
 
     const result = await pool.query(query, [planId, userId]);

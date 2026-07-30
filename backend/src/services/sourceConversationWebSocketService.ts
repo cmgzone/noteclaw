@@ -250,7 +250,11 @@ class SourceConversationWebSocketService {
   ): Promise<boolean> {
     try {
       const result = await pool.query(
-        `SELECT id FROM sources WHERE id = $1 AND user_id = $2 LIMIT 1`,
+        `SELECT s.id
+         FROM sources s
+         JOIN notebooks n ON n.id = s.notebook_id
+         WHERE s.id = $1 AND n.user_id = $2
+         LIMIT 1`,
         [sourceId, userId],
       );
       return result.rows.length > 0;

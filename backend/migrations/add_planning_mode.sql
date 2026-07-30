@@ -8,7 +8,7 @@
 
 CREATE TABLE IF NOT EXISTS plans (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL,
   title VARCHAR(255) NOT NULL,
   description TEXT,
   status VARCHAR(20) DEFAULT 'draft' CHECK (status IN ('draft', 'active', 'completed', 'archived')),
