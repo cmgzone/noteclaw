@@ -77,6 +77,56 @@ function DocsNav() {
   );
 }
 
+function Sidebar() {
+  const links = [
+    { href: "#quick-start", label: "Quick Start" },
+    { href: "#authentication", label: "Authentication" },
+    { href: "#tools", label: "MCP Tools" },
+    { href: "#github-tools", label: "GitHub Integration" },
+    { href: "#planning-tools", label: "Planning Mode" },
+    { href: "#code-analysis", label: "Code Analysis" },
+    { href: "#configuration", label: "Configuration" },
+    { href: "#token-management", label: "Token Management" },
+    { href: "#architecture", label: "Architecture" },
+  ];
+
+  return (
+    <aside className="hidden lg:block">
+      <nav className="sticky top-28 space-y-1">
+        {links.map((link) => (
+          <a
+            key={link.href}
+            href={link.href}
+            className="block rounded-lg px-3 py-2 text-sm text-neutral-400 transition-colors hover:bg-white/5 hover:text-white"
+          >
+            {link.label}
+          </a>
+        ))}
+      </nav>
+    </aside>
+  );
+}
+
+function HeroSection() {
+  return (
+    <section className="mb-16">
+      <div className="mb-4 flex items-center gap-2 text-sm text-blue-400">
+        <BookOpen size={18} />
+        NoteClaw Documentation
+      </div>
+
+      <h1 className="mb-4 text-4xl font-bold tracking-tight sm:text-5xl">
+        Connect your AI agent to NoteClaw
+      </h1>
+
+      <p className="max-w-2xl text-lg leading-relaxed text-neutral-400">
+        Give coding agents secure access to persistent notebooks, verified code,
+        plans, GitHub tools and long-term project memory.
+      </p>
+    </section>
+  );
+}
+
 function QuickStartSection() {
   return (
     <section id="quick-start" className="mb-16">
