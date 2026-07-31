@@ -356,11 +356,11 @@ class AgentWebSocketService {
       `SELECT cm.role, sc.source_id, sc.agent_session_id, s.type AS source_type
        FROM conversation_messages cm
        JOIN source_conversations sc ON sc.id = cm.conversation_id
-       JOIN sources s ON s.id = sc.source_id
-       JOIN notebooks n ON n.id = s.notebook_id
-       WHERE cm.id = $1
-         AND sc.agent_session_id = $2
-         AND n.user_id = $3`,
+        JOIN sources s ON s.id::text = sc.source_id
+        JOIN notebooks n ON n.id = s.notebook_id
+        WHERE cm.id = $1
+          AND sc.agent_session_id = $2
+          AND n.user_id = $3`,
       [messageId, connection.agentSessionId, connection.userId],
     );
     if (originalResult.rows.length === 0) {

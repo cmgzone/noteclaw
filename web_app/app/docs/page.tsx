@@ -71,6 +71,13 @@ function DocsNav() {
           >
             Get Started
           </Link>
+        </div>
+      </div>
+    </nav>
+  );
+}
+
+function QuickStartSection() {
   return (
     <section id="quick-start" className="mb-16">
       <SectionHeader title="Quick Start" icon={<Zap className="text-amber-400" size={20} />} />

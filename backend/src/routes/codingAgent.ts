@@ -1274,10 +1274,10 @@ router.post('/followups/:id/respond', authenticateToken, async (req: Request, re
       `SELECT cm.*, sc.source_id, sc.agent_session_id, s.type AS source_type
        FROM conversation_messages cm
        JOIN source_conversations sc ON cm.conversation_id = sc.id
-       JOIN sources s ON s.id = sc.source_id
-       JOIN notebooks n ON n.id = s.notebook_id
-       WHERE cm.id = $1 AND n.user_id = $2`,
-      [messageId, userId]
+        JOIN sources s ON s.id::text = sc.source_id
+        JOIN notebooks n ON n.id = s.notebook_id
+        WHERE cm.id = $1 AND n.user_id = $2`,
+       [messageId, userId]
     );
 
     if (messageResult.rows.length === 0) {
