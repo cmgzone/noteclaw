@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:lucide_icons/lucide_icons.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/search/search_provider.dart';
@@ -18,6 +19,8 @@ import '../../ui/widgets/app_network_image.dart';
 import '../home/create_notebook_dialog.dart';
 import '../notebook/notebook.dart';
 import '../notebook/notebook_provider.dart';
+import '../../ui/digital_librarian.dart';
+import '../../ui/forge.dart';
 
 class WebSearchScreen extends ConsumerStatefulWidget {
   const WebSearchScreen({
@@ -1106,20 +1109,9 @@ $content''',
             ),
         ],
       ),
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              scheme.surface,
-              scheme.primaryContainer.withValues(alpha: 0.12),
-              scheme.secondaryContainer.withValues(alpha: 0.10),
-              scheme.surface,
-            ],
-            stops: const [0, 0.24, 0.60, 1],
-          ),
-        ),
+      body: ForgeBackground(
+        glowOne: DigitalLibrarian.primaryStrong,
+        glowTwo: DigitalLibrarian.secondary,
         child: LayoutBuilder(
           builder: (context, constraints) {
             final isWide = constraints.maxWidth >= 1080;
@@ -1205,129 +1197,48 @@ $content''',
     required TextTheme text,
     required String destinationLabel,
   }) {
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(32),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            const Color(0xFF0F766E).withValues(alpha: 0.22),
-            const Color(0xFFF59E0B).withValues(alpha: 0.16),
-            scheme.surface.withValues(alpha: 0.96),
-          ],
-        ),
-        border: Border.all(
-          color: scheme.outline.withValues(alpha: 0.12),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: scheme.shadow.withValues(alpha: 0.08),
-            blurRadius: 24,
-            offset: const Offset(0, 12),
-          ),
-        ],
-      ),
-      child: Stack(
+    return ForgePanel(
+      accent: DigitalLibrarian.secondary,
+      padding: const EdgeInsets.all(22),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Positioned(
-            top: -32,
-            right: -24,
-            child: Container(
-              width: 120,
-              height: 120,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: const Color(0xFF0EA5E9).withValues(alpha: 0.12),
-              ),
+          const ForgeEyebrow('DEEP RESEARCH'),
+          const SizedBox(height: 10),
+          Text(
+            'Run broader web research from the same screen you use for search.',
+            style: Forge.display(context, size: 21, height: 1.2),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'Turn one prompt into a source-backed report, follow the live crawl, and save the finished research back into "$destinationLabel".',
+            style: TextStyle(
+              fontSize: 13,
+              height: 1.5,
+              color: DigitalLibrarian.primary.withValues(alpha: 0.6),
             ),
           ),
-          Positioned(
-            bottom: -20,
-            left: -10,
-            child: Container(
-              width: 88,
-              height: 88,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: const Color(0xFFF97316).withValues(alpha: 0.10),
+          const SizedBox(height: 18),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              ForgeChip(
+                icon: LucideIcons.bookOpen,
+                label: destinationLabel,
+                color: DigitalLibrarian.secondary,
               ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: scheme.surface.withValues(alpha: 0.82),
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(
-                      color: scheme.outline.withValues(alpha: 0.10),
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.radar_rounded,
-                        size: 16,
-                        color: scheme.primary,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Flexible research workspace',
-                        style: text.labelMedium?.copyWith(
-                          fontWeight: FontWeight.w700,
-                          color: scheme.onSurface,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 18),
-                Text(
-                  'Run broader web research from the same screen you use for search.',
-                  style: text.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    height: 1.1,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  'Turn one prompt into a source-backed report, follow the live crawl, and save the finished research back into "$destinationLabel".',
-                  style: text.bodyMedium?.copyWith(
-                    height: 1.45,
-                    color: scheme.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(height: 18),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: [
-                    _ResearchMetricChip(
-                      icon: Icons.book_outlined,
-                      label: destinationLabel,
-                      color: const Color(0xFF0F766E),
-                    ),
-                    _ResearchMetricChip(
-                      icon: Icons.bolt_rounded,
-                      label: '$_estimatedDeepResearchCreditCost credits',
-                      color: const Color(0xFFF59E0B),
-                    ),
-                    _ResearchMetricChip(
-                      icon: _templateIcon(_selectedTemplate),
-                      label: _templateLabel(_selectedTemplate),
-                      color: const Color(0xFF0EA5E9),
-                    ),
-                  ],
-                ),
-              ],
-            ),
+              ForgeChip(
+                icon: LucideIcons.zap,
+                label: '$_estimatedDeepResearchCreditCost credits',
+                color: const Color(0xFFF2B544),
+              ),
+              ForgeChip(
+                icon: _templateIcon(_selectedTemplate),
+                label: _templateLabel(_selectedTemplate),
+                color: DigitalLibrarian.primaryStrong,
+              ),
+            ],
           ),
         ],
       ),

@@ -2,7 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:lucide_icons/lucide_icons.dart';
+import 'package:flutter_animate/flutter_animate.dart';
+
+import '../../core/github/github_service.dart';
 import '../../ui/digital_librarian.dart';
+import '../../ui/forge.dart';
 import 'code_review_detail_view.dart';
 import 'code_review_github_file_picker.dart';
 import 'code_review_provider.dart';
@@ -15,9 +20,8 @@ class CodeReviewScreen extends ConsumerStatefulWidget {
   ConsumerState<CodeReviewScreen> createState() => _CodeReviewScreenState();
 }
 
-class _CodeReviewScreenState extends ConsumerState<CodeReviewScreen>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabController;
+class _CodeReviewScreenState extends ConsumerState<CodeReviewScreen> {
+  int _tabIndex = 0; // 0 = new review, 1 = history
   final _codeController = TextEditingController();
   final _ownerController = TextEditingController();
   final _repoController = TextEditingController();
@@ -28,7 +32,6 @@ class _CodeReviewScreenState extends ConsumerState<CodeReviewScreen>
   String? _selectedGitHubFilePath;
   String? _selectedGitHubBranch;
 
-  // GitHub context for context-aware reviews
   bool _useGitHubContext = false;
 
   final _languages = [
@@ -50,17 +53,15 @@ class _CodeReviewScreenState extends ConsumerState<CodeReviewScreen>
   ];
 
   final _reviewTypes = [
-    ('comprehensive', 'Comprehensive', Icons.analytics),
-    ('security', 'Security', Icons.security),
-    ('performance', 'Performance', Icons.speed),
-    ('readability', 'Readability', Icons.visibility),
+    ('comprehensive', 'Comprehensive', LucideIcons.layers),
+    ('security', 'Security', LucideIcons.shield),
+    ('performance', 'Performance', LucideIcons.zap),
+    ('readability', 'Readability', LucideIcons.eye),
   ];
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
-    // Load history on init
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _syncGitHubState();
       ref.read(codeReviewProvider.notifier).loadHistory();
@@ -69,7 +70,6 @@ class _CodeReviewScreenState extends ConsumerState<CodeReviewScreen>
 
   @override
   void dispose() {
-    _tabController.dispose();
     _codeController.dispose();
     _ownerController.dispose();
     _repoController.dispose();
@@ -90,80 +90,83 @@ class _CodeReviewScreenState extends ConsumerState<CodeReviewScreen>
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(codeReviewProvider);
-    final theme = Theme.of(context);
+    final githubState = ref.watch(githubProvider);
 
     return Scaffold(
-      appBar: AppBar(
-        toolbarHeight: 64,
-        titleSpacing: 16,
-        title: const NoteClawHeader(
-          compact: true,
-          eyebrow: 'Code review',
-        ),
-        bottom: TabBar(
-          controller: _tabController,
-          tabs: const [
-            Tab(text: 'New Review', icon: Icon(Icons.rate_review)),
-            Tab(text: 'History', icon: Icon(Icons.history)),
-          ],
+      backgroundColor: DigitalLibrarian.background,
+      body: ForgeBackground(
+        glowOne: DigitalLibrarian.tertiary,
+        glowTwo: DigitalLibrarian.primaryStrong,
+        child: SafeArea(
+          bottom: false,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _Header(
+                githubConnected: githubState.isConnected,
+                tabIndex: _tabIndex,
+                onTabChanged: (i) => setState(() => _tabIndex = i),
+              ),
+              Expanded(
+                child: _tabIndex == 0
+                    ? _buildNewReviewTab(state)
+                    : _buildHistoryTab(state),
+              ),
+            ],
+          ),
         ),
       ),
       bottomNavigationBar: const MemoryToolNavigationBar(
         selected: MemoryToolDestination.codeReview,
       ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [
-          _buildNewReviewTab(state, theme),
-          _buildHistoryTab(state, theme),
-        ],
-      ),
     );
   }
 
-  Widget _buildNewReviewTab(CodeReviewState state, ThemeData theme) {
+  Widget _buildNewReviewTab(CodeReviewState state) {
     final githubState = ref.watch(githubProvider);
     final isGitHubConnected = githubState.isConnected;
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _buildReviewIntro(theme),
-          const SizedBox(height: 16),
-          // Language selector
-          Row(
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+      children: [
+        // Language + actions row
+        ForgePanel(
+          accent: DigitalLibrarian.tertiary,
+          padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
+          child: Row(
             children: [
-              Expanded(
-                child: InputDecorator(
-                  decoration: const InputDecoration(
-                    labelText: 'Language',
-                    border: OutlineInputBorder(),
-                    contentPadding:
-                        EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  ),
-                  child: DropdownButtonHideUnderline(
-                    child: DropdownButton<String>(
-                      value: _selectedLanguage,
-                      isExpanded: true,
-                      isDense: true,
-                      items: _languages.map((lang) {
-                        return DropdownMenuItem(value: lang, child: Text(lang));
-                      }).toList(),
-                      onChanged: (value) {
-                        if (value != null) {
-                          setState(() => _selectedLanguage = value);
-                        }
-                      },
-                    ),
+              const Icon(LucideIcons.code2,
+                  size: 16, color: DigitalLibrarian.tertiary),
+              const SizedBox(width: 10),
+              SizedBox(
+                width: 130,
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: _selectedLanguage,
+                    isExpanded: true,
+                    isDense: true,
+                    dropdownColor: DigitalLibrarian.surfaceContainer,
+                    style: Forge.mono(context,
+                        size: 12,
+                        color: DigitalLibrarian.primary,
+                        letterSpacing: 0.4),
+                    items: _languages
+                        .map((lang) => DropdownMenuItem(
+                              value: lang,
+                              child: Text(lang),
+                            ))
+                        .toList(),
+                    onChanged: (value) {
+                      if (value != null) {
+                        setState(() => _selectedLanguage = value);
+                      }
+                    },
                   ),
                 ),
               ),
-              const SizedBox(width: 16),
-              // Paste button
+              const Spacer(),
               IconButton(
-                icon: const Icon(Icons.paste),
+                icon: const Icon(LucideIcons.clipboard, size: 16),
                 tooltip: 'Paste from clipboard',
                 onPressed: () async {
                   final data = await Clipboard.getData(Clipboard.kTextPlain);
@@ -172,143 +175,104 @@ class _CodeReviewScreenState extends ConsumerState<CodeReviewScreen>
                   }
                 },
               ),
-              if (isGitHubConnected) ...[
-                const SizedBox(width: 4),
-                OutlinedButton.icon(
+              if (isGitHubConnected)
+                IconButton(
+                  icon: const Icon(LucideIcons.github, size: 16),
+                  tooltip: 'Load from GitHub',
                   onPressed: state.isLoading ? null : _loadCodeFromGitHub,
-                  icon: const Icon(Icons.cloud_download_outlined, size: 18),
-                  label: const Text('GitHub'),
                 ),
-              ],
             ],
           ),
-          const SizedBox(height: 16),
-
-          // Review type chips
-          Wrap(
-            spacing: 8,
-            children: _reviewTypes.map((type) {
-              final isSelected = _selectedReviewType == type.$1;
-              return ChoiceChip(
-                label: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(type.$3, size: 16),
-                    const SizedBox(width: 4),
-                    Text(type.$2),
-                  ],
-                ),
-                selected: isSelected,
-                onSelected: (selected) {
-                  if (selected) setState(() => _selectedReviewType = type.$1);
-                },
-              );
-            }).toList(),
-          ),
-          const SizedBox(height: 16),
-
-          // Code input
-          TextField(
-            controller: _codeController,
-            maxLines: 12,
-            style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
-            decoration: InputDecoration(
-              labelText: 'Code to review',
-              hintText: isGitHubConnected
-                  ? 'Paste code or load a file from GitHub...'
-                  : 'Enter or paste code to review...',
-              border: const OutlineInputBorder(),
-              filled: true,
-              fillColor: theme.colorScheme.surfaceContainerHighest
-                  .withValues(alpha: 0.3),
+        ).animate().fadeIn(duration: 350.ms).slideY(
+              begin: 0.1,
+              end: 0,
+              duration: 350.ms,
+              curve: Curves.easeOutCubic,
             ),
-          ),
-          if (_selectedGitHubFilePath != null) ...[
-            const SizedBox(height: 12),
-            _buildGitHubFileBanner(theme),
-          ],
-          const SizedBox(height: 16),
+        const SizedBox(height: 14),
 
-          // GitHub Context Toggle
-          _buildGitHubContextSection(theme),
-          const SizedBox(height: 16),
+        // Review type selector
+        const ForgeEyebrow('REVIEW LENS'),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: _reviewTypes.map((type) {
+            final isSelected = _selectedReviewType == type.$1;
+            return ForgeChip(
+              icon: type.$3,
+              label: type.$2,
+              color: DigitalLibrarian.tertiary,
+              selected: isSelected,
+              onTap: () => setState(() => _selectedReviewType = type.$1),
+            );
+          }).toList(),
+        ),
+        const SizedBox(height: 16),
 
-          // Submit button
-          FilledButton.icon(
-            onPressed: state.isLoading ? null : _submitReview,
-            icon: state.isLoading
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.rate_review),
-            label: Text(state.isLoading ? 'Reviewing...' : 'Review Code'),
-          ),
-          const SizedBox(height: 24),
+        // Code editor panel
+        _CodeEditorPanel(
+          controller: _codeController,
+          language: _selectedLanguage,
+          isGitHubConnected: isGitHubConnected,
+          gitHubFile: _selectedGitHubFilePath,
+          onClearGitHubFile: () {
+            setState(() {
+              _selectedGitHubRepoFullName = null;
+              _selectedGitHubFilePath = null;
+              _selectedGitHubBranch = null;
+            });
+          },
+          gitHubRepo: _selectedGitHubRepoFullName,
+          gitHubBranch: _selectedGitHubBranch,
+        ),
+        const SizedBox(height: 16),
 
-          // Results
-          if (state.currentReview != null)
-            CodeReviewDetailView(review: state.currentReview!),
-          if (state.error != null)
-            Card(
-              color: theme.colorScheme.errorContainer,
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Text(state.error!,
-                    style:
-                        TextStyle(color: theme.colorScheme.onErrorContainer)),
+        // GitHub context toggle
+        _GitHubContextPanel(
+          useContext: _useGitHubContext,
+          onToggle: (v) => setState(() => _useGitHubContext = v),
+          isConnected: isGitHubConnected,
+          ownerController: _ownerController,
+          repoController: _repoController,
+          branchController: _branchController,
+          repos: githubState.repos,
+        ),
+        const SizedBox(height: 18),
+
+        ForgeButton(
+          label: state.isLoading ? 'Reviewing…' : 'Run review',
+          icon: state.isLoading ? null : LucideIcons.scan,
+          color: DigitalLibrarian.tertiary,
+          expand: true,
+          onPressed: state.isLoading ? null : _submitReview,
+        ),
+        const SizedBox(height: 20),
+
+        if (state.currentReview != null)
+          CodeReviewDetailView(review: state.currentReview!),
+        if (state.error != null)
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF27E9D).withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: const Color(0xFFF27E9D).withValues(alpha: 0.35),
               ),
             ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildScoreIndicator(
-    int score,
-    ThemeData theme, {
-    double size = 80,
-  }) {
-    Color color;
-    if (score >= 90) {
-      color = Colors.green;
-    } else if (score >= 70) {
-      color = Colors.lightGreen;
-    } else if (score >= 50) {
-      color = Colors.orange;
-    } else {
-      color = Colors.red;
-    }
-
-    return SizedBox(
-      width: size,
-      height: size,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          CircularProgressIndicator(
-            value: score / 100,
-            strokeWidth: size * 0.1,
-            backgroundColor: theme.colorScheme.surfaceContainerHighest,
-            valueColor: AlwaysStoppedAnimation(color),
-          ),
-          Text(
-            '$score',
-            style: theme.textTheme.headlineMedium?.copyWith(
-              fontWeight: FontWeight.bold,
-              color: color,
-              fontSize: size * 0.28,
+            child: Text(
+              state.error!,
+              style: const TextStyle(fontSize: 12.5, color: Color(0xFFF27E9D)),
             ),
           ),
-        ],
-      ),
+      ],
     );
   }
 
-  Widget _buildHistoryTab(CodeReviewState state, ThemeData theme) {
+  Widget _buildHistoryTab(CodeReviewState state) {
     if (state.isLoading && state.history.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
+      return const Center(child: CircularProgressIndicator(strokeWidth: 2));
     }
 
     if (state.history.isEmpty) {
@@ -316,727 +280,96 @@ class _CodeReviewScreenState extends ConsumerState<CodeReviewScreen>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.history, size: 64, color: theme.colorScheme.outline),
-            const SizedBox(height: 16),
-            Text('No review history yet', style: theme.textTheme.titleMedium),
+            Container(
+              width: 76,
+              height: 76,
+              decoration: BoxDecoration(
+                color: DigitalLibrarian.tertiary.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: DigitalLibrarian.tertiary.withValues(alpha: 0.35),
+                ),
+              ),
+              child: const Icon(LucideIcons.history,
+                  size: 32, color: DigitalLibrarian.tertiary),
+            ).animate().scale(duration: 600.ms, curve: Curves.elasticOut),
+            const SizedBox(height: 22),
+            Text('No reviews yet', style: Forge.display(context, size: 22)),
             const SizedBox(height: 8),
-            Text('Run an in-app review or an MCP verification to get started',
-                style: theme.textTheme.bodySmall),
+            Text(
+              'Run an in-app review or an MCP verification to get started.',
+              style: TextStyle(
+                fontSize: 13.5,
+                color: DigitalLibrarian.primary.withValues(alpha: 0.55),
+              ),
+            ),
           ],
         ),
       );
     }
 
+    final mcpCount = state.history.where((item) => item.isMcp).length;
+    final contextCount =
+        state.history.where((item) => item.isContextAware).length;
+
     return RefreshIndicator(
       onRefresh: () => ref.read(codeReviewProvider.notifier).loadHistory(),
       child: ListView(
-        padding: const EdgeInsets.all(16),
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
         children: [
-          _buildHistoryOverview(state.history, theme),
-          const SizedBox(height: 14),
-          ...state.history.map((item) => _buildHistoryCard(item, theme)),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildHistoryCard(CodeReviewHistoryItem item, ThemeData theme) {
-    final scheme = theme.colorScheme;
-    final sourceColor = _sourceColor(item.source, theme);
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: scheme.surface,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(
-          color: sourceColor.withValues(alpha: 0.18),
-        ),
-      ),
-      child: InkWell(
-        onTap: () => context.pushNamed(
-          'code-review-detail',
-          pathParameters: {'reviewId': item.id},
-        ),
-        borderRadius: BorderRadius.circular(24),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildScoreIndicator(item.score, theme, size: 72),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: [
-                            _buildMetaChip(
-                              label: _sourceLabel(item.source),
-                              icon: item.isMcp
-                                  ? Icons.memory_rounded
-                                  : Icons.rate_review_rounded,
-                              color: sourceColor,
-                              theme: theme,
-                              compact: true,
-                            ),
-                            _buildMetaChip(
-                              label: item.language.toUpperCase(),
-                              icon: Icons.code_rounded,
-                              color: scheme.secondary,
-                              theme: theme,
-                              compact: true,
-                            ),
-                            _buildMetaChip(
-                              label: _reviewTypeLabel(
-                                item.reviewType,
-                                toolName: item.toolName,
-                              ),
-                              icon: _reviewTypeIcon(
-                                item.reviewType,
-                                toolName: item.toolName,
-                              ),
-                              color: scheme.primary,
-                              theme: theme,
-                              compact: true,
-                            ),
-                            if (item.isContextAware)
-                              _buildMetaChip(
-                                label: item.relatedFileCount > 0
-                                    ? '${item.relatedFileCount} related files'
-                                    : 'Context-aware',
-                                icon: Icons.auto_awesome_rounded,
-                                color: scheme.tertiary,
-                                theme: theme,
-                                compact: true,
-                              ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          _reviewHeadline(
-                            item.reviewType,
-                            toolName: item.toolName,
-                          ),
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        if (item.summary.isNotEmpty) ...[
-                          const SizedBox(height: 6),
-                          Text(
-                            item.summary,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: scheme.onSurfaceVariant,
-                              height: 1.35,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Icon(
-                    Icons.arrow_forward_ios_rounded,
-                    size: 16,
-                    color: scheme.outline,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 14),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: scheme.surfaceContainerHighest.withValues(alpha: 0.45),
-                  borderRadius: BorderRadius.circular(18),
-                ),
-                child: Text(
-                  item.codePreview,
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontFamily: 'monospace',
-                    fontSize: 11,
-                    color: scheme.onSurfaceVariant,
-                    height: 1.45,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      _buildSmallIssueChip(
-                        label: 'Errors',
-                        count: item.errorCount,
-                        color: Colors.red,
-                      ),
-                      _buildSmallIssueChip(
-                        label: 'Warnings',
-                        count: item.warningCount,
-                        color: Colors.orange,
-                      ),
-                      _buildSmallIssueChip(
-                        label: 'Info',
-                        count: item.infoCount,
-                        color: Colors.blue,
-                      ),
-                    ],
-                  ),
-                  Text(
-                    _formatDate(item.createdAt),
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHistoryOverview(
-    List<CodeReviewHistoryItem> history,
-    ThemeData theme,
-  ) {
-    final mcpCount = history.where((item) => item.isMcp).length;
-    final contextCount = history.where((item) => item.isContextAware).length;
-
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            theme.colorScheme.secondaryContainer,
-            theme.colorScheme.surface,
-          ],
-        ),
-        border: Border.all(
-          color: theme.colorScheme.secondary.withValues(alpha: 0.16),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Review timeline',
-            style: theme.textTheme.titleLarge?.copyWith(
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'A combined stream of manual reviews, MCP verification runs, and context-aware analysis.',
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-              height: 1.4,
-            ),
-          ),
-          const SizedBox(height: 14),
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: [
-              _buildMetricCard(
-                label: 'Total',
-                value: history.length,
-                icon: Icons.history_toggle_off_rounded,
-                color: theme.colorScheme.primary,
-                theme: theme,
-              ),
-              _buildMetricCard(
-                label: 'MCP',
-                value: mcpCount,
-                icon: Icons.memory_rounded,
-                color: theme.colorScheme.tertiary,
-                theme: theme,
-              ),
-              _buildMetricCard(
-                label: 'Context-aware',
-                value: contextCount,
-                icon: Icons.auto_awesome_rounded,
-                color: theme.colorScheme.secondary,
-                theme: theme,
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSmallIssueChip({
-    required String label,
-    required int count,
-    required Color color,
-  }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        '$label $count',
-        style: TextStyle(
-          color: color,
-          fontSize: 11,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildReviewIntro(ThemeData theme) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(28),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            theme.colorScheme.primaryContainer,
-            theme.colorScheme.surface,
-          ],
-        ),
-        border: Border.all(
-          color: theme.colorScheme.primary.withValues(alpha: 0.16),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Ship cleaner reviews faster',
-            style: theme.textTheme.headlineSmall?.copyWith(
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Run focused reviews, compare manual and MCP-generated feedback, and keep the strongest findings in one history stream.',
-            style: theme.textTheme.bodyMedium?.copyWith(
-              height: 1.45,
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 14),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _buildMetaChip(
-                label: 'App reviews',
-                icon: Icons.rate_review_rounded,
-                color: theme.colorScheme.primary,
-                theme: theme,
-              ),
-              _buildMetaChip(
-                label: 'MCP history',
-                icon: Icons.memory_rounded,
-                color: theme.colorScheme.tertiary,
-                theme: theme,
-              ),
-              _buildMetaChip(
-                label: 'Repo context',
-                icon: Icons.auto_awesome_rounded,
-                color: theme.colorScheme.secondary,
-                theme: theme,
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMetricCard({
-    required String label,
-    required int value,
-    required IconData icon,
-    required Color color,
-    required ThemeData theme,
-  }) {
-    return Container(
-      constraints: const BoxConstraints(minWidth: 120),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: color.withValues(alpha: 0.14),
-        ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 18, color: color),
-          const SizedBox(width: 10),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                '$value',
-                style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  color: color,
-                ),
-              ),
-              Text(
-                label,
-                style: theme.textTheme.labelMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMetaChip({
-    required String label,
-    required IconData icon,
-    required Color color,
-    required ThemeData theme,
-    bool compact = false,
-  }) {
-    return Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: compact ? 10 : 12,
-        vertical: compact ? 6 : 8,
-      ),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: compact ? 14 : 16, color: color),
-          const SizedBox(width: 6),
-          Text(
-            label,
-            style: theme.textTheme.labelMedium?.copyWith(
-              color: color,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Color _sourceColor(String source, ThemeData theme) {
-    return source == 'mcp'
-        ? theme.colorScheme.tertiary
-        : theme.colorScheme.primary;
-  }
-
-  String _sourceLabel(String source) {
-    return source == 'mcp' ? 'MCP Review' : 'App Review';
-  }
-
-  String _reviewHeadline(String reviewType, {String? toolName}) {
-    switch (toolName ?? reviewType) {
-      case 'verify_code':
-        return 'MCP verification pass';
-      case 'verify_and_save':
-        return 'Verified and saved source review';
-      case 'analyze_code':
-        return 'MCP deep analysis';
-      default:
-        return '${_reviewTypeLabel(reviewType, toolName: toolName)} review';
-    }
-  }
-
-  String _reviewTypeLabel(String reviewType, {String? toolName}) {
-    switch (toolName ?? reviewType) {
-      case 'verify_code':
-        return 'Verify';
-      case 'verify_and_save':
-        return 'Verify + Save';
-      case 'analyze_code':
-        return 'Analyze';
-      case 'comprehensive':
-        return 'Comprehensive';
-      case 'security':
-        return 'Security';
-      case 'performance':
-        return 'Performance';
-      case 'readability':
-        return 'Readability';
-      default:
-        return _titleCase(reviewType);
-    }
-  }
-
-  IconData _reviewTypeIcon(String reviewType, {String? toolName}) {
-    switch (toolName ?? reviewType) {
-      case 'verify_code':
-      case 'verify_and_save':
-        return Icons.verified_outlined;
-      case 'analyze_code':
-        return Icons.analytics_outlined;
-      case 'security':
-        return Icons.security_rounded;
-      case 'performance':
-        return Icons.speed_rounded;
-      case 'readability':
-        return Icons.visibility_rounded;
-      default:
-        return Icons.rate_review_rounded;
-    }
-  }
-
-  String _titleCase(String value) {
-    return value
-        .split(RegExp(r'[_\s-]+'))
-        .where((part) => part.isNotEmpty)
-        .map(
-          (part) =>
-              '${part[0].toUpperCase()}${part.substring(1).toLowerCase()}',
-        )
-        .join(' ');
-  }
-
-  String _formatDate(DateTime date) {
-    final now = DateTime.now();
-    final diff = now.difference(date);
-    if (diff.inMinutes < 60) {
-      final minutes = diff.inMinutes.clamp(1, 59);
-      return '$minutes min ago';
-    }
-    if (diff.inHours < 24) {
-      return '${diff.inHours}h ago';
-    }
-    if (diff.inDays == 0) {
-      return 'Today';
-    } else if (diff.inDays == 1) {
-      return 'Yesterday';
-    } else if (diff.inDays < 7) {
-      return '${diff.inDays} days ago';
-    } else {
-      return '${date.day}/${date.month}/${date.year}';
-    }
-  }
-
-  Widget _buildGitHubContextSection(ThemeData theme) {
-    final githubState = ref.watch(githubProvider);
-    final isConnected = githubState.isConnected;
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
+          ForgePanel(
+            accent: DigitalLibrarian.tertiary,
+            child: Row(
               children: [
-                Icon(
-                  Icons.auto_awesome,
-                  size: 20,
-                  color: _useGitHubContext
-                      ? theme.colorScheme.primary
-                      : theme.colorScheme.outline,
+                ForgeStat(
+                  value: '${state.history.length}',
+                  label: 'Total',
+                  color: DigitalLibrarian.primary,
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Context-Aware Review',
-                    style: theme.textTheme.titleSmall,
-                  ),
+                _divider(),
+                ForgeStat(
+                  value: '$mcpCount',
+                  label: 'MCP',
+                  color: DigitalLibrarian.tertiary,
                 ),
-                Switch(
-                  value: _useGitHubContext,
-                  onChanged: isConnected
-                      ? (value) => setState(() => _useGitHubContext = value)
-                      : null,
+                _divider(),
+                ForgeStat(
+                  value: '$contextCount',
+                  label: 'Context',
+                  color: DigitalLibrarian.secondary,
                 ),
               ],
             ),
-            if (!isConnected) ...[
-              const SizedBox(height: 8),
-              Text(
-                'Connect GitHub to enable context-aware reviews',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.outline,
-                ),
+          ).animate().fadeIn(duration: 380.ms).slideY(
+                begin: 0.1,
+                end: 0,
+                duration: 380.ms,
+                curve: Curves.easeOutCubic,
               ),
-              const SizedBox(height: 8),
-              OutlinedButton.icon(
-                onPressed: () => context.push('/github'),
-                icon: const Icon(Icons.link, size: 16),
-                label: const Text('Connect GitHub'),
-              ),
-            ] else if (_useGitHubContext) ...[
-              const SizedBox(height: 12),
-              Text(
-                'Load a file with the GitHub button above, or enter a repo here so the AI can fetch related files for imports and dependencies.',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
+          const SizedBox(height: 14),
+          ...state.history.map(
+            (item) => _HistoryCard(item: item)
+                .animate()
+                .fadeIn(duration: 380.ms)
+                .slideY(
+                  begin: 0.1,
+                  end: 0,
+                  duration: 380.ms,
+                  curve: Curves.easeOutCubic,
                 ),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _ownerController,
-                      decoration: const InputDecoration(
-                        labelText: 'Owner',
-                        hintText: 'username',
-                        border: OutlineInputBorder(),
-                        isDense: true,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  const Text('/'),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    flex: 2,
-                    child: TextField(
-                      controller: _repoController,
-                      decoration: const InputDecoration(
-                        labelText: 'Repository',
-                        hintText: 'repo-name',
-                        border: OutlineInputBorder(),
-                        isDense: true,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: _branchController,
-                decoration: const InputDecoration(
-                  labelText: 'Branch (optional)',
-                  hintText: 'main',
-                  border: OutlineInputBorder(),
-                  isDense: true,
-                ),
-              ),
-              const SizedBox(height: 8),
-              // Quick select from connected repos
-              if (githubState.repos.isNotEmpty)
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 4,
-                  children: githubState.repos.take(5).map((repo) {
-                    return ActionChip(
-                      avatar: const Icon(Icons.folder, size: 16),
-                      label:
-                          Text(repo.name, style: const TextStyle(fontSize: 12)),
-                      onPressed: () {
-                        setState(() {
-                          _ownerController.text = repo.owner;
-                          _repoController.text = repo.name;
-                          _branchController.text = repo.defaultBranch;
-                        });
-                      },
-                    );
-                  }).toList(),
-                ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildGitHubFileBanner(ThemeData theme) {
-    final scheme = theme.colorScheme;
-
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: scheme.primaryContainer.withValues(alpha: 0.45),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: scheme.primary.withValues(alpha: 0.18),
-        ),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(Icons.source_outlined, color: scheme.primary),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Loaded from GitHub',
-                  style: theme.textTheme.labelLarge?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                if (_selectedGitHubRepoFullName != null)
-                  Text(
-                    _selectedGitHubRepoFullName!,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                    ),
-                  ),
-                Text(
-                  _selectedGitHubFilePath!,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    fontFamily: 'monospace',
-                  ),
-                ),
-                if (_selectedGitHubBranch != null &&
-                    _selectedGitHubBranch!.isNotEmpty)
-                  Text(
-                    'Branch: $_selectedGitHubBranch',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          IconButton(
-            visualDensity: VisualDensity.compact,
-            tooltip: 'Clear GitHub file',
-            onPressed: () {
-              setState(() {
-                _selectedGitHubRepoFullName = null;
-                _selectedGitHubFilePath = null;
-                _selectedGitHubBranch = null;
-              });
-            },
-            icon: const Icon(Icons.close),
           ),
         ],
       ),
     );
   }
+
+  Widget _divider() => Container(
+        width: 1,
+        height: 34,
+        margin: const EdgeInsets.symmetric(horizontal: 16),
+        color: DigitalLibrarian.outline.withValues(alpha: 0.5),
+      );
 
   Future<void> _loadCodeFromGitHub() async {
     final selection = await showGitHubReviewFilePicker(
@@ -1085,7 +418,6 @@ class _CodeReviewScreenState extends ConsumerState<CodeReviewScreen>
       return;
     }
 
-    // Build GitHub context if enabled
     GitHubReviewContext? githubContext;
     if (_useGitHubContext &&
         _ownerController.text.isNotEmpty &&
@@ -1105,5 +437,625 @@ class _CodeReviewScreenState extends ConsumerState<CodeReviewScreen>
           reviewType: _selectedReviewType,
           githubContext: githubContext,
         );
+  }
+}
+
+class _Header extends StatelessWidget {
+  final bool githubConnected;
+  final int tabIndex;
+  final ValueChanged<int> onTabChanged;
+
+  const _Header({
+    required this.githubConnected,
+    required this.tabIndex,
+    required this.onTabChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const ForgeEyebrow('CODE REVIEW'),
+                    const SizedBox(height: 6),
+                    Text('Review console',
+                        style: Forge.display(context, size: 30)),
+                  ],
+                ),
+              ),
+              ForgeStatus(
+                label: githubConnected ? 'GitHub' : 'No GitHub',
+                active: githubConnected,
+                color: DigitalLibrarian.tertiary,
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          _TabSwitch(tabIndex: tabIndex, onTabChanged: onTabChanged),
+        ],
+      ),
+    );
+  }
+}
+
+class _TabSwitch extends StatelessWidget {
+  final int tabIndex;
+  final ValueChanged<int> onTabChanged;
+
+  const _TabSwitch({required this.tabIndex, required this.onTabChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: DigitalLibrarian.surfaceLow,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: DigitalLibrarian.outline.withValues(alpha: 0.6),
+        ),
+      ),
+      child: Row(
+        children: [
+          _tab(context, 0, LucideIcons.scan, 'New review'),
+          _tab(context, 1, LucideIcons.history, 'History'),
+        ],
+      ),
+    );
+  }
+
+  Widget _tab(BuildContext context, int index, IconData icon, String label) {
+    final selected = tabIndex == index;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => onTabChanged(index),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: selected
+                ? DigitalLibrarian.tertiary.withValues(alpha: 0.18)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(9),
+            border: Border.all(
+              color: selected
+                  ? DigitalLibrarian.tertiary.withValues(alpha: 0.55)
+                  : Colors.transparent,
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 15,
+                color: selected
+                    ? DigitalLibrarian.tertiary
+                    : DigitalLibrarian.primary.withValues(alpha: 0.45),
+              ),
+              const SizedBox(width: 7),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: selected
+                      ? DigitalLibrarian.tertiary
+                      : DigitalLibrarian.primary.withValues(alpha: 0.45),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Code editor panel with a mono top bar and dark editing surface.
+class _CodeEditorPanel extends StatelessWidget {
+  final TextEditingController controller;
+  final String language;
+  final bool isGitHubConnected;
+  final String? gitHubFile;
+  final String? gitHubRepo;
+  final String? gitHubBranch;
+  final VoidCallback onClearGitHubFile;
+
+  const _CodeEditorPanel({
+    required this.controller,
+    required this.language,
+    required this.isGitHubConnected,
+    required this.gitHubFile,
+    required this.gitHubRepo,
+    required this.gitHubBranch,
+    required this.onClearGitHubFile,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: DigitalLibrarian.surfaceLowest,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: DigitalLibrarian.outline.withValues(alpha: 0.7),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.4),
+            blurRadius: 22,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: DigitalLibrarian.surfaceContainer,
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(13),
+              ),
+              border: Border(
+                bottom: BorderSide(
+                  color: DigitalLibrarian.outline.withValues(alpha: 0.5),
+                ),
+              ),
+            ),
+            child: Row(
+              children: [
+                Row(
+                  children: [
+                    _dot(const Color(0xFFFF5F57)),
+                    _dot(const Color(0xFFFEBC2E)),
+                    _dot(const Color(0xFF28C840)),
+                  ],
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  'source.$language',
+                  style: Forge.mono(context,
+                      size: 10.5,
+                      color: DigitalLibrarian.primary.withValues(alpha: 0.7),
+                      letterSpacing: 0.4),
+                ),
+                const Spacer(),
+                Text(
+                  'UTF-8',
+                  style: Forge.mono(context,
+                      size: 9,
+                      color: DigitalLibrarian.primary.withValues(alpha: 0.4),
+                      letterSpacing: 0.6),
+                ),
+              ],
+            ),
+          ),
+          TextField(
+            controller: controller,
+            maxLines: 12,
+            style: const TextStyle(
+              fontFamily: 'monospace',
+              fontSize: 12.5,
+              height: 1.5,
+              color: DigitalLibrarian.primary,
+            ),
+            decoration: InputDecoration(
+              hintText: isGitHubConnected
+                  ? '// paste code or load a file from GitHub…'
+                  : '// enter or paste code to review…',
+              hintStyle: TextStyle(
+                fontFamily: 'monospace',
+                fontSize: 12.5,
+                color: DigitalLibrarian.primary.withValues(alpha: 0.3),
+              ),
+              border: InputBorder.none,
+              filled: true,
+              fillColor: Colors.transparent,
+              contentPadding: const EdgeInsets.all(16),
+            ),
+          ),
+          if (gitHubFile != null)
+            Container(
+              margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: DigitalLibrarian.tertiary.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: DigitalLibrarian.tertiary.withValues(alpha: 0.3),
+                ),
+              ),
+              child: Row(
+                children: [
+                  const Icon(LucideIcons.github,
+                      size: 14, color: DigitalLibrarian.tertiary),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (gitHubRepo != null)
+                          Text(
+                            gitHubRepo!,
+                            style: Forge.mono(context,
+                                size: 9.5,
+                                color: DigitalLibrarian.primary
+                                    .withValues(alpha: 0.6),
+                                letterSpacing: 0.3),
+                          ),
+                        Text(
+                          gitHubFile!,
+                          style: Forge.mono(context,
+                              size: 10.5,
+                              color: DigitalLibrarian.tertiary,
+                              letterSpacing: 0.3),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
+                    tooltip: 'Clear GitHub file',
+                    onPressed: onClearGitHubFile,
+                    icon: Icon(
+                      LucideIcons.x,
+                      size: 14,
+                      color: DigitalLibrarian.primary.withValues(alpha: 0.5),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _dot(Color c) => Container(
+        width: 9,
+        height: 9,
+        margin: const EdgeInsets.only(right: 5),
+        decoration: BoxDecoration(color: c, shape: BoxShape.circle),
+      );
+}
+
+class _GitHubContextPanel extends StatelessWidget {
+  final bool useContext;
+  final ValueChanged<bool> onToggle;
+  final bool isConnected;
+  final TextEditingController ownerController;
+  final TextEditingController repoController;
+  final TextEditingController branchController;
+  final List<GitHubRepo> repos;
+
+  const _GitHubContextPanel({
+    required this.useContext,
+    required this.onToggle,
+    required this.isConnected,
+    required this.ownerController,
+    required this.repoController,
+    required this.branchController,
+    required this.repos,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ForgePanel(
+      accent: useContext ? DigitalLibrarian.secondary : null,
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                LucideIcons.sparkles,
+                size: 16,
+                color: useContext
+                    ? DigitalLibrarian.secondary
+                    : DigitalLibrarian.primary.withValues(alpha: 0.4),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Context-aware review',
+                  style: Forge.display(context, size: 14.5),
+                ),
+              ),
+              Switch(
+                value: useContext,
+                onChanged: isConnected ? onToggle : null,
+                activeThumbColor: DigitalLibrarian.secondary,
+              ),
+            ],
+          ),
+          if (!isConnected) ...[
+            const SizedBox(height: 6),
+            Text(
+              'Connect GitHub to enable context-aware reviews.',
+              style: TextStyle(
+                fontSize: 12.5,
+                color: DigitalLibrarian.primary.withValues(alpha: 0.5),
+              ),
+            ),
+            const SizedBox(height: 10),
+            ForgeChip(
+              icon: LucideIcons.link,
+              label: 'Connect GitHub',
+              color: DigitalLibrarian.secondary,
+              onTap: () => context.push('/github'),
+            ),
+          ] else if (useContext) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Load a file above, or point at a repo so the AI can pull related files for imports and dependencies.',
+              style: TextStyle(
+                fontSize: 12.5,
+                height: 1.45,
+                color: DigitalLibrarian.primary.withValues(alpha: 0.55),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: ownerController,
+                    decoration: const InputDecoration(
+                      labelText: 'Owner',
+                      hintText: 'username',
+                      isDense: true,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text('/',
+                    style: TextStyle(
+                      color: DigitalLibrarian.primary.withValues(alpha: 0.4),
+                    )),
+                const SizedBox(width: 8),
+                Expanded(
+                  flex: 2,
+                  child: TextField(
+                    controller: repoController,
+                    decoration: const InputDecoration(
+                      labelText: 'Repository',
+                      hintText: 'repo-name',
+                      isDense: true,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: branchController,
+              decoration: const InputDecoration(
+                labelText: 'Branch (optional)',
+                hintText: 'main',
+                isDense: true,
+              ),
+            ),
+            if (repos.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                children: repos.take(5).map((repo) {
+                  return ForgeChip(
+                    icon: LucideIcons.folder,
+                    label: repo.name,
+                    color: DigitalLibrarian.primary,
+                    onTap: () {
+                      ownerController.text = repo.owner;
+                      repoController.text = repo.name;
+                      branchController.text = repo.defaultBranch;
+                    },
+                  );
+                }).toList(),
+              ),
+            ],
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _HistoryCard extends StatelessWidget {
+  final CodeReviewHistoryItem item;
+
+  const _HistoryCard({required this.item});
+
+  @override
+  Widget build(BuildContext context) {
+    final sourceColor = item.source == 'mcp'
+        ? DigitalLibrarian.tertiary
+        : DigitalLibrarian.primaryStrong;
+
+    return ForgePanel(
+      margin: const EdgeInsets.only(bottom: 12),
+      accent: sourceColor,
+      onTap: () => context.pushNamed(
+        'code-review-detail',
+        pathParameters: {'reviewId': item.id},
+      ),
+      padding: const EdgeInsets.fromLTRB(18, 16, 14, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ForgeScoreRing(score: item.score, size: 64),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        ForgeChip(
+                          icon: item.isMcp ? LucideIcons.cpu : LucideIcons.scan,
+                          label: item.source == 'mcp' ? 'MCP' : 'App',
+                          color: sourceColor,
+                        ),
+                        ForgeChip(
+                          label: item.language.toUpperCase(),
+                          color: DigitalLibrarian.secondary,
+                        ),
+                        if (item.isContextAware)
+                          const ForgeChip(
+                            icon: LucideIcons.sparkles,
+                            label: 'Context',
+                            color: DigitalLibrarian.tertiary,
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _reviewHeadline(item.reviewType,
+                          toolName: item.toolName),
+                      style: Forge.display(context, size: 15.5),
+                    ),
+                    if (item.summary.isNotEmpty) ...[
+                      const SizedBox(height: 5),
+                      Text(
+                        item.summary,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          height: 1.4,
+                          color: DigitalLibrarian.primary
+                              .withValues(alpha: 0.55),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              Icon(
+                LucideIcons.chevronRight,
+                size: 17,
+                color: DigitalLibrarian.primary.withValues(alpha: 0.4),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: DigitalLibrarian.surfaceLowest,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: DigitalLibrarian.outline.withValues(alpha: 0.5),
+              ),
+            ),
+            child: Text(
+              item.codePreview,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontFamily: 'monospace',
+                fontSize: 10.5,
+                height: 1.5,
+                color: DigitalLibrarian.primary.withValues(alpha: 0.6),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              _issueChip('Errors', item.errorCount, const Color(0xFFF27E9D)),
+              const SizedBox(width: 6),
+              _issueChip('Warn', item.warningCount, const Color(0xFFF2B544)),
+              const SizedBox(width: 6),
+              _issueChip('Info', item.infoCount, DigitalLibrarian.primaryStrong),
+              const Spacer(),
+              Text(
+                _formatDate(item.createdAt),
+                style: Forge.mono(context,
+                    size: 9,
+                    color: DigitalLibrarian.primary.withValues(alpha: 0.4),
+                    letterSpacing: 0.4),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _issueChip(String label, int count, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(7),
+      ),
+      child: Text(
+        '$label $count',
+        style: TextStyle(
+          color: color,
+          fontSize: 10.5,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+
+  String _reviewHeadline(String reviewType, {String? toolName}) {
+    switch (toolName ?? reviewType) {
+      case 'verify_code':
+        return 'MCP verification pass';
+      case 'verify_and_save':
+        return 'Verified & saved source review';
+      case 'analyze_code':
+        return 'MCP deep analysis';
+      case 'security':
+        return 'Security review';
+      case 'performance':
+        return 'Performance review';
+      case 'readability':
+        return 'Readability review';
+      default:
+        return 'Comprehensive review';
+    }
+  }
+
+  String _formatDate(DateTime date) {
+    final now = DateTime.now();
+    final diff = now.difference(date);
+    if (diff.inMinutes < 60) {
+      final minutes = diff.inMinutes.clamp(1, 59);
+      return '$minutes min ago';
+    }
+    if (diff.inHours < 24) {
+      return '${diff.inHours}h ago';
+    }
+    if (diff.inDays == 0) {
+      return 'Today';
+    } else if (diff.inDays == 1) {
+      return 'Yesterday';
+    } else if (diff.inDays < 7) {
+      return '${diff.inDays} days ago';
+    } else {
+      return '${date.day}/${date.month}/${date.year}';
+    }
   }
 }

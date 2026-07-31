@@ -1597,6 +1597,54 @@ router.post('/followups/send', authenticateToken, async (req: Request, res: Resp
       }
     }
 
+    if (!delivered) {
+      try {
+        const systemPrompt = [
+          'You are a coding agent connected to NoteClaw. You help the user with their project.',
+          'Answer concisely and practically. If the context contains relevant code or memories, use them.',
+          'If you cannot answer from the provided context, say so honestly.',
+          '',
+          formattedNotebookContext
+            ? `PROJECT CONTEXT:\n${formattedNotebookContext.slice(0, 60_000)}`
+            : 'No project context is available for this conversation.',
+        ].join('\n');
+
+        const historyMessages: ChatMessage[] = conversationHistory
+          .slice(-10)
+          .map((msg: any) => ({
+            role: msg.role === 'agent' ? 'assistant' as const : 'user' as const,
+            content: typeof msg.content === 'string' ? msg.content.slice(0, 4_000) : '',
+          }))
+          .filter((msg: ChatMessage) => msg.content);
+
+        const aiMessages: ChatMessage[] = [
+          { role: 'user', content: systemPrompt },
+          { role: 'assistant', content: 'Understood. I will help using the project context.' },
+          ...historyMessages,
+          { role: 'user', content: message },
+        ];
+
+        const aiReply = await generateWithGemini(aiMessages);
+
+        if (aiReply) {
+          agentResponse = aiReply;
+          agentMessage = await sourceConversationService.addMessage(
+            sourceId,
+            'agent',
+            aiReply,
+            {
+              agentSessionId,
+              metadata: { generatedBy: 'noteclaw-ai-fallback', model: 'gemini' },
+            }
+          );
+          deliveryMethod = 'ai_fallback';
+          delivered = true;
+        }
+      } catch (aiError: any) {
+        console.error('[Coding Agent] AI fallback failed:', aiError.message);
+      }
+    }
+
     console.log(`[Coding Agent] User sent followup for source ${sourceId} (delivery: ${deliveryMethod})`);
 
     res.json({
@@ -1611,6 +1659,8 @@ router.post('/followups/send', authenticateToken, async (req: Request, res: Resp
         ? 'Message sent to agent via WebSocket. Response will appear when agent replies.'
         : deliveryMethod === 'webhook'
         ? 'Message delivered via webhook.'
+        : deliveryMethod === 'ai_fallback'
+        ? 'No live agent connected. NoteClaw AI responded using project context.'
         : 'Message stored. Agent will see it when they poll for messages.',
     });
   } catch (error: any) {

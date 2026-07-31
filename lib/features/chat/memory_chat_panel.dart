@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons/lucide_icons.dart';
@@ -5,6 +7,7 @@ import 'package:lucide_icons/lucide_icons.dart';
 import '../../core/ai/ai_models_provider.dart';
 import '../../core/api/api_service.dart';
 import '../../ui/digital_librarian.dart';
+import '../../ui/forge.dart';
 import '../memory/memory_models.dart';
 import '../sources/source_conversation_provider.dart';
 
@@ -695,7 +698,6 @@ class _ChatEmpty extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     final (title, description, prompts) = switch (mode) {
       _MemoryChatMode.assistant => (
           'Talk to the notebook',
@@ -727,43 +729,79 @@ class _ChatEmpty extends StatelessWidget {
     };
 
     return Padding(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(20),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Icon(LucideIcons.sparkles, size: 25, color: scheme.primary),
-          const SizedBox(height: 11),
+          Center(
+            child: Container(
+              width: 62,
+              height: 62,
+              decoration: BoxDecoration(
+                color: DigitalLibrarian.primaryStrong.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(
+                  color:
+                      DigitalLibrarian.primaryStrong.withValues(alpha: 0.35),
+                ),
+              ),
+              child: const Icon(LucideIcons.sparkles,
+                  size: 26, color: DigitalLibrarian.primary),
+            ),
+          ),
+          const SizedBox(height: 18),
           Text(
             title,
             textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w800,
-                ),
+            style: Forge.display(context, size: 19),
           ),
-          const SizedBox(height: 5),
+          const SizedBox(height: 6),
           Text(
             description,
             textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: scheme.onSurfaceVariant,
-                ),
+            style: TextStyle(
+              fontSize: 12.5,
+              height: 1.5,
+              color: DigitalLibrarian.primary.withValues(alpha: 0.55),
+            ),
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 22),
           ...prompts.map(
             (prompt) => Padding(
-              padding: const EdgeInsets.only(bottom: 7),
-              child: OutlinedButton(
-                onPressed: () => onPrompt(prompt),
-                style: OutlinedButton.styleFrom(
-                  alignment: Alignment.centerLeft,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
-                ),
-                child: Text(
-                  prompt,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+              padding: const EdgeInsets.only(bottom: 8),
+              child: InkWell(
+                onTap: () => onPrompt(prompt),
+                borderRadius: BorderRadius.circular(11),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 14, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: DigitalLibrarian.surfaceContainer,
+                    borderRadius: BorderRadius.circular(11),
+                    border: Border.all(
+                      color: DigitalLibrarian.outline.withValues(alpha: 0.6),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(LucideIcons.cornerDownLeft,
+                          size: 13, color: DigitalLibrarian.secondary),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          prompt,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            color: DigitalLibrarian.primary
+                                .withValues(alpha: 0.8),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -781,29 +819,71 @@ class _MessageEntry extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final isUser = message.isUser;
+    final bubbleColor = isUser
+        ? DigitalLibrarian.primaryStrong
+        : DigitalLibrarian.surfaceContainer;
+    final textColor =
+        isUser ? DigitalLibrarian.background : DigitalLibrarian.primary;
+
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+        crossAxisAlignment: isUser
+            ? CrossAxisAlignment.end
+            : CrossAxisAlignment.start,
         children: [
-          Text(
-            message.isUser ? 'YOU' : 'RESPONSE',
-            style: TextStyle(
-              color: message.isUser ? scheme.primary : scheme.onSurfaceVariant,
-              fontFamily: 'JetBrains Mono',
-              fontSize: 9,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.85,
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Text(
+              isUser ? 'YOU' : 'AGENT',
+              style: Forge.mono(
+                context,
+                size: 8.5,
+                letterSpacing: 1.1,
+                color: isUser
+                    ? DigitalLibrarian.primaryStrong
+                    : DigitalLibrarian.secondary,
+              ),
             ),
           ),
-          const SizedBox(height: 7),
-          SelectableText(
-            message.content,
-            style: TextStyle(
-              color: scheme.onSurface,
-              fontSize: 14,
-              height: 1.55,
+          const SizedBox(height: 4),
+          ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: MediaQuery.of(context).size.width * 0.82,
+            ),
+            child: Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+              decoration: BoxDecoration(
+                color: bubbleColor,
+                borderRadius: BorderRadius.only(
+                  topLeft: const Radius.circular(16),
+                  topRight: const Radius.circular(16),
+                  bottomLeft: Radius.circular(isUser ? 16 : 4),
+                  bottomRight: Radius.circular(isUser ? 4 : 16),
+                ),
+                border: isUser
+                    ? null
+                    : Border.all(
+                        color: DigitalLibrarian.outline.withValues(alpha: 0.6),
+                      ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: isUser ? 0.3 : 0.2),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: SelectableText(
+                message.content,
+                style: TextStyle(
+                  color: textColor,
+                  fontSize: 13.5,
+                  height: 1.55,
+                ),
+              ),
             ),
           ),
         ],
@@ -812,36 +892,108 @@ class _MessageEntry extends StatelessWidget {
   }
 }
 
-class _ThinkingBubble extends StatelessWidget {
+class _ThinkingBubble extends StatefulWidget {
   const _ThinkingBubble({this.label});
 
   final String? label;
 
   @override
+  State<_ThinkingBubble> createState() => _ThinkingBubbleState();
+}
+
+class _ThinkingBubbleState extends State<_ThinkingBubble>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1100),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SizedBox(
-            width: 15,
-            height: 15,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
-          if (label?.isNotEmpty == true) ...[
-            const SizedBox(width: 9),
-            Flexible(
-              child: Text(
-                label!,
-                style: TextStyle(
-                  color: scheme.onSurfaceVariant,
-                  fontSize: 11,
-                ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Text(
+              'AGENT',
+              style: Forge.mono(
+                context,
+                size: 8.5,
+                letterSpacing: 1.1,
+                color: DigitalLibrarian.secondary,
               ),
             ),
-          ],
+          ),
+          const SizedBox(height: 4),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: DigitalLibrarian.surfaceContainer,
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(16),
+                topRight: Radius.circular(16),
+                bottomLeft: Radius.circular(4),
+                bottomRight: Radius.circular(16),
+              ),
+              border: Border.all(
+                color: DigitalLibrarian.outline.withValues(alpha: 0.6),
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AnimatedBuilder(
+                  animation: _ctrl,
+                  builder: (_, __) {
+                    return Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: List.generate(3, (i) {
+                        final phase = (_ctrl.value * 2 * math.pi) + (i * 0.9);
+                        final bounce = (math.sin(phase) + 1) / 2;
+                        return Container(
+                          width: 6,
+                          height: 6,
+                          margin: const EdgeInsets.only(right: 5),
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: DigitalLibrarian.secondary
+                                .withValues(alpha: 0.35 + 0.65 * bounce),
+                          ),
+                        );
+                      }),
+                    );
+                  },
+                ),
+                if (widget.label?.isNotEmpty == true) ...[
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      widget.label!,
+                      style: TextStyle(
+                        color: DigitalLibrarian.primary.withValues(alpha: 0.6),
+                        fontSize: 11,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
         ],
       ),
     );

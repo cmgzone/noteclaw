@@ -4,13 +4,13 @@ import 'package:go_router/go_router.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 
-import '../../../theme/app_theme.dart';
 import '../../../ui/digital_librarian.dart';
+import '../../../ui/forge.dart';
 import '../models/plan.dart';
 import '../models/plan_task.dart';
 import '../planning_provider.dart';
 
-/// Plans list screen showing all plans with status summary.
+/// Plans list screen redesigned as a "project command deck".
 /// Implements Requirements: 1.1, 1.2, 1.4, 1.5
 class PlansListScreen extends ConsumerStatefulWidget {
   const PlansListScreen({super.key});
@@ -19,30 +19,15 @@ class PlansListScreen extends ConsumerStatefulWidget {
   ConsumerState<PlansListScreen> createState() => _PlansListScreenState();
 }
 
-class _PlansListScreenState extends ConsumerState<PlansListScreen>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabController;
+class _PlansListScreenState extends ConsumerState<PlansListScreen> {
   bool _showArchived = false;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
-    _tabController.addListener(() {
-      setState(() {
-        _showArchived = _tabController.index == 1;
-      });
-    });
-    // Load plans on init
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(planningProvider.notifier).loadPlans(includeArchived: true);
     });
-  }
-
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
   }
 
   @override
@@ -50,233 +35,97 @@ class _PlansListScreenState extends ConsumerState<PlansListScreen>
     final state = ref.watch(planningProvider);
     final activePlans = ref.watch(activePlansProvider);
     final archivedPlans = ref.watch(archivedPlansProvider);
-    final scheme = Theme.of(context).colorScheme;
-    final text = Theme.of(context).textTheme;
+
+    final plans = _showArchived ? archivedPlans : activePlans;
 
     return Scaffold(
-      body: CustomScrollView(
-        slivers: [
-          // App Bar with gradient header
-          SliverAppBar(
-            floating: true,
-            pinned: true,
-            expandedHeight: 188,
-            flexibleSpace: FlexibleSpaceBar(
-              background: Container(
-                decoration: const BoxDecoration(
-                  gradient: AppTheme.premiumGradient,
-                ),
-                child: Stack(
-                  children: [
-                    // Decorative elements
-                    Positioned(
-                      top: -30,
-                      right: -30,
-                      child: Container(
-                        width: 150,
-                        height: 150,
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.1),
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                    ),
-                    Positioned(
-                      bottom: -20,
-                      left: -20,
-                      child: Container(
-                        width: 100,
-                        height: 100,
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.1),
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                    ),
-                    SafeArea(
-                      bottom: false,
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(
-                          20,
-                          20,
-                          20,
-                          kTextTabBarHeight + 28,
-                        ),
-                        child: Align(
-                          alignment: Alignment.bottomLeft,
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  const Icon(
-                                    LucideIcons.clipboardList,
-                                    color: Colors.white,
-                                    size: 28,
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Text(
-                                    'Project Workspace',
-                                    style: text.headlineSmall?.copyWith(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ],
-                              ).animate().fadeIn().slideX(),
-                              const SizedBox(height: 8),
-                              Text(
-                                'Plan, organize, and execute projects of any kind',
-                                style: text.bodyMedium?.copyWith(
-                                  color: Colors.white.withValues(alpha: 0.8),
-                                ),
-                              ).animate().fadeIn(delay: 100.ms).slideX(),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            leading: IconButton(
-              icon: const Icon(LucideIcons.bookOpen, color: Colors.white),
-              onPressed: () => context.go('/home'),
-              tooltip: 'Memory',
-            ),
-            actions: [
-              // Connection status indicator
-              _ConnectionIndicator(isConnected: state.isConnected),
-              IconButton(
-                icon: const Icon(Icons.refresh, color: Colors.white),
-                onPressed: () => ref
+      backgroundColor: DigitalLibrarian.background,
+      body: ForgeBackground(
+        child: SafeArea(
+          bottom: false,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _CommandDeck(
+                activePlans: activePlans,
+                isConnected: state.isConnected,
+                onRefresh: () => ref
                     .read(planningProvider.notifier)
                     .loadPlans(includeArchived: true),
-                tooltip: 'Refresh',
+                onCreate: () => _showCreatePlanDialog(context),
               ),
-              IconButton(
-                icon: const Icon(Icons.add, color: Colors.white),
-                onPressed: () => _showCreatePlanDialog(context),
-                tooltip: 'New Project',
+              _SegmentToggle(
+                showArchived: _showArchived,
+                activeCount: activePlans.length,
+                archivedCount: archivedPlans.length,
+                onChanged: (archived) =>
+                    setState(() => _showArchived = archived),
+              ),
+              if (state.error != null) _ErrorBanner(message: state.error!),
+              Expanded(
+                child: state.isLoading
+                    ? const Center(
+                        child: CircularProgressIndicator(strokeWidth: 2))
+                    : plans.isEmpty
+                        ? _EmptyState(
+                            isArchived: _showArchived,
+                            onCreatePressed: () =>
+                                _showCreatePlanDialog(context),
+                          )
+                        : RefreshIndicator(
+                            onRefresh: () => ref
+                                .read(planningProvider.notifier)
+                                .loadPlans(includeArchived: true),
+                            child: ListView.builder(
+                              physics:
+                                  const AlwaysScrollableScrollPhysics(),
+                              padding: const EdgeInsets.fromLTRB(
+                                  16, 6, 16, 24),
+                              itemCount: plans.length,
+                              itemBuilder: (context, index) {
+                                final plan = plans[index];
+                                return _PlanCard(
+                                  plan: plan,
+                                  onTap: () => _openPlan(plan),
+                                  onArchive: _showArchived
+                                      ? null
+                                      : () => _archivePlan(plan),
+                                  onUnarchive: _showArchived
+                                      ? () => _unarchivePlan(plan)
+                                      : null,
+                                  onDelete: () => _confirmDeletePlan(plan),
+                                )
+                                    .animate()
+                                    .fadeIn(
+                                      delay: Duration(
+                                          milliseconds: 60 * index),
+                                      duration: 380.ms,
+                                    )
+                                    .slideY(
+                                      begin: 0.12,
+                                      end: 0,
+                                      delay: Duration(
+                                          milliseconds: 60 * index),
+                                      duration: 380.ms,
+                                      curve: Curves.easeOutCubic,
+                                    );
+                              },
+                            ),
+                          ),
               ),
             ],
-            bottom: TabBar(
-              controller: _tabController,
-              indicatorColor: Colors.white,
-              labelColor: Colors.white,
-              unselectedLabelColor: Colors.white70,
-              tabs: [
-                Tab(
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(LucideIcons.folder, size: 18),
-                      const SizedBox(width: 8),
-                      Text('Active (${activePlans.length})'),
-                    ],
-                  ),
-                ),
-                Tab(
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(LucideIcons.archive, size: 18),
-                      const SizedBox(width: 8),
-                      Text('Archived (${archivedPlans.length})'),
-                    ],
-                  ),
-                ),
-              ],
-            ),
           ),
-
-          // Error message
-          if (state.error != null)
-            SliverToBoxAdapter(
-              child: Container(
-                margin: const EdgeInsets.all(16),
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: scheme.errorContainer,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  children: [
-                    Icon(LucideIcons.alertCircle, color: scheme.error),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        state.error!,
-                        style: TextStyle(color: scheme.onErrorContainer),
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(LucideIcons.x),
-                      onPressed: () =>
-                          ref.read(planningProvider.notifier).clearError(),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-          // Loading indicator
-          if (state.isLoading)
-            const SliverToBoxAdapter(
-              child: Padding(
-                padding: EdgeInsets.all(32),
-                child: Center(child: CircularProgressIndicator()),
-              ),
-            )
-          else
-            // Plans list
-            SliverPadding(
-              padding: const EdgeInsets.all(16),
-              sliver: _buildPlansList(
-                _showArchived ? archivedPlans : activePlans,
-                _showArchived,
-              ),
-            ),
-        ],
+        ),
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _showCreatePlanDialog(context),
         icon: const Icon(LucideIcons.plus),
         label: const Text('New Project'),
-        backgroundColor: scheme.primary,
-        foregroundColor: scheme.onPrimary,
-      ).animate().scale(delay: 300.ms),
+        backgroundColor: DigitalLibrarian.secondary,
+        foregroundColor: DigitalLibrarian.background,
+      ).animate().scale(delay: 300.ms, curve: Curves.easeOutBack),
       bottomNavigationBar: const MemoryNavigationBar(
         selected: MemoryDestination.planning,
-      ),
-    );
-  }
-
-  Widget _buildPlansList(List<Plan> plans, bool isArchived) {
-    if (plans.isEmpty) {
-      return SliverToBoxAdapter(
-        child: _EmptyState(
-          isArchived: isArchived,
-          onCreatePressed: () => _showCreatePlanDialog(context),
-        ),
-      );
-    }
-
-    return SliverList(
-      delegate: SliverChildBuilderDelegate(
-        (context, index) {
-          final plan = plans[index];
-          return _PlanCard(
-            plan: plan,
-            onTap: () => _openPlan(plan),
-            onArchive: isArchived ? null : () => _archivePlan(plan),
-            onUnarchive: isArchived ? () => _unarchivePlan(plan) : null,
-            onDelete: () => _confirmDeletePlan(plan),
-          ).animate().fadeIn(delay: Duration(milliseconds: index * 50));
-        },
-        childCount: plans.length,
       ),
     );
   }
@@ -294,7 +143,6 @@ class _PlansListScreenState extends ConsumerState<PlansListScreen>
   }
 
   void _openPlan(Plan plan) {
-    // Navigate to plan detail screen
     context.push('/planning/${plan.id}');
   }
 
@@ -360,34 +208,254 @@ class _PlansListScreenState extends ConsumerState<PlansListScreen>
   }
 }
 
-/// Connection status indicator widget
-class _ConnectionIndicator extends StatelessWidget {
+/// Header "command deck": eyebrow, display title, live stats, connection.
+class _CommandDeck extends StatelessWidget {
+  final List<Plan> activePlans;
   final bool isConnected;
+  final VoidCallback onRefresh;
+  final VoidCallback onCreate;
 
-  const _ConnectionIndicator({required this.isConnected});
+  const _CommandDeck({
+    required this.activePlans,
+    required this.isConnected,
+    required this.onRefresh,
+    required this.onCreate,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Tooltip(
-      message: isConnected ? 'Real-time sync active' : 'Offline',
+    final totalTasks =
+        activePlans.fold<int>(0, (sum, p) => sum + p.tasks.length);
+    final doneTasks = activePlans.fold<int>(
+      0,
+      (sum, p) => sum + (p.taskStatusSummary[TaskStatus.completed] ?? 0),
+    );
+    final blockedTasks = activePlans.fold<int>(
+      0,
+      (sum, p) => sum + (p.taskStatusSummary[TaskStatus.blocked] ?? 0),
+    );
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const ForgeEyebrow('PROJECT WORKSPACE'),
+                    const SizedBox(height: 6),
+                    Text('Mission control',
+                        style: Forge.display(context, size: 30)),
+                  ],
+                ),
+              ),
+              IconButton(
+                onPressed: onRefresh,
+                tooltip: 'Refresh',
+                icon: const Icon(LucideIcons.refreshCw, size: 18),
+              ),
+            ],
+          ).animate().fadeIn(duration: 350.ms).slideX(begin: -0.06, end: 0),
+          const SizedBox(height: 16),
+          ForgePanel(
+            accent: DigitalLibrarian.primaryStrong,
+            padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+            child: Row(
+              children: [
+                ForgeStat(
+                  value: '${activePlans.length}',
+                  label: 'Active',
+                  color: DigitalLibrarian.primary,
+                ),
+                _divider(),
+                ForgeStat(
+                  value: '$doneTasks/$totalTasks',
+                  label: 'Tasks done',
+                  color: DigitalLibrarian.secondary,
+                  size: 24,
+                ),
+                _divider(),
+                ForgeStat(
+                  value: '$blockedTasks',
+                  label: 'Blocked',
+                  color: blockedTasks > 0
+                      ? const Color(0xFFF2B544)
+                      : DigitalLibrarian.primary.withValues(alpha: 0.5),
+                ),
+                const Spacer(),
+                ForgeStatus(
+                  label: isConnected ? 'Syncing' : 'Offline',
+                  active: isConnected,
+                ),
+              ],
+            ),
+          ).animate().fadeIn(delay: 120.ms, duration: 400.ms).slideY(
+                begin: 0.14,
+                end: 0,
+                delay: 120.ms,
+                duration: 400.ms,
+                curve: Curves.easeOutCubic,
+              ),
+        ],
+      ),
+    );
+  }
+
+  Widget _divider() => Container(
+        width: 1,
+        height: 34,
+        margin: const EdgeInsets.symmetric(horizontal: 16),
+        color: DigitalLibrarian.outline.withValues(alpha: 0.5),
+      );
+}
+
+/// Active / Archived segmented control.
+class _SegmentToggle extends StatelessWidget {
+  final bool showArchived;
+  final int activeCount;
+  final int archivedCount;
+  final ValueChanged<bool> onChanged;
+
+  const _SegmentToggle({
+    required this.showArchived,
+    required this.activeCount,
+    required this.archivedCount,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 8),
-        padding: const EdgeInsets.all(6),
+        padding: const EdgeInsets.all(4),
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.2),
-          shape: BoxShape.circle,
+          color: DigitalLibrarian.surfaceLow,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: DigitalLibrarian.outline.withValues(alpha: 0.6),
+          ),
         ),
-        child: Icon(
-          isConnected ? LucideIcons.wifi : LucideIcons.wifiOff,
-          size: 16,
-          color: isConnected ? Colors.greenAccent : Colors.white70,
+        child: Row(
+          children: [
+            _segment(
+              context,
+              selected: !showArchived,
+              icon: LucideIcons.folder,
+              label: 'Active',
+              count: activeCount,
+              onTap: () => onChanged(false),
+            ),
+            _segment(
+              context,
+              selected: showArchived,
+              icon: LucideIcons.archive,
+              label: 'Archived',
+              count: archivedCount,
+              onTap: () => onChanged(true),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _segment(
+    BuildContext context, {
+    required bool selected,
+    required IconData icon,
+    required String label,
+    required int count,
+    required VoidCallback onTap,
+  }) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: selected
+                ? DigitalLibrarian.primaryStrong.withValues(alpha: 0.22)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(9),
+            border: Border.all(
+              color: selected
+                  ? DigitalLibrarian.primaryStrong.withValues(alpha: 0.6)
+                  : Colors.transparent,
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 15,
+                color: selected
+                    ? DigitalLibrarian.primary
+                    : DigitalLibrarian.primary.withValues(alpha: 0.45),
+              ),
+              const SizedBox(width: 7),
+              Text(
+                '$label ($count)',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: selected
+                      ? DigitalLibrarian.primary
+                      : DigitalLibrarian.primary.withValues(alpha: 0.45),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-/// Empty state widget
+class _ErrorBanner extends StatelessWidget {
+  final String message;
+
+  const _ErrorBanner({required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF27E9D).withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: const Color(0xFFF27E9D).withValues(alpha: 0.35),
+        ),
+      ),
+      child: Row(
+        children: [
+          const Icon(LucideIcons.alertCircle,
+              size: 16, color: Color(0xFFF27E9D)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              message,
+              style: const TextStyle(
+                fontSize: 12.5,
+                color: Color(0xFFF27E9D),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Empty state with personality.
 class _EmptyState extends StatelessWidget {
   final bool isArchived;
   final VoidCallback onCreatePressed;
@@ -399,42 +467,54 @@ class _EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final text = Theme.of(context).textTheme;
-
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              isArchived ? LucideIcons.archive : LucideIcons.clipboardList,
-              size: 80,
-              color: scheme.primary.withValues(alpha: 0.5),
+            Container(
+              width: 76,
+              height: 76,
+              decoration: BoxDecoration(
+                color: DigitalLibrarian.primaryStrong
+                    .withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: DigitalLibrarian.primaryStrong
+                      .withValues(alpha: 0.35),
+                ),
+              ),
+              child: Icon(
+                isArchived ? LucideIcons.archive : LucideIcons.clipboardList,
+                size: 32,
+                color: DigitalLibrarian.primary,
+              ),
             ).animate().scale(duration: 600.ms, curve: Curves.elasticOut),
-            const SizedBox(height: 24),
+            const SizedBox(height: 22),
             Text(
-              isArchived ? 'No Archived Projects' : 'No Projects Yet',
-              style: text.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+              isArchived ? 'Nothing archived' : 'No projects yet',
+              style: Forge.display(context, size: 22),
             ).animate().fadeIn(delay: 200.ms),
             const SizedBox(height: 8),
             Text(
               isArchived
-                  ? 'Archived projects will appear here'
-                  : 'Create your first project workspace to organize ideas, tasks, and design notes',
-              style: text.bodyLarge?.copyWith(
-                color: scheme.onSurface.withValues(alpha: 0.6),
-              ),
+                  ? 'Archived projects will land here.'
+                  : 'Spin up your first project workspace to organize ideas, tasks and design notes.',
               textAlign: TextAlign.center,
-            ).animate().fadeIn(delay: 400.ms),
+              style: TextStyle(
+                fontSize: 13.5,
+                height: 1.5,
+                color: DigitalLibrarian.primary.withValues(alpha: 0.55),
+              ),
+            ).animate().fadeIn(delay: 350.ms),
             if (!isArchived) ...[
-              const SizedBox(height: 32),
-              FilledButton.icon(
+              const SizedBox(height: 26),
+              ForgeButton(
+                label: 'Create project',
+                icon: LucideIcons.plus,
                 onPressed: onCreatePressed,
-                icon: const Icon(LucideIcons.plus),
-                label: const Text('Create Project'),
-              ).animate().fadeIn(delay: 600.ms),
+              ).animate().fadeIn(delay: 500.ms),
             ],
           ],
         ),
@@ -443,7 +523,7 @@ class _EmptyState extends StatelessWidget {
   }
 }
 
-/// Plan card widget showing plan summary
+/// Redesigned plan card: status rail, completion dial, task chips.
 class _PlanCard extends StatelessWidget {
   final Plan plan;
   final VoidCallback onTap;
@@ -461,223 +541,193 @@ class _PlanCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final text = Theme.of(context).textTheme;
+    final statusColor = _statusColor(plan.status);
     final taskSummary = plan.taskStatusSummary;
-    final completedCount = taskSummary[TaskStatus.completed] ?? 0;
     final totalTasks = plan.tasks.length;
 
-    return Card(
+    return ForgePanel(
       margin: const EdgeInsets.only(bottom: 12),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
+      accent: statusColor,
+      onTap: onTap,
+      padding: const EdgeInsets.fromLTRB(20, 16, 14, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Header row
-              Row(
-                children: [
-                  // Status icon
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color:
-                          _getStatusColor(plan.status).withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(
-                      _getStatusIcon(plan.status),
-                      color: _getStatusColor(plan.status),
-                      size: 24,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  // Title and description
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
                       children: [
-                        Text(
-                          plan.title,
-                          style: text.titleMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        if (plan.description.isNotEmpty) ...[
-                          const SizedBox(height: 4),
-                          Text(
-                            plan.description,
-                            style: text.bodySmall?.copyWith(
-                              color: scheme.onSurface.withValues(alpha: 0.6),
-                            ),
-                            maxLines: 2,
+                        Icon(_statusIcon(plan.status),
+                            size: 15, color: statusColor),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            plan.title,
+                            maxLines: 1,
                             overflow: TextOverflow.ellipsis,
+                            style: Forge.display(context, size: 17),
                           ),
-                        ],
+                        ),
                       ],
                     ),
-                  ),
-                  // Menu
-                  PopupMenuButton<String>(
-                    onSelected: (value) {
-                      switch (value) {
-                        case 'archive':
-                          onArchive?.call();
-                          break;
-                        case 'unarchive':
-                          onUnarchive?.call();
-                          break;
-                        case 'delete':
-                          onDelete();
-                          break;
-                      }
-                    },
-                    itemBuilder: (ctx) => [
-                      if (onArchive != null)
-                        const PopupMenuItem(
-                          value: 'archive',
-                          child: Row(
-                            children: [
-                              Icon(LucideIcons.archive, size: 18),
-                              SizedBox(width: 8),
-                              Text('Archive'),
-                            ],
-                          ),
-                        ),
-                      if (onUnarchive != null)
-                        const PopupMenuItem(
-                          value: 'unarchive',
-                          child: Row(
-                            children: [
-                              Icon(LucideIcons.archiveRestore, size: 18),
-                              SizedBox(width: 8),
-                              Text('Restore'),
-                            ],
-                          ),
-                        ),
-                      PopupMenuItem(
-                        value: 'delete',
-                        child: Row(
-                          children: [
-                            Icon(LucideIcons.trash2,
-                                size: 18, color: scheme.error),
-                            const SizedBox(width: 8),
-                            Text('Delete',
-                                style: TextStyle(color: scheme.error)),
-                          ],
+                    if (plan.description.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        plan.description,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          height: 1.45,
+                          color: DigitalLibrarian.primary
+                              .withValues(alpha: 0.55),
                         ),
                       ),
                     ],
+                  ],
+                ),
+              ),
+              PopupMenuButton<String>(
+                icon: Icon(
+                  LucideIcons.moreVertical,
+                  size: 17,
+                  color: DigitalLibrarian.primary.withValues(alpha: 0.5),
+                ),
+                onSelected: (value) {
+                  switch (value) {
+                    case 'archive':
+                      onArchive?.call();
+                      break;
+                    case 'unarchive':
+                      onUnarchive?.call();
+                      break;
+                    case 'delete':
+                      onDelete();
+                      break;
+                  }
+                },
+                itemBuilder: (ctx) => [
+                  if (onArchive != null)
+                    const PopupMenuItem(
+                      value: 'archive',
+                      child: Row(
+                        children: [
+                          Icon(LucideIcons.archive, size: 18),
+                          SizedBox(width: 8),
+                          Text('Archive'),
+                        ],
+                      ),
+                    ),
+                  if (onUnarchive != null)
+                    const PopupMenuItem(
+                      value: 'unarchive',
+                      child: Row(
+                        children: [
+                          Icon(LucideIcons.archiveRestore, size: 18),
+                          SizedBox(width: 8),
+                          Text('Restore'),
+                        ],
+                      ),
+                    ),
+                  const PopupMenuItem(
+                    value: 'delete',
+                    child: Row(
+                      children: [
+                        Icon(LucideIcons.trash2,
+                            size: 18, color: Color(0xFFF27E9D)),
+                        SizedBox(width: 8),
+                        Text('Delete',
+                            style: TextStyle(color: Color(0xFFF27E9D))),
+                      ],
+                    ),
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
-              // Progress bar
-              if (totalTasks > 0) ...[
-                Row(
-                  children: [
-                    Expanded(
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(4),
-                        child: LinearProgressIndicator(
-                          value: plan.completionPercentage / 100,
-                          backgroundColor: scheme.surfaceContainerHighest,
-                          valueColor: AlwaysStoppedAnimation(
-                            _getProgressColor(plan.completionPercentage),
-                          ),
-                          minHeight: 6,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Text(
-                      '${plan.completionPercentage}%',
-                      style: text.labelMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: _getProgressColor(plan.completionPercentage),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-              ],
-              // Task summary chips
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  _TaskCountChip(
-                    icon: LucideIcons.listTodo,
-                    label: '$totalTasks tasks',
-                    color: scheme.primary,
-                  ),
-                  if (completedCount > 0)
-                    _TaskCountChip(
-                      icon: LucideIcons.checkCircle,
-                      label: '$completedCount done',
-                      color: Colors.green,
-                    ),
-                  if ((taskSummary[TaskStatus.inProgress] ?? 0) > 0)
-                    _TaskCountChip(
-                      icon: LucideIcons.play,
-                      label: '${taskSummary[TaskStatus.inProgress]} active',
-                      color: Colors.blue,
-                    ),
-                  if ((taskSummary[TaskStatus.blocked] ?? 0) > 0)
-                    _TaskCountChip(
-                      icon: LucideIcons.alertTriangle,
-                      label: '${taskSummary[TaskStatus.blocked]} blocked',
-                      color: Colors.orange,
-                    ),
-                  _PlanStatusChip(status: plan.status),
-                ],
-              ),
-              // Shared agents indicator
-              if (plan.sharedAgents.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Icon(
-                      LucideIcons.users,
-                      size: 14,
-                      color: scheme.onSurface.withValues(alpha: 0.5),
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      '${plan.sharedAgents.length} agent${plan.sharedAgents.length > 1 ? 's' : ''} connected',
-                      style: text.labelSmall?.copyWith(
-                        color: scheme.onSurface.withValues(alpha: 0.5),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
             ],
           ),
-        ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: ForgeProgress(
+                  value: plan.completionPercentage / 100,
+                  color: statusColor,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                '${plan.completionPercentage}%',
+                style: Forge.display(
+                  context,
+                  size: 16,
+                  color: statusColor,
+                  letterSpacing: -0.5,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              ForgeChip(
+                icon: LucideIcons.listTodo,
+                label: '$totalTasks tasks',
+                color: DigitalLibrarian.primary,
+              ),
+              if ((taskSummary[TaskStatus.completed] ?? 0) > 0)
+                ForgeChip(
+                  icon: LucideIcons.checkCircle,
+                  label: '${taskSummary[TaskStatus.completed]} done',
+                  color: DigitalLibrarian.secondary,
+                ),
+              if ((taskSummary[TaskStatus.inProgress] ?? 0) > 0)
+                ForgeChip(
+                  icon: LucideIcons.play,
+                  label: '${taskSummary[TaskStatus.inProgress]} active',
+                  color: DigitalLibrarian.primaryStrong,
+                ),
+              if ((taskSummary[TaskStatus.blocked] ?? 0) > 0)
+                ForgeChip(
+                  icon: LucideIcons.alertTriangle,
+                  label: '${taskSummary[TaskStatus.blocked]} blocked',
+                  color: const Color(0xFFF2B544),
+                ),
+              if (plan.sharedAgents.isNotEmpty)
+                ForgeChip(
+                  icon: LucideIcons.users,
+                  label: '${plan.sharedAgents.length} agent'
+                      '${plan.sharedAgents.length > 1 ? 's' : ''}',
+                  color: DigitalLibrarian.tertiary,
+                ),
+              _PlanStatusChip(status: plan.status),
+            ],
+          ),
+        ],
       ),
     );
   }
 
-  Color _getStatusColor(PlanStatus status) {
+  Color _statusColor(PlanStatus status) {
     switch (status) {
       case PlanStatus.draft:
-        return Colors.grey;
+        return DigitalLibrarian.primary.withValues(alpha: 0.6);
       case PlanStatus.active:
-        return Colors.blue;
+        return DigitalLibrarian.primaryStrong;
       case PlanStatus.completed:
-        return Colors.green;
+        return DigitalLibrarian.secondary;
       case PlanStatus.archived:
-        return Colors.orange;
+        return const Color(0xFFF2B544);
     }
   }
 
-  IconData _getStatusIcon(PlanStatus status) {
+  IconData _statusIcon(PlanStatus status) {
     switch (status) {
       case PlanStatus.draft:
         return LucideIcons.fileEdit;
@@ -689,56 +739,8 @@ class _PlanCard extends StatelessWidget {
         return LucideIcons.archive;
     }
   }
-
-  Color _getProgressColor(int percentage) {
-    if (percentage >= 100) return Colors.green;
-    if (percentage >= 75) return Colors.lightGreen;
-    if (percentage >= 50) return Colors.amber;
-    if (percentage >= 25) return Colors.orange;
-    return Colors.grey;
-  }
 }
 
-/// Task count chip widget
-class _TaskCountChip extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final Color color;
-
-  const _TaskCountChip({
-    required this.icon,
-    required this.label,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 12, color: color),
-          const SizedBox(width: 4),
-          Text(
-            label,
-            style: TextStyle(
-              color: color,
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Plan status chip widget
 class _PlanStatusChip extends StatelessWidget {
   final PlanStatus status;
 
@@ -747,32 +749,20 @@ class _PlanStatusChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (color, label) = switch (status) {
-      PlanStatus.draft => (Colors.grey, 'Draft'),
-      PlanStatus.active => (Colors.blue, 'Active'),
-      PlanStatus.completed => (Colors.green, 'Completed'),
-      PlanStatus.archived => (Colors.orange, 'Archived'),
+      PlanStatus.draft => (
+          DigitalLibrarian.primary.withValues(alpha: 0.6),
+          'Draft'
+        ),
+      PlanStatus.active => (DigitalLibrarian.primaryStrong, 'Active'),
+      PlanStatus.completed => (DigitalLibrarian.secondary, 'Completed'),
+      PlanStatus.archived => (const Color(0xFFF2B544), 'Archived'),
     };
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withValues(alpha: 0.3)),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: color,
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-    );
+    return ForgeChip(label: label, color: color);
   }
 }
 
-/// Create plan dialog
+/// Create plan dialog, restyled.
 class _CreatePlanDialog extends ConsumerStatefulWidget {
   final void Function(Plan plan) onCreated;
 
@@ -798,14 +788,27 @@ class _CreatePlanDialogState extends ConsumerState<_CreatePlanDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-
     return AlertDialog(
+      backgroundColor: DigitalLibrarian.surfaceContainer,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: BorderSide(
+          color: DigitalLibrarian.outline.withValues(alpha: 0.7),
+        ),
+      ),
       title: Row(
         children: [
-          Icon(LucideIcons.filePlus, color: scheme.primary),
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: DigitalLibrarian.secondary.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(LucideIcons.filePlus,
+                size: 18, color: DigitalLibrarian.secondary),
+          ),
           const SizedBox(width: 12),
-          const Text('Create New Project'),
+          Text('New project', style: Forge.display(context, size: 19)),
         ],
       ),
       content: Form(
@@ -818,8 +821,8 @@ class _CreatePlanDialogState extends ConsumerState<_CreatePlanDialog> {
               TextFormField(
                 controller: _titleController,
                 decoration: const InputDecoration(
-                  labelText: 'Project Title',
-                  hintText: 'Enter a title for your project',
+                  labelText: 'Project title',
+                  hintText: 'What are you building?',
                   prefixIcon: Icon(LucideIcons.type),
                 ),
                 validator: (value) {
@@ -836,15 +839,16 @@ class _CreatePlanDialogState extends ConsumerState<_CreatePlanDialog> {
                 controller: _descriptionController,
                 decoration: const InputDecoration(
                   labelText: 'Description (optional)',
-                  hintText: 'Describe what this project or workflow is about',
+                  hintText: 'What is this project about?',
                   prefixIcon: Icon(LucideIcons.alignLeft),
                 ),
                 maxLines: 3,
                 textCapitalization: TextCapitalization.sentences,
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
               SwitchListTile(
-                title: const Text('Private Project'),
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Private project'),
                 subtitle: Text(
                   _isPrivate
                       ? 'Only you and shared agents can access'
@@ -855,7 +859,7 @@ class _CreatePlanDialogState extends ConsumerState<_CreatePlanDialog> {
                 onChanged: (value) => setState(() => _isPrivate = value),
                 secondary: Icon(
                   _isPrivate ? LucideIcons.lock : LucideIcons.globe,
-                  color: scheme.primary,
+                  color: DigitalLibrarian.primaryStrong,
                 ),
               ),
             ],
@@ -867,16 +871,20 @@ class _CreatePlanDialogState extends ConsumerState<_CreatePlanDialog> {
           onPressed: _isLoading ? null : () => Navigator.pop(context),
           child: const Text('Cancel'),
         ),
-        FilledButton(
-          onPressed: _isLoading ? null : _createPlan,
-          child: _isLoading
-              ? const SizedBox(
+        _isLoading
+            ? const Padding(
+                padding: EdgeInsets.all(12),
+                child: SizedBox(
                   width: 20,
                   height: 20,
                   child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Text('Create'),
-        ),
+                ),
+              )
+            : ForgeButton(
+                label: 'Create',
+                icon: LucideIcons.plus,
+                onPressed: _createPlan,
+              ),
       ],
     );
   }
