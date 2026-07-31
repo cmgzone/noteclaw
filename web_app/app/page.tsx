@@ -41,6 +41,7 @@ export default function LandingPage() {
 
       <div className="relative z-10">
         <Hero />
+        <AgentEcosystem />
         <Essentials />
         <FinalCta />
         <Footer />
@@ -120,7 +121,7 @@ function Hero() {
         </h1>
 
         <p className="mx-auto mt-8 max-w-2xl text-base leading-7 text-white/52 sm:text-lg sm:leading-8">
-          One private memory bank for third-party agents to restore project
+          One private memory bank for AI agents to restore project
           context, share knowledge, and continue after updates.
         </p>
 
@@ -176,6 +177,127 @@ function Hero() {
               </div>
             ))}
           </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function AgentEcosystem() {
+  const agents = [
+    {
+      name: "Claude Code",
+      developer: "Anthropic",
+      badge: "MCP Native",
+      iconColor: "#f59e0b",
+      borderColor: "rgba(245, 158, 11, 0.25)",
+      bgColor: "rgba(245, 158, 11, 0.06)",
+      icon: (
+        <svg className="h-6 w-6 text-[#f59e0b]" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" />
+        </svg>
+      ),
+    },
+    {
+      name: "OpenClaw",
+      developer: "Autonomous Agent",
+      badge: "Gateway Ready",
+      iconColor: "#62d3d0",
+      borderColor: "rgba(98, 211, 208, 0.25)",
+      bgColor: "rgba(98, 211, 208, 0.06)",
+      icon: (
+        <svg className="h-6 w-6 text-[#62d3d0]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+        </svg>
+      ),
+    },
+    {
+      name: "Hermes Agent",
+      developer: "Nous Research",
+      badge: "Live WebSocket",
+      iconColor: "#c084fc",
+      borderColor: "rgba(192, 132, 252, 0.25)",
+      bgColor: "rgba(192, 132, 252, 0.06)",
+      icon: (
+        <svg className="h-6 w-6 text-[#c084fc]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+        </svg>
+      ),
+    },
+    {
+      name: "Codex",
+      developer: "OpenAI Engine",
+      badge: "MCP Stream",
+      iconColor: "#34d399",
+      borderColor: "rgba(52, 211, 153, 0.25)",
+      bgColor: "rgba(52, 211, 153, 0.06)",
+      icon: (
+        <svg className="h-6 w-6 text-[#34d399]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M16 18l6-6-6-6M8 6l-6 6 6 6" />
+        </svg>
+      ),
+    },
+    {
+      name: "Kiro",
+      developer: "Coding Agent",
+      badge: "Realtime Gateway",
+      iconColor: "#60a5fa",
+      borderColor: "rgba(96, 165, 250, 0.25)",
+      bgColor: "rgba(96, 165, 250, 0.06)",
+      icon: (
+        <svg className="h-6 w-6 text-[#60a5fa]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+        </svg>
+      ),
+    },
+    {
+      name: "Cursor & Windsurf",
+      developer: "IDE AI Agents",
+      badge: "Context Memory",
+      iconColor: "#f472b6",
+      borderColor: "rgba(244, 114, 182, 0.25)",
+      bgColor: "rgba(244, 114, 182, 0.06)",
+      icon: (
+        <svg className="h-6 w-6 text-[#f472b6]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M18 3a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3 3 3 0 0 0 3-3V6a3 3 0 0 0-3-3zM6 3a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3 3 3 0 0 0 3-3V6a3 3 0 0 0-3-3z" />
+        </svg>
+      ),
+    },
+  ];
+
+  return (
+    <section className="border-t border-white/[0.06] bg-[#07080c] px-4 py-16 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-6xl text-center">
+        <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#62d3d0]/75">
+          Ecosystem compatibility
+        </p>
+        <h2 className="mt-3 text-2xl font-semibold tracking-[-0.04em] text-white sm:text-4xl">
+          Built for your favorite AI agents.
+        </h2>
+        <p className="mx-auto mt-3 max-w-xl text-xs leading-6 text-white/45 sm:text-sm">
+          Connect your agents over standard MCP and WebSocket transports to grant them persistent memory and real-time chat gateway access.
+        </p>
+
+        <div className="mt-10 grid grid-cols-2 gap-3.5 sm:grid-cols-3 lg:grid-cols-6">
+          {agents.map((agent) => (
+            <div
+              key={agent.name}
+              className="flex flex-col items-center justify-between rounded-2xl border p-4 text-center transition hover:scale-[1.02] hover:border-white/20"
+              style={{
+                borderColor: agent.borderColor,
+                backgroundColor: agent.bgColor,
+              }}
+            >
+              <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-white/[0.05]">
+                {agent.icon}
+              </div>
+              <h3 className="text-sm font-semibold text-white">{agent.name}</h3>
+              <span className="mt-1 text-[11px] text-white/45">{agent.developer}</span>
+              <span className="mt-3 inline-flex items-center rounded-full bg-white/[0.08] px-2.5 py-0.5 font-mono text-[9px] uppercase tracking-wider text-white/70">
+                {agent.badge}
+              </span>
+            </div>
+          ))}
         </div>
       </div>
     </section>

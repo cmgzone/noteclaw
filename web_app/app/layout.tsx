@@ -5,7 +5,7 @@ import { Providers } from "./providers";
 
 const title = "NoteClaw Memory — Durable MCP Memory for AI Agents";
 const description =
-  "Give third-party AI agents durable namespaced memory, automatic compaction, and live WebSocket presence through six focused MCP tools.";
+  "Give AI agents durable namespaced memory, automatic compaction, and live WebSocket presence through focused MCP tools.";
 
 export async function generateMetadata(): Promise<Metadata> {
   const requestHeaders = await headers();
