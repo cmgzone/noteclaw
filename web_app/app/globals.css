@@ -1,14 +1,32 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
-    "Segoe UI", sans-serif;
-  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  --font-display: var(--font-space);
+  --font-sans: var(--font-instrument);
+  --font-mono: var(--font-jetbrains);
+
+  --color-ink: #0a0f1c;
+  --color-ink-2: #0d1526;
+  --color-panel: #101a2e;
+  --color-panel-2: #15223c;
+  --color-line: #22304d;
+  --color-fg: #edf1f7;
+  --color-mut: #93a1b8;
+  --color-dim: #5c6b85;
+
+  --color-teal: #5fd4c4;
+  --color-clay: #e08a5b;
+  --color-mint: #3fcf8e;
+  --color-sky: #7ba8ff;
+  --color-vio: #a78bfa;
+  --color-cyan: #4dd6e8;
+  --color-amber: #f2b544;
+  --color-rose: #f27e9d;
 }
 
 :root {
-  --background: #07080c;
-  --foreground: #f7f8f4;
+  --background: #0a0f1c;
+  --foreground: #edf1f7;
 }
 
 * {
@@ -25,8 +43,7 @@ body {
   margin: 0;
   color: var(--foreground);
   background: var(--background);
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
-    "Segoe UI", sans-serif;
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
   overflow-x: hidden;
 }
 
@@ -36,9 +53,11 @@ a {
 }
 
 ::selection {
-  color: #111407;
-  background: #62d3d0;
+  color: #06251f;
+  background: #5fd4c4;
 }
+
+/* ---------- ambient layers ---------- */
 
 .site-shell {
   position: relative;
@@ -50,65 +69,152 @@ a {
   inset: 0;
   z-index: 0;
   pointer-events: none;
-  opacity: 0.32;
+  opacity: 0.5;
   background-image:
-    linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
-  background-size: 64px 64px;
-  mask-image: linear-gradient(to bottom, black, transparent 82%);
+    linear-gradient(rgba(123, 168, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(123, 168, 255, 0.035) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(ellipse 120% 90% at 50% 0%, black 30%, transparent 85%);
 }
 
-.site-glow {
+.site-noise {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0.05;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+.wash {
   position: absolute;
   z-index: 0;
-  width: 46rem;
-  height: 46rem;
   border-radius: 999px;
   pointer-events: none;
-  filter: blur(120px);
+  filter: blur(110px);
 }
 
-.site-glow-one {
-  top: -24rem;
-  left: -18rem;
-  background: rgba(134, 190, 52, 0.12);
+/* ---------- motion ---------- */
+
+@keyframes marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
 }
 
-.site-glow-two {
-  top: 28rem;
-  right: -24rem;
-  background: rgba(58, 125, 255, 0.09);
+@keyframes pulse-dot {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.6);
+    opacity: 0.45;
+  }
 }
 
-.preview-aura {
+@keyframes blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
+@keyframes drift {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-9px);
+  }
+}
+
+@keyframes typing {
+  0%,
+  80%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.35;
+  }
+  40% {
+    transform: translateY(-3px);
+    opacity: 1;
+  }
+}
+
+@keyframes scan {
+  0% {
+    transform: translateY(-100%);
+  }
+  100% {
+    transform: translateY(320%);
+  }
+}
+
+.marquee {
+  overflow: hidden;
+  mask-image: linear-gradient(90deg, transparent, black 10%, black 90%, transparent);
+}
+
+.marquee-track {
+  display: flex;
+  width: max-content;
+  gap: 1rem;
+  animation: marquee 46s linear infinite;
+}
+
+.marquee-rev .marquee-track {
+  animation-direction: reverse;
+  animation-duration: 54s;
+}
+
+.marquee:hover .marquee-track {
+  animation-play-state: paused;
+}
+
+.pulse-dot {
+  animation: pulse-dot 2.2s ease-in-out infinite;
+}
+
+.blink {
+  animation: blink 1.1s step-end infinite;
+}
+
+.drift {
+  animation: drift 7s ease-in-out infinite;
+}
+
+.drift-slow {
+  animation: drift 10s ease-in-out infinite;
+}
+
+.console-scan::after {
+  content: "";
   position: absolute;
-  inset: 8% 5%;
-  z-index: -1;
-  border-radius: 40px;
-  background: linear-gradient(
-    125deg,
-    rgba(98, 211, 208, 0.18),
-    rgba(55, 108, 255, 0.12)
-  );
-  filter: blur(60px);
+  inset-inline: 0;
+  top: 0;
+  height: 34%;
+  pointer-events: none;
+  background: linear-gradient(180deg, transparent, rgba(95, 212, 196, 0.035), transparent);
+  animation: scan 9s linear infinite;
 }
 
-.cta-panel {
-  background:
-    radial-gradient(circle at 50% 0%, rgba(98, 211, 208, 0.13), transparent 48%),
-    linear-gradient(135deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.012));
+.typing-dot {
+  animation: typing 1.2s ease-in-out infinite;
 }
 
 @media (max-width: 640px) {
   .site-grid {
-    background-size: 40px 40px;
-    opacity: 0.2;
-  }
-
-  .site-glow {
-    width: 28rem;
-    height: 28rem;
-    filter: blur(90px);
+    background-size: 38px 38px;
+    opacity: 0.32;
   }
 }
 
