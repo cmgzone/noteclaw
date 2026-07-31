@@ -39,17 +39,35 @@ class _MemoryChatPanelState extends ConsumerState<MemoryChatPanel> {
   int _lastLiveMessageCount = 0;
 
   @override
+  void initState() {
+    super.initState();
+    if (widget.notebook.session.id.isNotEmpty) {
+      _mode = _MemoryChatMode.codingAgent;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _openLiveAgentChat();
+      });
+    }
+  }
+
+  @override
   void didUpdateWidget(covariant MemoryChatPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.notebook.id == widget.notebook.id) return;
     _aiMessages.clear();
-    _mode = _MemoryChatMode.assistant;
+    _mode = widget.notebook.session.id.isNotEmpty
+        ? _MemoryChatMode.codingAgent
+        : _MemoryChatMode.assistant;
     _liveSourceId = null;
     _researchStatus = null;
     _error = null;
     _isSending = false;
     _isOpeningAgent = false;
     _lastLiveMessageCount = 0;
+    if (_mode == _MemoryChatMode.codingAgent) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _openLiveAgentChat();
+      });
+    }
   }
 
   @override

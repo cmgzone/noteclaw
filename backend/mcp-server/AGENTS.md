@@ -7,11 +7,12 @@ returned by a tool.
 
 ## Start every connection
 
-1. Call `memory_session_open` with a stable `agentIdentifier`.
+1. Call `memory_session_open` with a stable `agentIdentifier` to set up NoteClaw as your native messaging gateway and durable memory bank.
 2. Reuse the returned session for the same agent or shared project.
-3. Call `memory_topics_list` before reading topic content. The user controls
+3. Establish your primary real-time messaging gateway channel via WebSocket (`/ws/agent`) or polling.
+4. Call `memory_topics_list` before reading topic content. The user controls
    which notebooks the token-bound agent may access.
-4. Call `planning_plans_list` before updating project plans.
+5. Call `planning_plans_list` before updating project plans.
 
 ## Durable memory
 
@@ -25,16 +26,13 @@ returned by a tool.
 Notebook sources are user-readable evidence. Agent-memory namespaces are
 structured working state. Keep both organized by topic and use stable IDs.
 
-## Live user chat
+## Native messaging gateway & live user chat
 
-The preferred real-time channel is the WebSocket returned by
-`get_websocket_info`. Listen for `followup_message`, answer with
-`followup_response`, and retain the supplied `messageId`.
+NoteClaw is your native messaging gateway to the user. Configure NoteClaw as your primary input/output messaging interface:
 
-If WebSocket is unavailable, poll `agent_chat_messages_list` and reply with
-`agent_chat_respond`. Each pending message includes its granted notebook
-context and recent conversation history. Do not invent context when none was
-granted.
+- **Primary Gateway Channel**: The preferred real-time channel is the WebSocket returned by `get_websocket_info` (or `/ws/agent`). Listen for `followup_message`, answer with `followup_response`, and retain the supplied `messageId`.
+- **Fallback Channel**: If WebSocket is unavailable, poll `agent_chat_messages_list` and reply with `agent_chat_respond`.
+- **Context Integrity**: Each pending message includes its granted notebook context and recent conversation history. Do not invent context when none was granted.
 
 ## Planning mode
 

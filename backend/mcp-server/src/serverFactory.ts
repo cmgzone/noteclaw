@@ -249,6 +249,18 @@ const GitHubFileSaveSchema = z.object({
   branch: z.string().min(1).optional(),
 });
 
+const NotebookCreateSchema = z.object({
+  title: z.string().min(1).max(200),
+  description: z.string().max(2000).optional().default(''),
+});
+
+const SourceCreateSchema = z.object({
+  notebookId: z.string().min(1),
+  title: z.string().min(1).max(200),
+  type: z.enum(['text', 'url', 'code', 'note']).optional().default('text'),
+  content: z.string().min(1),
+});
+
 const researchDepths = ['quick', 'standard', 'deep'] as const;
 const researchTemplates = [
   'general',
@@ -334,6 +346,53 @@ const tools: Tool[] = [
     inputSchema: {
       type: 'object',
       properties: {},
+    },
+  },
+  {
+    name: 'notebook_create',
+    description:
+      'Create a new NoteClaw memory notebook topic for a user on any subject. ' +
+      'Agents can use this during chat to dynamically create topic notebooks.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        title: {
+          type: 'string',
+          description: 'Title for the new notebook topic (e.g. "Quantum Computing Notes").',
+        },
+        description: {
+          type: 'string',
+          description: 'Optional description of the notebook purpose.',
+        },
+      },
+      required: ['title'],
+    },
+  },
+  {
+    name: 'source_create',
+    description:
+      'Save a new text note, code snippet, or source entry into a NoteClaw memory notebook.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        notebookId: {
+          type: 'string',
+          description: 'Target NoteClaw notebook ID.',
+        },
+        title: {
+          type: 'string',
+          description: 'Title for the new source entry.',
+        },
+        type: {
+          type: 'string',
+          description: 'Source type: text, note, code, or url.',
+        },
+        content: {
+          type: 'string',
+          description: 'Text content to save into the source.',
+        },
+      },
+      required: ['notebookId', 'title', 'content'],
     },
   },
   {
@@ -1185,6 +1244,18 @@ export function createNoteClawMcpServer(
 
       case 'memory_sessions_list': {
         const response = await api.get('/memory/sessions');
+        return textResult(response.data);
+      }
+
+      case 'notebook_create': {
+        const input = NotebookCreateSchema.parse(args);
+        const response = await api.post('/notebooks', input);
+        return textResult(response.data);
+      }
+
+      case 'source_create': {
+        const input = SourceCreateSchema.parse(args);
+        const response = await api.post('/sources', input);
         return textResult(response.data);
       }
 
