@@ -265,28 +265,36 @@ class _CommandDeck extends StatelessWidget {
             accent: DigitalLibrarian.primaryStrong,
             padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                ForgeStat(
-                  value: '${activePlans.length}',
-                  label: 'Active',
-                  color: DigitalLibrarian.primary,
+                Expanded(
+                  child: Wrap(
+                    spacing: 20,
+                    runSpacing: 12,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      ForgeStat(
+                        value: '${activePlans.length}',
+                        label: 'Active',
+                        color: DigitalLibrarian.primary,
+                      ),
+                      ForgeStat(
+                        value: '$doneTasks/$totalTasks',
+                        label: 'Tasks done',
+                        color: DigitalLibrarian.secondary,
+                        size: 24,
+                      ),
+                      ForgeStat(
+                        value: '$blockedTasks',
+                        label: 'Blocked',
+                        color: blockedTasks > 0
+                            ? const Color(0xFFF2B544)
+                            : DigitalLibrarian.primary.withValues(alpha: 0.5),
+                      ),
+                    ],
+                  ),
                 ),
-                _divider(),
-                ForgeStat(
-                  value: '$doneTasks/$totalTasks',
-                  label: 'Tasks done',
-                  color: DigitalLibrarian.secondary,
-                  size: 24,
-                ),
-                _divider(),
-                ForgeStat(
-                  value: '$blockedTasks',
-                  label: 'Blocked',
-                  color: blockedTasks > 0
-                      ? const Color(0xFFF2B544)
-                      : DigitalLibrarian.primary.withValues(alpha: 0.5),
-                ),
-                const Spacer(),
+                const SizedBox(width: 12),
                 ForgeStatus(
                   label: isConnected ? 'Syncing' : 'Offline',
                   active: isConnected,
@@ -304,13 +312,6 @@ class _CommandDeck extends StatelessWidget {
       ),
     );
   }
-
-  Widget _divider() => Container(
-        width: 1,
-        height: 34,
-        margin: const EdgeInsets.symmetric(horizontal: 16),
-        color: DigitalLibrarian.outline.withValues(alpha: 0.5),
-      );
 }
 
 /// Active / Archived segmented control.

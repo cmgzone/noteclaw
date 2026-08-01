@@ -54,7 +54,8 @@ class _QuizScreenState extends ConsumerState<QuizScreen> {
     if (quiz.questions.isEmpty) {
       return Scaffold(
         appBar: AppBar(
-          title: Text(quiz.title),
+          title: Text(quiz.title,
+              maxLines: 1, overflow: TextOverflow.ellipsis),
           leading: IconButton(
             icon: const Icon(Icons.arrow_back),
             onPressed: () => _goBackToQuizzes(quiz.notebookId),

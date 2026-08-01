@@ -47,6 +47,63 @@ class _MemoryChatScreenState extends ConsumerState<MemoryChatScreen> {
     });
   }
 
+  Future<void> _deleteChat(MemoryNotebook notebook) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete chat?'),
+        content: Text(
+          'Delete the chat thread with "${notebook.title}"? All messages will be removed. This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+
+    try {
+      final response =
+          await ref.read(apiServiceProvider).getMemoryNotebook(notebook.id);
+      final detail = MemoryNotebookDetail.fromJson(response);
+      MemorySource? chatSource;
+      for (final s in detail.sources) {
+        if (s.sourceType == 'agent_chat') {
+          chatSource = s;
+          break;
+        }
+      }
+      if (!mounted) return;
+      if (chatSource == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No chat thread to delete here')),
+        );
+        return;
+      }
+      await ref.read(apiServiceProvider).deleteSource(chatSource.id);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Chat deleted')));
+      ref.read(memoryWorkspaceProvider.notifier).refresh();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to delete chat: $e')),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final workspace = ref.watch(memoryWorkspaceProvider);
@@ -82,6 +139,7 @@ class _MemoryChatScreenState extends ConsumerState<MemoryChatScreen> {
                   notebooks: notebooks,
                   selectedId: selectedId,
                   onSelect: _select,
+                  onDeleteChat: _deleteChat,
                 ),
               Expanded(
                 child: _buildContent(
@@ -243,11 +301,13 @@ class _NotebookStrip extends StatelessWidget {
   final List<MemoryNotebook> notebooks;
   final String? selectedId;
   final ValueChanged<String> onSelect;
+  final ValueChanged<MemoryNotebook> onDeleteChat;
 
   const _NotebookStrip({
     required this.notebooks,
     required this.selectedId,
     required this.onSelect,
+    required this.onDeleteChat,
   });
 
   @override
@@ -264,6 +324,7 @@ class _NotebookStrip extends StatelessWidget {
           final selected = notebook.id == selectedId;
           return GestureDetector(
             onTap: () => onSelect(notebook.id),
+            onLongPress: () => onDeleteChat(notebook),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 200),
               padding: const EdgeInsets.symmetric(horizontal: 14),

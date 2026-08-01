@@ -7,6 +7,7 @@ import '../../ui/digital_librarian.dart';
 import '../memory/memory_models.dart';
 import '../settings/agent_connections_screen.dart';
 import '../subscription/widgets/subscription_overview.dart';
+import 'notebook_pins_provider.dart';
 
 class MemoryDashboardScreen extends ConsumerWidget {
   const MemoryDashboardScreen({super.key});
@@ -15,7 +16,15 @@ class MemoryDashboardScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final workspace = ref.watch(memoryWorkspaceProvider);
     final notebooks = workspace.notebooks;
-    final pinned = notebooks.take(3).toList(growable: false);
+    final pinsState = ref.watch(notebookPinsProvider);
+    final defaultIds =
+        notebooks.take(3).map((n) => n.id).toList(growable: false);
+    final pinnedIds = pinsState.customized ? pinsState.pins : defaultIds.toSet();
+    final pinned = notebooks
+        .where((n) => pinnedIds.contains(n.id))
+        .toList(growable: false);
+    void togglePin(String id) =>
+        ref.read(notebookPinsProvider.notifier).toggle(id, defaultIds);
     final liveLabel = workspace.liveAgentNames.isNotEmpty
         ? workspace.liveAgentNames.take(2).join(' + ')
         : workspace.liveConnections > 0
@@ -94,6 +103,7 @@ class MemoryDashboardScreen extends ConsumerWidget {
                         _PinnedNotebooks(
                           notebooks: pinned,
                           loading: workspace.isLoading && notebooks.isEmpty,
+                          onUnpin: togglePin,
                         ),
                         const SizedBox(height: 24),
                         TechnicalLabel(
@@ -128,7 +138,11 @@ class MemoryDashboardScreen extends ConsumerWidget {
                           ...notebooks.map(
                             (notebook) => Padding(
                               padding: const EdgeInsets.only(bottom: 10),
-                              child: _MemoryRow(notebook: notebook),
+                              child: _MemoryRow(
+                                notebook: notebook,
+                                isPinned: pinnedIds.contains(notebook.id),
+                                onTogglePin: () => togglePin(notebook.id),
+                              ),
                             ),
                           ),
                       ],
@@ -158,10 +172,12 @@ class _PinnedNotebooks extends StatelessWidget {
   const _PinnedNotebooks({
     required this.notebooks,
     required this.loading,
+    required this.onUnpin,
   });
 
   final List<MemoryNotebook> notebooks;
   final bool loading;
+  final ValueChanged<String> onUnpin;
 
   @override
   Widget build(BuildContext context) {
@@ -219,7 +235,18 @@ class _PinnedNotebooks extends StatelessWidget {
                           ),
                         ),
                       ),
-                      const Icon(LucideIcons.pin, size: 15),
+                      InkWell(
+                        onTap: () => onUnpin(notebook.id),
+                        borderRadius: BorderRadius.circular(6),
+                        child: const Padding(
+                          padding: EdgeInsets.all(4),
+                          child: Icon(
+                            LucideIcons.pinOff,
+                            size: 15,
+                            color: DigitalLibrarian.secondary,
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                   const Spacer(),
@@ -248,9 +275,15 @@ class _PinnedNotebooks extends StatelessWidget {
 }
 
 class _MemoryRow extends StatelessWidget {
-  const _MemoryRow({required this.notebook});
+  const _MemoryRow({
+    required this.notebook,
+    this.isPinned = false,
+    this.onTogglePin,
+  });
 
   final MemoryNotebook notebook;
+  final bool isPinned;
+  final VoidCallback? onTogglePin;
 
   @override
   Widget build(BuildContext context) {
@@ -354,6 +387,23 @@ class _MemoryRow extends StatelessWidget {
               ),
             ],
           ),
+          if (onTogglePin != null) ...[
+            const SizedBox(width: 6),
+            InkWell(
+              onTap: onTogglePin,
+              borderRadius: BorderRadius.circular(7),
+              child: Padding(
+                padding: const EdgeInsets.all(6),
+                child: Icon(
+                  isPinned ? LucideIcons.pin : LucideIcons.pinOff,
+                  size: 16,
+                  color: isPinned
+                      ? DigitalLibrarian.secondary
+                      : DigitalLibrarian.primary.withValues(alpha: 0.4),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );

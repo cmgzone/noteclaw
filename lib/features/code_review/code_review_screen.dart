@@ -320,20 +320,21 @@ class _CodeReviewScreenState extends ConsumerState<CodeReviewScreen> {
         children: [
           ForgePanel(
             accent: DigitalLibrarian.tertiary,
-            child: Row(
+            child: Wrap(
+              spacing: 20,
+              runSpacing: 12,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 ForgeStat(
                   value: '${state.history.length}',
                   label: 'Total',
                   color: DigitalLibrarian.primary,
                 ),
-                _divider(),
                 ForgeStat(
                   value: '$mcpCount',
                   label: 'MCP',
                   color: DigitalLibrarian.tertiary,
                 ),
-                _divider(),
                 ForgeStat(
                   value: '$contextCount',
                   label: 'Context',
@@ -363,13 +364,6 @@ class _CodeReviewScreenState extends ConsumerState<CodeReviewScreen> {
       ),
     );
   }
-
-  Widget _divider() => Container(
-        width: 1,
-        height: 34,
-        margin: const EdgeInsets.symmetric(horizontal: 16),
-        color: DigitalLibrarian.outline.withValues(alpha: 0.5),
-      );
 
   Future<void> _loadCodeFromGitHub() async {
     final selection = await showGitHubReviewFilePicker(
@@ -623,12 +617,16 @@ class _CodeEditorPanel extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(width: 12),
-                Text(
-                  'source.$language',
-                  style: Forge.mono(context,
-                      size: 10.5,
-                      color: DigitalLibrarian.primary.withValues(alpha: 0.7),
-                      letterSpacing: 0.4),
+                Flexible(
+                  child: Text(
+                    'source.$language',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Forge.mono(context,
+                        size: 10.5,
+                        color: DigitalLibrarian.primary.withValues(alpha: 0.7),
+                        letterSpacing: 0.4),
+                  ),
                 ),
                 const Spacer(),
                 Text(
@@ -980,13 +978,23 @@ class _HistoryCard extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              _issueChip('Errors', item.errorCount, const Color(0xFFF27E9D)),
-              const SizedBox(width: 6),
-              _issueChip('Warn', item.warningCount, const Color(0xFFF2B544)),
-              const SizedBox(width: 6),
-              _issueChip('Info', item.infoCount, DigitalLibrarian.primaryStrong),
-              const Spacer(),
+              Expanded(
+                child: Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    _issueChip(
+                        'Errors', item.errorCount, const Color(0xFFF27E9D)),
+                    _issueChip(
+                        'Warn', item.warningCount, const Color(0xFFF2B544)),
+                    _issueChip('Info', item.infoCount,
+                        DigitalLibrarian.primaryStrong),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
               Text(
                 _formatDate(item.createdAt),
                 style: Forge.mono(context,

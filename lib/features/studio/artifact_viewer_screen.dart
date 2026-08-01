@@ -21,7 +21,8 @@ class ArtifactViewerScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(artifact.title),
+        title: Text(artifact.title,
+            maxLines: 1, overflow: TextOverflow.ellipsis),
         actions: [
           IconButton(
               onPressed: () => _export(context), icon: const Icon(Icons.share)),

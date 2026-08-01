@@ -44,6 +44,51 @@ class SourceDetailScreen extends ConsumerWidget {
     );
   }
 
+  Future<void> _deleteSource(
+      BuildContext context, WidgetRef ref, Source source) async {
+    final isChat = source.type == 'agent_chat';
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(isChat ? 'Delete chat?' : 'Delete source?'),
+        content: Text(
+          isChat
+              ? 'This will delete the chat thread and all of its messages. This cannot be undone.'
+              : 'This will delete "${source.title}" and its conversation. This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    try {
+      await ref.read(sourceProvider.notifier).deleteSource(source.id);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(isChat ? 'Chat deleted' : 'Source deleted')),
+        );
+        Navigator.pop(context);
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to delete: $e')),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final sources = ref.watch(sourceProvider);
@@ -74,6 +119,8 @@ class SourceDetailScreen extends ConsumerWidget {
           ),
         ),
         title: Text(source.title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: const TextStyle(
                 color: Colors.white, fontWeight: FontWeight.bold)),
         iconTheme: const IconThemeData(color: Colors.white),
@@ -90,6 +137,11 @@ class SourceDetailScreen extends ConsumerWidget {
             icon: const Icon(Icons.fact_check_outlined),
             tooltip: 'Verify Facts',
             onPressed: () => _showFactCheckSheet(context, ref, source.content),
+          ),
+          IconButton(
+            icon: const Icon(LucideIcons.trash2),
+            tooltip: source.type == 'agent_chat' ? 'Delete chat' : 'Delete source',
+            onPressed: () => _deleteSource(context, ref, source),
           ),
         ],
       ),

@@ -60,7 +60,8 @@ class _InfographicViewerScreenState extends State<InfographicViewerScreen> {
       appBar: AppBar(
         backgroundColor: Colors.black.withValues(alpha: 0.8),
         foregroundColor: Colors.white,
-        title: Text(widget.infographic.title),
+        title: Text(widget.infographic.title,
+            maxLines: 1, overflow: TextOverflow.ellipsis),
         actions: [
           IconButton(
             icon: const Icon(LucideIcons.zoomIn),
