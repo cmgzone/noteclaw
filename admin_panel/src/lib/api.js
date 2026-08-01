@@ -218,6 +218,10 @@ class ApiService {
         return this.post('/admin/api-keys', { service, apiKey, description });
     }
 
+    async syncAlibabaTokenPlanModels() {
+        return this.post('/admin/providers/alibaba-token-plan/sync', {});
+    }
+
     async deleteApiKey(service) {
         return this.delete(`/admin/api-keys/${service}`);
     }

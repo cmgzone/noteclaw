@@ -11,6 +11,7 @@ export default function Settings() {
     // New API Key Form
     const [newKeyService, setNewKeyService] = useState('');
     const [newKeyValue, setNewKeyValue] = useState('');
+    const [alibabaTokenPlanKey, setAlibabaTokenPlanKey] = useState('');
 
     // Payment Configuration
     const [paypalClientId, setPaypalClientId] = useState('');
@@ -78,10 +79,12 @@ export default function Settings() {
 
         setSaving(true);
         try {
-            await api.setApiKey(service.toLowerCase().trim(), value.trim(), `${service} API Key`);
-            fetchData();
-            alert('API Key saved!');
-            return true;
+            const response = await api.setApiKey(service.toLowerCase().trim(), value.trim(), `${service} API Key`);
+            await fetchData();
+            alert(response.modelCount === undefined
+                ? 'API Key saved!'
+                : `API key saved and ${response.modelCount} Alibaba models fetched.`);
+            return response;
         } catch (error) {
             console.error(error);
             alert('Failed to save API Key: ' + error.message);
@@ -129,6 +132,7 @@ export default function Settings() {
                 'MURF_API_KEY': 'murf',
                 'GOOGLE_CLOUD_TTS_API_KEY': 'google_cloud_tts',
                 'OPENROUTER_API_KEY': 'openrouter',
+                'ALIBABA_TOKEN_PLAN_API_KEY': 'alibaba_token_plan',
                 'RESEND_API_KEY': 'resend',
                 'SERPER_API_KEY': 'serper',
                 'DEEPGRAM_API_KEY': 'deepgram',
@@ -291,7 +295,7 @@ export default function Settings() {
                             </button>
                         </div>
                         <p className="mt-2 text-xs text-muted-foreground">
-                            Supported: GEMINI_API_KEY, RESEND_API_KEY, RESEND_FROM_*, WEB_APP_URL, PAYPAL_CLIENT_ID, PAYPAL_SECRET, STRIPE_*, ELEVENLABS_*, OPENROUTER_*, SERPER_*, DEEPGRAM_*
+                            Supported: GEMINI_API_KEY, ALIBABA_TOKEN_PLAN_API_KEY, RESEND_API_KEY, RESEND_FROM_*, WEB_APP_URL, PAYPAL_CLIENT_ID, PAYPAL_SECRET, STRIPE_*, ELEVENLABS_*, OPENROUTER_*, SERPER_*, DEEPGRAM_*
                         </p>
                     </div>
                 )}
@@ -410,6 +414,52 @@ export default function Settings() {
                         </button>
                     </div>
                 </form>
+
+                {/* Alibaba Model Studio Token Plan */}
+                <div className="bg-muted/50 p-4 rounded-md border border-border mb-6">
+                    <div className="flex items-start justify-between gap-4 mb-4">
+                        <div>
+                            <h3 className="text-lg font-semibold flex items-center">
+                                <Key className="mr-2 h-5 w-5" />
+                                Alibaba Model Studio Token Plan
+                            </h3>
+                            <p className="mt-1 text-sm text-muted-foreground">
+                                Save the dedicated Singapore Token Plan key and NoteClaw will fetch the available model IDs directly from Alibaba.
+                            </p>
+                        </div>
+                        {apiKeys.some(k => k.service_name === 'alibaba_token_plan') && (
+                            <p className="text-xs text-green-600 flex items-center whitespace-nowrap">
+                                <Shield className="h-3 w-3 mr-1" /> Configured
+                            </p>
+                        )}
+                    </div>
+                    <div className="rounded-md border border-border bg-background p-3 mb-3">
+                        <p className="text-xs text-muted-foreground">OpenAI-compatible endpoint</p>
+                        <code className="text-xs break-all">https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1</code>
+                    </div>
+                    <div className="flex gap-2 flex-col sm:flex-row">
+                        <input
+                            type="password"
+                            className="flex-1 rounded-md border border-border bg-background p-2 font-mono text-sm"
+                            placeholder="sk-sp-..."
+                            value={alibabaTokenPlanKey}
+                            onChange={(e) => setAlibabaTokenPlanKey(e.target.value)}
+                        />
+                        <button
+                            type="button"
+                            onClick={() => saveApiKey('alibaba_token_plan', alibabaTokenPlanKey)
+                                .then(result => result && setAlibabaTokenPlanKey(''))}
+                            disabled={!alibabaTokenPlanKey || saving}
+                            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                        >
+                            {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                            Save &amp; Fetch Models
+                        </button>
+                    </div>
+                    <p className="mt-2 text-xs text-muted-foreground">
+                        The key stays on the backend and is stored encrypted. Use a Token Plan key beginning with <span className="font-mono">sk-sp-</span>.
+                    </p>
+                </div>
 
                 {/* PayPal Configuration */}
                 <div className="bg-muted/50 p-4 rounded-md border border-border mb-6">

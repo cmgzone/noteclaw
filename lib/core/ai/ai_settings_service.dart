@@ -136,6 +136,10 @@ class AISettingsService {
     final normalizedProvider = provider.trim().toLowerCase();
     final normalizedModel = (modelId ?? '').trim().toLowerCase();
 
+    if (normalizedProvider == 'alibaba_token_plan') {
+      return 'alibaba_token_plan';
+    }
+
     if (normalizedModel.startsWith('gemini')) {
       return 'gemini';
     }
@@ -195,10 +199,9 @@ class AISettingsService {
     try {
       final service = read(aiModelServiceProvider);
       final models = await service.listModels();
-      final selectedModel =
-          models
-              .where((model) => model.modelId == normalizedModelId)
-              .firstOrNull;
+      final selectedModel = models
+          .where((model) => model.modelId == normalizedModelId)
+          .firstOrNull;
 
       return selectedModel?.isUserModel == true ||
           selectedModel?.hasPersonalApiKey == true;

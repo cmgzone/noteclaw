@@ -53,6 +53,8 @@ class ChatAIModelButton extends ConsumerWidget {
     final hasSelection = (currentModelId ?? '').trim().isNotEmpty;
     final geminiModels = models['gemini'] ?? const <AIModelOption>[];
     final openRouterModels = models['openrouter'] ?? const <AIModelOption>[];
+    final alibabaTokenPlanModels =
+        models['alibaba_token_plan'] ?? const <AIModelOption>[];
 
     return PopupMenuButton<String>(
       tooltip: hasSelection ? 'AI model: $currentModelName' : 'Select AI model',
@@ -67,7 +69,9 @@ class ChatAIModelButton extends ConsumerWidget {
           color: scheme.outline.withValues(alpha: 0.45),
         ),
       ),
-      enabled: geminiModels.isNotEmpty || openRouterModels.isNotEmpty,
+      enabled: geminiModels.isNotEmpty ||
+          openRouterModels.isNotEmpty ||
+          alibabaTokenPlanModels.isNotEmpty,
       onSelected: (modelId) async {
         final selectedModel = findAIModelOption(models, modelId);
         if (selectedModel == null) return;
@@ -132,6 +136,7 @@ class ChatAIModelButton extends ConsumerWidget {
 
         addSection('GEMINI', geminiModels);
         addSection('OPENROUTER', openRouterModels);
+        addSection('ALIBABA TOKEN PLAN', alibabaTokenPlanModels);
         return items;
       },
       icon: Stack(

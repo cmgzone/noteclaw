@@ -38,6 +38,10 @@ import {
   type ChatMessage,
 } from '../services/aiService.js';
 import {
+  ALIBABA_TOKEN_PLAN_PROVIDER,
+  generateWithAlibabaTokenPlan,
+} from '../services/alibabaTokenPlanService.js';
+import {
   getResearchJobStatus,
   searchWeb,
   startBackgroundResearch,
@@ -4218,7 +4222,14 @@ router.post(
       if (!creditCharge) return;
 
       const answer =
-        requestedProvider === 'openrouter'
+        requestedProvider === ALIBABA_TOKEN_PLAN_PROVIDER
+          ? await generateWithAlibabaTokenPlan(
+              messages,
+              requestedModel || '',
+              4096,
+              userApiKey,
+            )
+          : requestedProvider === 'openrouter'
           ? await generateWithOpenRouter(
               messages,
               requestedModel,

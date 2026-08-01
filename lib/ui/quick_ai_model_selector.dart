@@ -24,6 +24,7 @@ class QuickAIModelSelector extends ConsumerWidget {
         final allModels = [
           ...models['gemini'] ?? [],
           ...models['openrouter'] ?? [],
+          ...models['alibaba_token_plan'] ?? [],
         ];
 
         if (allModels.isEmpty) {
@@ -189,6 +190,50 @@ class QuickAIModelSelector extends ConsumerWidget {
                                     Expanded(
                                       child: Text(
                                         m.name + (m.isPremium ? ' 💎' : ''),
+                                        style: TextStyle(
+                                            fontSize: 12,
+                                            color: scheme.onSurface),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }),
+                          ],
+                          // Alibaba Model Studio Token Plan models
+                          if (models['alibaba_token_plan']?.isNotEmpty ==
+                              true) ...[
+                            DropdownMenuItem<String>(
+                              enabled: false,
+                              value: '__alibaba_token_plan_header__',
+                              child: Padding(
+                                padding: const EdgeInsets.only(left: 8, top: 8),
+                                child: Text(
+                                  'ALIBABA TOKEN PLAN',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    color: scheme.primary,
+                                    letterSpacing: 1.2,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            ...models['alibaba_token_plan']!.map((m) {
+                              return DropdownMenuItem<String>(
+                                value: m.id,
+                                child: Row(
+                                  children: [
+                                    const Icon(
+                                      Icons.cloud_outlined,
+                                      size: 14,
+                                      color: Colors.orange,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        m.name,
                                         style: TextStyle(
                                             fontSize: 12,
                                             color: scheme.onSurface),

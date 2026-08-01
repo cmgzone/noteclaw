@@ -49,7 +49,7 @@ class AIModelSettingsScreen extends ConsumerStatefulWidget {
 }
 
 class _AIModelSettingsScreenState extends ConsumerState<AIModelSettingsScreen> {
-  String _aiProvider = 'gemini'; // gemini or openrouter
+  String _aiProvider = 'gemini';
   String _ttsProvider = 'google'; // google or elevenlabs
   String _sttProvider = 'device'; // device or deepgram
   bool _isSavingPersonalModel = false;
@@ -76,7 +76,7 @@ class _AIModelSettingsScreenState extends ConsumerState<AIModelSettingsScreen> {
         for (final entry in models.entries) {
           final found = entry.value.where((m) => m.id == aiModel).firstOrNull;
           if (found != null) {
-            detectedProvider = entry.key; // 'gemini' or 'openrouter'
+            detectedProvider = entry.key;
             break;
           }
         }
@@ -142,7 +142,9 @@ class _AIModelSettingsScreenState extends ConsumerState<AIModelSettingsScreen> {
         'tts_murf_voice', ref.read(selectedMurfVoiceProvider));
 
     await ref.read(voiceServiceProvider).setSttProvider(
-          _sttProvider == 'deepgram' ? SttProvider.deepgram : SttProvider.device,
+          _sttProvider == 'deepgram'
+              ? SttProvider.deepgram
+              : SttProvider.device,
         );
 
     await ref.read(voiceServiceProvider).setTtsProvider(
@@ -168,7 +170,8 @@ class _AIModelSettingsScreenState extends ConsumerState<AIModelSettingsScreen> {
   Future<void> _loadPersonalModels() async {
     setState(() => _isLoadingPersonalModels = true);
     try {
-      final models = await ref.read(aiModelServiceProvider).listPersonalModels();
+      final models =
+          await ref.read(aiModelServiceProvider).listPersonalModels();
       if (!mounted) return;
       setState(() {
         _personalModels = models;
@@ -219,10 +222,12 @@ class _AIModelSettingsScreenState extends ConsumerState<AIModelSettingsScreen> {
                 children: [
                   TextFormField(
                     controller: nameController,
-                    decoration: const InputDecoration(labelText: 'Display Name'),
-                    validator: (value) => (value == null || value.trim().isEmpty)
-                        ? 'Name is required'
-                        : null,
+                    decoration:
+                        const InputDecoration(labelText: 'Display Name'),
+                    validator: (value) =>
+                        (value == null || value.trim().isEmpty)
+                            ? 'Name is required'
+                            : null,
                   ),
                   const SizedBox(height: 12),
                   TextFormField(
@@ -238,8 +243,7 @@ class _AIModelSettingsScreenState extends ConsumerState<AIModelSettingsScreen> {
                     value: provider,
                     decoration: const InputDecoration(labelText: 'Provider'),
                     items: const [
-                      DropdownMenuItem(
-                          value: 'gemini', child: Text('Gemini')),
+                      DropdownMenuItem(value: 'gemini', child: Text('Gemini')),
                       DropdownMenuItem(
                           value: 'openrouter', child: Text('OpenRouter')),
                       DropdownMenuItem(value: 'openai', child: Text('OpenAI')),
@@ -272,8 +276,8 @@ class _AIModelSettingsScreenState extends ConsumerState<AIModelSettingsScreen> {
                   const SizedBox(height: 12),
                   TextFormField(
                     controller: descriptionController,
-                    decoration:
-                        const InputDecoration(labelText: 'Description (optional)'),
+                    decoration: const InputDecoration(
+                        labelText: 'Description (optional)'),
                     maxLines: 2,
                   ),
                 ],
@@ -440,6 +444,23 @@ class _AIModelSettingsScreenState extends ConsumerState<AIModelSettingsScreen> {
                 icon: Icons.model_training,
                 color: Colors.purple,
               ),
+              const SizedBox(height: 12),
+              _SelectionCard(
+                title: 'Alibaba Token Plan',
+                subtitle: 'Models synced from Alibaba Model Studio',
+                isSelected: _aiProvider == 'alibaba_token_plan',
+                onTap: () async {
+                  setState(() => _aiProvider = 'alibaba_token_plan');
+                  final models = await ref.read(availableModelsProvider.future);
+                  final alibaba = models['alibaba_token_plan'] ?? [];
+                  if (alibaba.isNotEmpty) {
+                    ref.read(selectedAIModelProvider.notifier).state =
+                        alibaba.first.id;
+                  }
+                },
+                icon: Icons.cloud_outlined,
+                color: Colors.orange,
+              ),
               if (_aiProvider == 'openrouter') ...[
                 const SizedBox(height: 16),
                 Consumer(
@@ -594,6 +615,49 @@ class _AIModelSettingsScreenState extends ConsumerState<AIModelSettingsScreen> {
                   },
                 ),
               ],
+              if (_aiProvider == 'alibaba_token_plan') ...[
+                const SizedBox(height: 16),
+                Consumer(
+                  builder: (context, ref, _) {
+                    final modelsAsync = ref.watch(availableModelsProvider);
+                    return modelsAsync.when(
+                      data: (models) {
+                        final alibabaModels =
+                            models['alibaba_token_plan'] ?? [];
+                        final current = selectedAIModel;
+                        return _DropdownConfiguration(
+                          label: 'Selected Model',
+                          value: alibabaModels.any((m) => m.id == current)
+                              ? current
+                              : null,
+                          items: alibabaModels
+                              .map(
+                                (m) => DropdownMenuItem(
+                                  value: m.canAccess ? m.id : null,
+                                  enabled: m.canAccess,
+                                  child: Text(
+                                    m.name,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: (val) async {
+                            if (val == null) return;
+                            ref.read(selectedAIModelProvider.notifier).state =
+                                val;
+                            await _saveSettings();
+                          },
+                        );
+                      },
+                      loading: () => const Center(
+                          child: LinearProgressIndicator(minHeight: 2)),
+                      error: (_, __) =>
+                          const Text('Failed to load Alibaba models'),
+                    );
+                  },
+                ),
+              ],
               const SizedBox(height: 16),
               Container(
                 padding: const EdgeInsets.all(12),
@@ -673,7 +737,8 @@ class _AIModelSettingsScreenState extends ConsumerState<AIModelSettingsScreen> {
                               ),
                               IconButton(
                                 onPressed: () => _deletePersonalModel(model.id),
-                                icon: const Icon(Icons.delete_outline, size: 18),
+                                icon:
+                                    const Icon(Icons.delete_outline, size: 18),
                               ),
                             ],
                           ),
@@ -1002,7 +1067,8 @@ class _AIModelSettingsScreenState extends ConsumerState<AIModelSettingsScreen> {
             children: [
               _ActionTile(
                 title: 'API Keys',
-                subtitle: 'Use your own Gemini/OpenRouter keys (private per user)',
+                subtitle:
+                    'Use your own Gemini/OpenRouter keys (private per user)',
                 icon: Icons.vpn_key,
                 color: Colors.amber,
                 onTap: () => context.push('/settings/api-keys'),

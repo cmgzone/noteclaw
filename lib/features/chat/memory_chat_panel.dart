@@ -112,7 +112,7 @@ class _MemoryChatPanelState extends ConsumerState<MemoryChatPanel> {
         provider == 'anthropic') {
       return 'openrouter';
     }
-    return 'gemini';
+    return provider == 'alibaba_token_plan' ? provider : 'gemini';
   }
 
   Future<void> _switchMode(_MemoryChatMode mode) async {
@@ -742,8 +742,7 @@ class _ChatEmpty extends StatelessWidget {
                 color: DigitalLibrarian.primaryStrong.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(18),
                 border: Border.all(
-                  color:
-                      DigitalLibrarian.primaryStrong.withValues(alpha: 0.35),
+                  color: DigitalLibrarian.primaryStrong.withValues(alpha: 0.35),
                 ),
               ),
               child: const Icon(LucideIcons.sparkles,
@@ -774,8 +773,8 @@ class _ChatEmpty extends StatelessWidget {
                 onTap: () => onPrompt(prompt),
                 borderRadius: BorderRadius.circular(11),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 14, vertical: 12),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                   decoration: BoxDecoration(
                     color: DigitalLibrarian.surfaceContainer,
                     borderRadius: BorderRadius.circular(11),
@@ -795,8 +794,8 @@ class _ChatEmpty extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             fontSize: 12.5,
-                            color: DigitalLibrarian.primary
-                                .withValues(alpha: 0.8),
+                            color:
+                                DigitalLibrarian.primary.withValues(alpha: 0.8),
                           ),
                         ),
                       ),
@@ -829,9 +828,8 @@ class _MessageEntry extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
       child: Column(
-        crossAxisAlignment: isUser
-            ? CrossAxisAlignment.end
-            : CrossAxisAlignment.start,
+        crossAxisAlignment:
+            isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
         children: [
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -853,8 +851,7 @@ class _MessageEntry extends StatelessWidget {
               maxWidth: MediaQuery.of(context).size.width * 0.82,
             ),
             child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
               decoration: BoxDecoration(
                 color: bubbleColor,
                 borderRadius: BorderRadius.only(

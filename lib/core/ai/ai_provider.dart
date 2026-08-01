@@ -287,7 +287,8 @@ $prompt
 ''';
 
       final Stream<String> stream;
-      if (billingFeature != null && billingFeature.isNotEmpty) {
+      if (provider == 'alibaba_token_plan' ||
+          (billingFeature != null && billingFeature.isNotEmpty)) {
         final api = ref.read(apiServiceProvider);
         stream = api.chatWithAIStream(
           messages: [
@@ -295,7 +296,7 @@ $prompt
           ],
           provider: provider,
           model: model,
-          billingFeature: billingFeature,
+          billingFeature: billingFeature ?? 'chat_message',
         );
       } else {
         if (provider == 'openrouter') {
@@ -355,7 +356,22 @@ $prompt
       final model = await _getSelectedModel();
 
       final String aggregated;
-      if (provider == 'openrouter') {
+      if (provider == 'alibaba_token_plan') {
+        final api = ref.read(apiServiceProvider);
+        final stream = api.chatWithAIStream(
+          messages: [
+            {'role': 'user', 'content': prompt}
+          ],
+          provider: provider,
+          model: model,
+          billingFeature: 'chat_message',
+        );
+        final buffer = StringBuffer();
+        await for (final chunk in stream) {
+          buffer.write(chunk);
+        }
+        aggregated = buffer.toString();
+      } else if (provider == 'openrouter') {
         final apiKey = await _getOpenRouterKey();
         // OpenRouter streaming returns a Stream, but we need String for now
         // Convert stream to full string
@@ -409,7 +425,17 @@ Return the improved note in a clear, well-structured format.
 ''';
 
       final String improved;
-      if (provider == 'openrouter') {
+      if (provider == 'alibaba_token_plan') {
+        final api = ref.read(apiServiceProvider);
+        improved = await api.chatWithAI(
+          messages: [
+            {'role': 'user', 'content': prompt}
+          ],
+          provider: provider,
+          model: model,
+          billingFeature: 'chat_message',
+        );
+      } else if (provider == 'openrouter') {
         final apiKey = await _getOpenRouterKey();
         improved = await _openRouterService.generateContent(
           prompt,
@@ -463,7 +489,17 @@ Respond in JSON format with:
 ''';
 
       final String response;
-      if (provider == 'openrouter') {
+      if (provider == 'alibaba_token_plan') {
+        final api = ref.read(apiServiceProvider);
+        response = await api.chatWithAI(
+          messages: [
+            {'role': 'user', 'content': prompt}
+          ],
+          provider: provider,
+          model: model,
+          billingFeature: 'chat_message',
+        );
+      } else if (provider == 'openrouter') {
         final apiKey = await _getOpenRouterKey();
         response = await _openRouterService.generateContent(
           prompt,

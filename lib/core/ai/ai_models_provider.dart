@@ -7,6 +7,7 @@ final availableModelsProvider =
     FutureProvider<Map<String, List<AIModelOption>>>((ref) async {
   final List<AIModelOption> geminiModels = [];
   final List<AIModelOption> openRouterModels = [];
+  final List<AIModelOption> alibabaTokenPlanModels = [];
 
   // Get dynamic models from DB
   try {
@@ -29,6 +30,8 @@ final availableModelsProvider =
 
       if (m.provider == 'gemini') {
         geminiModels.add(option);
+      } else if (m.provider == 'alibaba_token_plan') {
+        alibabaTokenPlanModels.add(option);
       } else if (m.provider == 'openrouter' ||
           m.provider == 'openai' ||
           m.provider == 'anthropic') {
@@ -42,6 +45,7 @@ final availableModelsProvider =
   return {
     'gemini': geminiModels,
     'openrouter': openRouterModels,
+    'alibaba_token_plan': alibabaTokenPlanModels,
   };
 });
 

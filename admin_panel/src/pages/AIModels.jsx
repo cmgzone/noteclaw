@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import api from '../lib/api';
-import { Plus, Edit2, Trash2, Bot, Loader2 } from 'lucide-react';
+import { Plus, Edit2, Trash2, Bot, Loader2, RefreshCw } from 'lucide-react';
 
 export default function AIModels() {
     const [models, setModels] = useState([]);
@@ -8,6 +8,7 @@ export default function AIModels() {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingModel, setEditingModel] = useState(null);
     const [saving, setSaving] = useState(false);
+    const [syncingAlibaba, setSyncingAlibaba] = useState(false);
 
     const [formData, setFormData] = useState({
         name: '',
@@ -21,7 +22,7 @@ export default function AIModels() {
         is_premium: false
     });
 
-    const providers = ['gemini', 'openrouter', 'openai', 'anthropic'];
+    const providers = ['gemini', 'openrouter', 'openai', 'anthropic', 'alibaba_token_plan'];
 
     useEffect(() => {
         fetchModels();
@@ -113,6 +114,20 @@ export default function AIModels() {
         }
     }
 
+    async function handleSyncAlibaba() {
+        setSyncingAlibaba(true);
+        try {
+            const response = await api.syncAlibabaTokenPlanModels();
+            await fetchModels();
+            alert(`Synchronized ${response.modelCount} Alibaba Token Plan models.`);
+        } catch (error) {
+            console.error('Failed to sync Alibaba models:', error);
+            alert('Failed to sync Alibaba models: ' + error.message);
+        } finally {
+            setSyncingAlibaba(false);
+        }
+    }
+
     if (loading) return (
         <div className="p-8 flex items-center justify-center">
             <Loader2 className="h-8 w-8 animate-spin" />
@@ -128,7 +143,16 @@ export default function AIModels() {
                         Manage available AI models for the application.
                     </p>
                 </div>
-                <div className="mt-4 sm:ml-16 sm:mt-0 sm:flex-none">
+                <div className="mt-4 sm:ml-16 sm:mt-0 sm:flex-none flex gap-2">
+                    <button
+                        type="button"
+                        onClick={handleSyncAlibaba}
+                        disabled={syncingAlibaba}
+                        className="inline-flex items-center justify-center rounded-md bg-secondary px-3 py-2 text-sm font-semibold shadow-sm hover:bg-secondary/80 disabled:opacity-50"
+                    >
+                        <RefreshCw className={`mr-2 h-4 w-4 ${syncingAlibaba ? 'animate-spin' : ''}`} />
+                        Sync Alibaba
+                    </button>
                     <button
                         type="button"
                         onClick={() => handleOpenModal()}

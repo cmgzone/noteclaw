@@ -10,6 +10,11 @@ import {
     type ChatMessage
 } from '../services/aiService.js';
 import {
+    ALIBABA_TOKEN_PLAN_PROVIDER,
+    generateWithAlibabaTokenPlan,
+    streamWithAlibabaTokenPlan,
+} from '../services/alibabaTokenPlanService.js';
+import {
     checkCredits,
     consumeCredits,
     refundCredits,
@@ -284,7 +289,7 @@ router.post('/models/personal', authenticateToken, async (req: AuthRequest, res:
             return res.status(400).json({ error: 'name, modelId, provider, and apiKey are required' });
         }
 
-        if (!['gemini', 'openrouter', 'openai', 'anthropic'].includes(finalProvider)) {
+        if (!['gemini', 'openrouter', 'openai', 'anthropic', ALIBABA_TOKEN_PLAN_PROVIDER].includes(finalProvider)) {
             return res.status(400).json({ error: 'Invalid provider' });
         }
 
@@ -372,7 +377,7 @@ router.put('/models/personal/:id', authenticateToken, async (req: AuthRequest, r
         if (!nextName || !nextModelId || !nextProvider) {
             return res.status(400).json({ error: 'name, modelId, and provider are required' });
         }
-        if (!['gemini', 'openrouter', 'openai', 'anthropic'].includes(nextProvider)) {
+        if (!['gemini', 'openrouter', 'openai', 'anthropic', ALIBABA_TOKEN_PLAN_PROVIDER].includes(nextProvider)) {
             return res.status(400).json({ error: 'Invalid provider' });
         }
 
@@ -458,7 +463,7 @@ router.post('/chat', async (req: AuthRequest, res: Response) => {
         // Auto-detect provider ONLY if provider is not explicitly set to 'gemini'
         // If model contains '/', it's definitely OpenRouter (or compatible).
         // Also check for common OpenRouter prefixes.
-        if (provider !== 'gemini' && model && (model.includes('/') || model.startsWith('gpt-') || model.startsWith('claude-') || model.startsWith('meta-'))) {
+        if (provider !== 'gemini' && provider !== ALIBABA_TOKEN_PLAN_PROVIDER && model && (model.includes('/') || model.startsWith('gpt-') || model.startsWith('claude-') || model.startsWith('meta-'))) {
             provider = 'openrouter';
             console.log(`[AI Chat] Auto-detected OpenRouter provider for model: ${model}`);
         }
@@ -500,12 +505,13 @@ router.post('/chat', async (req: AuthRequest, res: Response) => {
         if (model) {
             if (!isUserModel) {
                 const modelResult = await pool.query(
-                    'SELECT is_premium, context_window FROM ai_models WHERE model_id = $1 AND is_active = true',
+                    'SELECT provider, is_premium, context_window FROM ai_models WHERE model_id = $1 AND is_active = true',
                     [model]
                 );
 
                 if (modelResult.rows.length > 0) {
                     const modelData = modelResult.rows[0];
+                    provider = modelData.provider;
 
                     // Calculate max output tokens from context window
                     if (modelData.context_window) {
@@ -584,7 +590,9 @@ router.post('/chat', async (req: AuthRequest, res: Response) => {
         }
 
         let response: string;
-        if (provider === 'openrouter') {
+        if (provider === ALIBABA_TOKEN_PLAN_PROVIDER) {
+            response = await generateWithAlibabaTokenPlan(messages, model, maxTokens, effectiveApiKey);
+        } else if (provider === 'openrouter') {
             response = await generateWithOpenRouter(messages, model, maxTokens, effectiveApiKey);
         } else {
             response = await generateWithGemini(messages, model, effectiveApiKey);
@@ -653,7 +661,7 @@ router.post('/chat/stream', async (req: AuthRequest, res: Response) => {
 
         // Auto-detect provider ONLY if provider is not explicitly set to 'gemini'
         // If model contains '/', it's definitely OpenRouter.
-        if (provider !== 'gemini' && model && (model.includes('/') || model.startsWith('gpt-') || model.startsWith('claude-') || model.startsWith('meta-'))) {
+        if (provider !== 'gemini' && provider !== ALIBABA_TOKEN_PLAN_PROVIDER && model && (model.includes('/') || model.startsWith('gpt-') || model.startsWith('claude-') || model.startsWith('meta-'))) {
             provider = 'openrouter';
             console.log(`[AI Stream] Auto-detected OpenRouter provider for model: ${model}`);
         }
@@ -733,12 +741,13 @@ router.post('/chat/stream', async (req: AuthRequest, res: Response) => {
         if (model) {
             if (!isUserModel) {
                 const modelResult = await pool.query(
-                    'SELECT is_premium, context_window FROM ai_models WHERE model_id = $1 AND is_active = true',
+                    'SELECT provider, is_premium, context_window FROM ai_models WHERE model_id = $1 AND is_active = true',
                     [model]
                 );
 
                 if (modelResult.rows.length > 0) {
                     const modelData = modelResult.rows[0];
+                    provider = modelData.provider;
 
                     // Calculate max output tokens from context window
                     if (modelData.context_window) {
@@ -776,7 +785,9 @@ router.post('/chat/stream', async (req: AuthRequest, res: Response) => {
         res.flushHeaders();
 
         let generator;
-        if (provider === 'openrouter') {
+        if (provider === ALIBABA_TOKEN_PLAN_PROVIDER) {
+            generator = streamWithAlibabaTokenPlan(messages, model, maxTokens, effectiveApiKey || undefined);
+        } else if (provider === 'openrouter') {
             generator = streamWithOpenRouter(messages, model, maxTokens, effectiveApiKey || undefined);
         } else {
             generator = streamWithGemini(messages, model, effectiveApiKey || undefined);

@@ -3,6 +3,10 @@ import { v4 as uuidv4 } from 'uuid';
 import pool from '../config/database.js';
 import { authenticateToken, type AuthRequest } from '../middleware/auth.js';
 import { generateWithGemini, generateWithOpenRouter, type ChatMessage } from '../services/aiService.js';
+import {
+    ALIBABA_TOKEN_PLAN_PROVIDER,
+    generateWithAlibabaTokenPlan,
+} from '../services/alibabaTokenPlanService.js';
 
 const router = express.Router();
 router.use(authenticateToken);
@@ -276,9 +280,11 @@ router.post('/:id/query', async (req: AuthRequest, res: Response) => {
         const modelId = modelResult.rows[0]?.model_id;
         const provider = modelResult.rows[0]?.provider || (modelId && modelId.includes('/') ? 'openrouter' : 'gemini');
 
-        const answer = provider === 'openrouter'
-            ? await generateWithOpenRouter(messages, modelId)
-            : await generateWithGemini(messages, modelId);
+        const answer = provider === ALIBABA_TOKEN_PLAN_PROVIDER
+            ? await generateWithAlibabaTokenPlan(messages, modelId)
+            : provider === 'openrouter'
+                ? await generateWithOpenRouter(messages, modelId)
+                : await generateWithGemini(messages, modelId);
 
         res.json({
             success: true,

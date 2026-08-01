@@ -13,6 +13,12 @@ import {
 } from '../services/cacheService.js';
 import { encryptSecret } from '../services/secretEncryptionService.js';
 import {
+    ALIBABA_TOKEN_PLAN_PROVIDER,
+    fetchAlibabaTokenPlanModels,
+    getAlibabaTokenPlanApiKey,
+    syncAlibabaTokenPlanModels,
+} from '../services/alibabaTokenPlanService.js';
+import {
     getAllAppSettings,
     getAppSettingValue,
     getAppSettingValueWithEnvironmentFallback,
@@ -471,25 +477,69 @@ router.post('/api-keys', async (req: AuthRequest, res: Response) => {
             return res.status(400).json({ error: 'apiKey is required' });
         }
 
-        const encryptedValue = encryptSecret(apiKey);
+        const normalizedService = service.trim().toLowerCase();
+        const normalizedApiKey = apiKey.trim();
+        let modelSync: { synced: number; disabled: number } | null = null;
+
+        if (normalizedService === ALIBABA_TOKEN_PLAN_PROVIDER) {
+            const modelIds = await fetchAlibabaTokenPlanModels(normalizedApiKey);
+            modelSync = await syncAlibabaTokenPlanModels(modelIds);
+        }
+
+        const encryptedValue = encryptSecret(normalizedApiKey);
 
         await pool.query(`
             INSERT INTO api_keys (service_name, encrypted_value, description, updated_at)
             VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
             ON CONFLICT (service_name) 
             DO UPDATE SET encrypted_value = $2, description = $3, updated_at = CURRENT_TIMESTAMP
-        `, [service, encryptedValue, description]);
+        `, [normalizedService, encryptedValue, description]);
 
-        res.json({ message: 'API key saved' });
-    } catch (error) {
+        res.json({
+            message: modelSync
+                ? `API key saved and ${modelSync.synced} Alibaba models synchronized`
+                : 'API key saved',
+            ...(modelSync ? { modelCount: modelSync.synced } : {}),
+        });
+    } catch (error: any) {
         console.error('Error saving API key:', error);
+        if (String(error?.message || '').includes('Alibaba Token Plan')) {
+            return res.status(400).json({ error: error.message });
+        }
         res.status(500).json({ error: 'Failed to save API key' });
+    }
+});
+
+router.post('/providers/alibaba-token-plan/sync', async (_req: AuthRequest, res: Response) => {
+    try {
+        const apiKey = await getAlibabaTokenPlanApiKey();
+        const modelIds = await fetchAlibabaTokenPlanModels(apiKey);
+        const result = await syncAlibabaTokenPlanModels(modelIds);
+        res.json({
+            success: true,
+            modelCount: result.synced,
+            disabledCount: result.disabled,
+        });
+    } catch (error: any) {
+        console.error('Error synchronizing Alibaba Token Plan models:', error);
+        res.status(400).json({
+            error: error?.message || 'Failed to synchronize Alibaba Token Plan models',
+        });
     }
 });
 
 router.delete('/api-keys/:service', async (req: AuthRequest, res: Response) => {
     try {
-        await pool.query('DELETE FROM api_keys WHERE service_name = $1', [req.params.service]);
+        const normalizedService = req.params.service.trim().toLowerCase();
+        await pool.query('DELETE FROM api_keys WHERE service_name = $1', [normalizedService]);
+        if (normalizedService === ALIBABA_TOKEN_PLAN_PROVIDER) {
+            await pool.query(
+                `UPDATE ai_models
+                 SET is_active = FALSE, updated_at = CURRENT_TIMESTAMP
+                 WHERE provider = $1`,
+                [ALIBABA_TOKEN_PLAN_PROVIDER],
+            );
+        }
         res.json({ message: 'API key deleted' });
     } catch (error) {
         console.error('Error deleting API key:', error);
