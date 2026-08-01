@@ -29,6 +29,14 @@ interface ResearchRuntimeOptions {
     apiKey?: string;
 }
 
+export interface ResearchResult {
+    sessionId: string;
+    report: string;
+    sources: ResearchSource[];
+    images: string[];
+    videos: string[];
+}
+
 interface ResolvedResearchAiConfig {
     provider: ResearchProvider;
     model?: string;
@@ -623,9 +631,9 @@ export async function performCloudResearch(
     userId: string,
     query: string,
     config: ResearchConfig,
-    onProgress?: (progress: ResearchProgress) => void,
+    onProgress?: (progress: ResearchProgress) => void | Promise<void>,
     runtime?: ResearchRuntimeOptions
-): Promise<{ sessionId: string; report: string; sources: ResearchSource[] }> {
+): Promise<ResearchResult> {
     if (typeof query !== 'string' || query.trim().length === 0) {
         throw new Error('Query is required');
     }
@@ -641,14 +649,14 @@ export async function performCloudResearch(
         const aiConfig = await resolveResearchAiConfig(userId, config, runtime);
 
         // Update progress
-        onProgress?.({ status: `[${config.depth.toUpperCase()}] Starting research...`, progress: 0.1, isComplete: false });
+        await onProgress?.({ status: `[${config.depth.toUpperCase()}] Starting research...`, progress: 0.1, isComplete: false });
 
         // Generate sub-queries
         if (config.useNotebookContext && config.notebookId) {
-            onProgress?.({ status: 'Loading notebook context...', progress: 0.12, isComplete: false });
+            await onProgress?.({ status: 'Loading notebook context...', progress: 0.12, isComplete: false });
             notebookContext = await getNotebookContext(userId, config.notebookId, normalizedQuery);
         }
-        onProgress?.({ status: 'Generating research angles...', progress: 0.15, isComplete: false });
+        await onProgress?.({ status: 'Generating research angles...', progress: 0.15, isComplete: false });
         const subQueries = await generateSubQueries(
             normalizedQuery,
             config.template,
@@ -673,7 +681,7 @@ export async function performCloudResearch(
             if (sources.length >= depthConfig.maxSources) break;
 
             const progress = 0.2 + (0.5 * (completed / subQueries.length));
-            onProgress?.({
+            await onProgress?.({
                 status: `Searching: "${subQuery}"...`,
                 progress,
                 sources: [...sources],
@@ -716,7 +724,7 @@ export async function performCloudResearch(
 
         // Multi-hop for deep research
         if (config.depth === 'deep' && sources.length < depthConfig.maxSources) {
-            onProgress?.({ status: 'Multi-hop: Exploring deeper...', progress: 0.65, sources, isComplete: false });
+            await onProgress?.({ status: 'Multi-hop: Exploring deeper...', progress: 0.65, sources, isComplete: false });
 
             // Generate follow-up queries based on initial findings
             const followUpMessages: ChatMessage[] = [{
@@ -764,7 +772,7 @@ export async function performCloudResearch(
         const uniqueVideos = [...new Set(allVideos)];
 
         // Synthesize report
-        onProgress?.({ status: 'Synthesizing report...', progress: 0.8, sources, images: uniqueImages, videos: uniqueVideos, isComplete: false });
+        await onProgress?.({ status: 'Synthesizing report...', progress: 0.8, sources, images: uniqueImages, videos: uniqueVideos, isComplete: false });
 
         const report = await synthesizeReport(
             normalizedQuery,
@@ -804,9 +812,15 @@ export async function performCloudResearch(
             client.release();
         }
 
-        onProgress?.({ status: 'Research complete!', progress: 1.0, result: report, sources, images: uniqueImages, videos: uniqueVideos, isComplete: true });
+        await onProgress?.({ status: 'Research complete!', progress: 1.0, result: report, sources, images: uniqueImages, videos: uniqueVideos, isComplete: true });
 
-        return { sessionId, report, sources };
+        return {
+            sessionId,
+            report,
+            sources,
+            images: uniqueImages,
+            videos: uniqueVideos,
+        };
     } catch (error: any) {
         console.error('Cloud research error:', error);
         throw error;
@@ -820,6 +834,7 @@ export async function startBackgroundResearch(
     config: ResearchConfig,
     hooks: {
         onFailed?: (error: Error) => Promise<void> | void;
+        apiKey?: string;
     } = {}
 ): Promise<string> {
     const jobId = uuidv4();
@@ -841,11 +856,17 @@ export async function startBackgroundResearch(
                     `UPDATE research_jobs SET progress = $1, status_message = $2 WHERE id = $3`,
                     [progress.progress, progress.status, jobId]
                 );
+            }, {
+                apiKey: hooks.apiKey,
             });
 
             await pool.query(
-                `UPDATE research_jobs SET status = 'completed', session_id = $1, completed_at = NOW() WHERE id = $2`,
-                [result.sessionId, jobId]
+                `UPDATE research_jobs
+                 SET status = 'completed', session_id = $1, result = $2::jsonb,
+                     progress = 1, status_message = 'Research complete!',
+                     completed_at = NOW()
+                 WHERE id = $3`,
+                [result.sessionId, JSON.stringify(result), jobId]
             );
         } catch (error: any) {
             await pool.query(

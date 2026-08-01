@@ -149,15 +149,17 @@ router.post('/background', async (req: AuthRequest, res: Response) => {
     let charged = 0;
     try {
         const { query } = req.body;
+        const userApiKey = (req.get('x-user-api-key') || '').trim() || undefined;
 
         if (!query) {
             return res.status(400).json({ error: 'Query is required' });
         }
 
         const config = buildResearchConfig(req.body);
-        charged = await chargeResearch(req.userId!, config.depth, false);
+        charged = await chargeResearch(req.userId!, config.depth, !!userApiKey);
 
         const jobId = await startBackgroundResearch(req.userId!, query, config, {
+            apiKey: userApiKey,
             onFailed: async (error) => {
                 if (charged > 0) {
                     await refundCredits(req.userId!, charged, 'deep_research', {
@@ -171,6 +173,7 @@ router.post('/background', async (req: AuthRequest, res: Response) => {
         res.json({
             success: true,
             jobId,
+            status: 'pending',
             message: 'Research started in background'
         });
     } catch (error: any) {

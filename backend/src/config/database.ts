@@ -573,6 +573,7 @@ export async function initializeDatabase() {
                 status_message TEXT,
                 progress DECIMAL(4,3) DEFAULT 0,
                 session_id UUID REFERENCES research_sessions(id) ON DELETE SET NULL,
+                result JSONB,
                 error TEXT,
                 created_at TIMESTAMPTZ DEFAULT NOW(),
                 completed_at TIMESTAMPTZ
@@ -591,6 +592,7 @@ export async function initializeDatabase() {
             ALTER TABLE research_sources ADD COLUMN IF NOT EXISTS snippet TEXT;
             ALTER TABLE research_sources ADD COLUMN IF NOT EXISTS credibility VARCHAR(20) DEFAULT 'unknown';
             ALTER TABLE research_sources ADD COLUMN IF NOT EXISTS credibility_score INTEGER DEFAULT 60;
+            ALTER TABLE research_jobs ADD COLUMN IF NOT EXISTS result JSONB;
         `);
 
         await client.query(`

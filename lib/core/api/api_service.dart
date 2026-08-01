@@ -1386,6 +1386,56 @@ class ApiService {
     }
   }
 
+  /// Starts a durable server-side research job. Unlike the SSE endpoint, the
+  /// job keeps running when Android suspends or closes the app connection.
+  Future<Map<String, dynamic>> startDeepResearchJob({
+    required String query,
+    String? notebookId,
+    required String depth,
+    required String template,
+    bool? includeImages,
+    bool useNotebookContext = false,
+    String? provider,
+    String? model,
+  }) async {
+    final token = await getToken();
+    if (token == null) throw Exception('Not authenticated');
+
+    try {
+      final byokKey = await _getByokKeyForProvider(
+        provider: provider ?? 'gemini',
+        model: model,
+      );
+      final response = await _dio.post(
+        _normalizeEndpoint('/research/background'),
+        data: {
+          'query': query,
+          'depth': depth,
+          'template': template,
+          if (notebookId != null && notebookId.isNotEmpty)
+            'notebookId': notebookId,
+          if (includeImages != null) 'includeImages': includeImages,
+          'useNotebookContext': useNotebookContext,
+          if (provider != null && provider.isNotEmpty) 'provider': provider,
+          if (model != null && model.isNotEmpty) 'model': model,
+        },
+        options: Options(
+          headers: {
+            if (byokKey != null) 'X-User-Api-Key': byokKey,
+          },
+        ),
+      );
+      return Map<String, dynamic>.from(response.data as Map);
+    } catch (e) {
+      throw _handleError(e);
+    }
+  }
+
+  Future<Map<String, dynamic>> getDeepResearchJob(String jobId) async {
+    final response = await get<Map<String, dynamic>>('/research/jobs/$jobId');
+    return Map<String, dynamic>.from(response['job'] ?? const {});
+  }
+
   // ============ AI MODELS ============
 
   Future<List<Map<String, dynamic>>> getAIModels() async {

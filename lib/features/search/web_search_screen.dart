@@ -76,6 +76,80 @@ class _WebSearchScreenState extends ConsumerState<WebSearchScreen> {
     _isDeepResearch = widget.initialDeepResearch;
     _searchController.addListener(_handleSearchChanged);
     _loadSearchHistory();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _resumeDeepResearch();
+    });
+  }
+
+  Future<void> _resumeDeepResearch() async {
+    final service = ref.read(deepResearchServiceProvider);
+    final job = await service.getActiveJob('web-search');
+    if (job == null || !mounted) return;
+
+    setState(() {
+      _isDeepResearch = true;
+      _isResearching = true;
+      _selectedDepth = job.depth;
+      _selectedTemplate = job.template;
+      _selectedResearchNotebookId =
+          job.notebookId.isEmpty ? null : job.notebookId;
+      _searchController.text = job.query;
+      _researchUpdates = [];
+      _finalResult = null;
+      _searchedSites.clear();
+      _currentSearchQuery = null;
+    });
+
+    service.resume(job).listen(
+      (update) {
+        if (!mounted) return;
+        setState(() {
+          _researchUpdates.add(update);
+          if (update.status.contains('Searching:')) {
+            final match =
+                RegExp(r'Searching: "(.+?)"').firstMatch(update.status);
+            _currentSearchQuery = match?.group(1);
+          }
+          if (update.sources != null) {
+            for (final source in update.sources!) {
+              final domain = _extractDomain(source.url);
+              if (domain != null && !_searchedSites.contains(domain)) {
+                _searchedSites.add(domain);
+              }
+            }
+          }
+          if (update.result != null) {
+            _finalResult = update;
+          }
+          if (update.isComplete) {
+            _finalResult = update;
+            _isResearching = false;
+          }
+        });
+        if (update.isComplete &&
+            update.result != null &&
+            update.result!.trim().isNotEmpty) {
+          _saveDeepResearchHistory(
+            query: job.query,
+            depth: job.depth,
+            template: job.template,
+            summary: update.result,
+          );
+        }
+      },
+      onError: (Object error) {
+        if (!mounted) return;
+        setState(() {
+          _isResearching = false;
+          _finalResult = ResearchUpdate(
+            status: 'Research failed',
+            progress: 1,
+            isComplete: true,
+            error: error.toString(),
+          );
+        });
+      },
+    );
   }
 
   @override
@@ -198,6 +272,7 @@ class _WebSearchScreenState extends ConsumerState<WebSearchScreen> {
           notebookId: _selectedResearchNotebookId ?? '',
           depth: _selectedDepth,
           template: _selectedTemplate,
+          owner: 'web-search',
         )
         .listen(
       (update) {
@@ -270,7 +345,9 @@ class _WebSearchScreenState extends ConsumerState<WebSearchScreen> {
       if (!mounted) return;
       if (agents.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Connect an agent before saving search results to memory.')),
+          const SnackBar(
+              content: Text(
+                  'Connect an agent before saving search results to memory.')),
         );
         return;
       }
@@ -281,9 +358,13 @@ class _WebSearchScreenState extends ConsumerState<WebSearchScreen> {
           child: ListView(
             shrinkWrap: true,
             children: [
-              const ListTile(title: Text('Pass search to agent memory'), subtitle: Text('Choose the agent that should receive this research context.')),
+              const ListTile(
+                  title: Text('Pass search to agent memory'),
+                  subtitle: Text(
+                      'Choose the agent that should receive this research context.')),
               ...agents.map((agent) {
-                final session = Map<String, dynamic>.from(agent['session'] ?? {});
+                final session =
+                    Map<String, dynamic>.from(agent['session'] ?? {});
                 return ListTile(
                   leading: const Icon(Icons.smart_toy_outlined),
                   title: Text(session['agentName']?.toString() ?? 'Agent'),
@@ -298,7 +379,9 @@ class _WebSearchScreenState extends ConsumerState<WebSearchScreen> {
       if (selected == null || !mounted) return;
       final session = Map<String, dynamic>.from(selected['session'] ?? {});
       final sessionId = session['id']?.toString() ?? '';
-      if (sessionId.isEmpty) throw Exception('Selected agent has no session ID.');
+      if (sessionId.isEmpty) {
+        throw Exception('Selected agent has no session ID.');
+      }
       final searchState = ref.read(searchProvider);
       final now = DateTime.now().toUtc().toIso8601String();
       final item = _isDeepResearch
@@ -307,37 +390,43 @@ class _WebSearchScreenState extends ConsumerState<WebSearchScreen> {
               'type': 'deep_research',
               'query': _searchController.text.trim(),
               'report': _finalResult?.result,
-              'sources': _currentResearchSources().map((source) => source.toJson()).toList(),
+              'sources': _currentResearchSources()
+                  .map((source) => source.toJson())
+                  .toList(),
               'capturedAt': now,
             }
           : <String, dynamic>{
               'id': 'web-search-$now',
               'type': 'web_search',
               'query': searchState.lastQuery ?? _searchController.text.trim(),
-              'results': searchState.results.map((result) => {
-                    'title': result.title,
-                    'url': result.link,
-                    'snippet': result.snippet,
-                    if (result.date != null) 'date': result.date,
-                  }).toList(),
+              'results': searchState.results
+                  .map((result) => {
+                        'title': result.title,
+                        'url': result.link,
+                        'snippet': result.snippet,
+                        if (result.date != null) 'date': result.date,
+                      })
+                  .toList(),
               'capturedAt': now,
             };
       await ref.read(apiServiceProvider).updateAgentMemory(
-        agentSessionId: sessionId,
-        namespace: 'web_research',
-        mode: 'append',
-        historyField: 'entries',
-        item: item,
-        dedupeKey: 'id',
-        maxHistoryItems: 100,
-        actorIdentifier: 'noteclaw_flutter',
-      );
+            agentSessionId: sessionId,
+            namespace: 'web_research',
+            mode: 'append',
+            historyField: 'entries',
+            item: item,
+            dedupeKey: 'id',
+            maxHistoryItems: 100,
+            actorIdentifier: 'noteclaw_flutter',
+          );
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Search context added to agent memory.')));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Search context added to agent memory.')));
       }
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not save to agent memory: $error')));
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Could not save to agent memory: $error')));
       }
     }
   }

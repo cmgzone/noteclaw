@@ -101,8 +101,11 @@ class WellnessNotifier extends StateNotifier<WellnessState> {
       final deepResearchService = ref.read(deepResearchServiceProvider);
 
       // Listen to the stream
-      await for (final update
-          in deepResearchService.research(query: query, notebookId: '')) {
+      await for (final update in deepResearchService.research(
+        query: query,
+        notebookId: '',
+        owner: 'wellness',
+      )) {
         state = state.copyWith(
           researchStatus: update.status,
           researchProgress: update.progress,

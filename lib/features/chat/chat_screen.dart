@@ -4,6 +4,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 
 import 'chat_provider.dart';
+import 'deep_research_message_card.dart';
 import 'message.dart';
 import 'citation_drawer.dart';
 import '../../core/audio/voice_service.dart';
@@ -208,6 +209,25 @@ class _MessageBubble extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final isUser = message.isUser;
+
+    if (!isUser && message.isDeepSearch) {
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: MediaQuery.of(context).size.width * 0.92,
+          ),
+          child: DeepResearchMessageCard(
+            message: message,
+            onSpeak: () async {
+              await ref
+                  .read(voiceServiceProvider)
+                  .speak(message.text, interrupt: true);
+            },
+          ),
+        ),
+      );
+    }
 
     return Align(
       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,

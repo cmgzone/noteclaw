@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 
 import '../../core/ai/ai_models_provider.dart';
+import '../../core/ai/deep_research_service.dart';
 import '../../core/api/api_service.dart';
 import '../../ui/digital_librarian.dart';
 import '../../ui/forge.dart';
@@ -48,6 +49,53 @@ class _MemoryChatPanelState extends ConsumerState<MemoryChatPanel> {
       _mode = _MemoryChatMode.codingAgent;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _openLiveAgentChat();
+      });
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _resumeDeepResearch();
+    });
+  }
+
+  Future<void> _resumeDeepResearch() async {
+    final service = ref.read(deepResearchServiceProvider);
+    final job = await service.getActiveJob('memory-chat:${widget.notebook.id}');
+    if (job == null || !mounted) return;
+
+    setState(() {
+      _isSending = true;
+      _researchStatus = 'Reconnecting to background research...';
+      _error = null;
+    });
+    var answer = '';
+    try {
+      await for (final update in service.resume(job)) {
+        if (!mounted) return;
+        if (update.error?.trim().isNotEmpty == true) {
+          throw Exception(update.error);
+        }
+        if (update.result?.trim().isNotEmpty == true) {
+          answer = update.result!;
+        }
+        setState(() => _researchStatus = update.status);
+      }
+      if (!mounted) return;
+      setState(() {
+        _aiMessages.add(MemoryChatMessage(
+          role: 'assistant',
+          content: answer.isEmpty
+              ? 'The research finished without a written report.'
+              : answer,
+        ));
+        _isSending = false;
+        _researchStatus = null;
+      });
+      _scrollToEnd();
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _isSending = false;
+        _researchStatus = null;
+        _error = error.toString();
       });
     }
   }
@@ -232,26 +280,25 @@ class _MemoryChatPanelState extends ConsumerState<MemoryChatPanel> {
       var answer = '';
 
       if (_mode == _MemoryChatMode.deepResearch) {
-        await for (final event
-            in ref.read(apiServiceProvider).performDeepResearchStream(
+        await for (final update
+            in ref.read(deepResearchServiceProvider).research(
                   query: message,
                   notebookId: widget.notebook.id,
-                  depth: 'standard',
-                  template: 'general',
-                  includeImages: true,
+                  depth: ResearchDepth.standard,
+                  template: ResearchTemplate.general,
                   useNotebookContext: true,
+                  owner: 'memory-chat:${widget.notebook.id}',
                   provider: provider,
                   model: model?.id,
                 )) {
-          final eventError = event['error']?.toString().trim();
-          if (eventError?.isNotEmpty == true) {
-            throw Exception(eventError);
+          if (update.error?.trim().isNotEmpty == true) {
+            throw Exception(update.error);
           }
-          final status = event['status']?.toString().trim();
-          final result = event['result']?.toString().trim();
-          if (result?.isNotEmpty == true) answer = result!;
-          if (mounted && status?.isNotEmpty == true) {
-            setState(() => _researchStatus = status);
+          if (update.result?.trim().isNotEmpty == true) {
+            answer = update.result!;
+          }
+          if (mounted && update.status.trim().isNotEmpty) {
+            setState(() => _researchStatus = update.status);
           }
         }
         if (answer.isEmpty) {

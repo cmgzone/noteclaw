@@ -17,6 +17,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../chat/message.dart';
 import '../chat/chat_provider.dart';
+import '../chat/deep_research_message_card.dart';
 import '../chat/stream_provider.dart';
 import '../sources/source_detail_screen.dart';
 import '../notebook/notebook_provider.dart';
@@ -749,57 +750,57 @@ Sources to analyze:''';
         ),
         child: Column(
           children: [
-          // AI Writing Status
-          if (_showAIWriting)
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    scheme.tertiary.withValues(alpha: 0.1),
-                    scheme.primary.withValues(alpha: 0.05),
-                  ],
-                ),
-                border: Border(
-                  bottom: BorderSide(
-                    color: scheme.outline.withValues(alpha: 0.2),
-                    width: 1,
+            // AI Writing Status
+            if (_showAIWriting)
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      scheme.tertiary.withValues(alpha: 0.1),
+                      scheme.primary.withValues(alpha: 0.05),
+                    ],
                   ),
-                ),
-              ),
-              child: Row(
-                children: [
-                  const CircularProgressIndicator(strokeWidth: 2),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'AI is writing content...',
-                          style: text.bodyLarge?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        Text(
-                          'Analyzing sources and generating $_writingMode',
-                          style: text.bodyMedium?.copyWith(
-                            color: scheme.secondaryText,
-                          ),
-                        ),
-                      ],
+                  border: Border(
+                    bottom: BorderSide(
+                      color: scheme.outline.withValues(alpha: 0.2),
+                      width: 1,
                     ),
                   ),
-                ],
-              ),
-            )
-                .animate()
-                .slide(begin: const Offset(0, -1), duration: Motion.medium)
-                .fadeIn(duration: Motion.medium),
+                ),
+                child: Row(
+                  children: [
+                    const CircularProgressIndicator(strokeWidth: 2),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'AI is writing content...',
+                            style: text.bodyLarge?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          Text(
+                            'Analyzing sources and generating $_writingMode',
+                            style: text.bodyMedium?.copyWith(
+                              color: scheme.secondaryText,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              )
+                  .animate()
+                  .slide(begin: const Offset(0, -1), duration: Motion.medium)
+                  .fadeIn(duration: Motion.medium),
 
-          // Messages list
+            // Messages list
             Expanded(
               child: messages.isEmpty
                   ? _EmptyChatView(scheme: scheme, text: text)
@@ -841,20 +842,20 @@ Sources to analyze:''';
                     ),
             ),
 
-          Consumer(builder: (context, ref, _) {
-            final tokens = ref.watch(streamProvider);
-            final isStreaming = tokens.isNotEmpty &&
-                tokens.last.map(
-                  text: (_) => true,
-                  citation: (_) => true,
-                  done: (_) => false,
-                );
-            return isStreaming
-                ? const _TypingWave().animate().fadeIn(duration: Motion.short)
-                : const SizedBox.shrink();
-          }),
+            Consumer(builder: (context, ref, _) {
+              final tokens = ref.watch(streamProvider);
+              final isStreaming = tokens.isNotEmpty &&
+                  tokens.last.map(
+                    text: (_) => true,
+                    citation: (_) => true,
+                    done: (_) => false,
+                  );
+              return isStreaming
+                  ? const _TypingWave().animate().fadeIn(duration: Motion.short)
+                  : const SizedBox.shrink();
+            }),
 
-          // Input area
+            // Input area
             SafeArea(
               top: false,
               child: _ChatInputArea(
@@ -951,12 +952,28 @@ class _MessageBubble extends ConsumerWidget {
 
   final Function(String)? onAcceptProposal;
 
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final isUser = message.isUser;
     final state = context.findAncestorStateOfType<_EnhancedChatScreenState>();
+
+    if (!isUser && message.isDeepSearch) {
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: MediaQuery.of(context).size.width * 0.9 < 620
+                ? MediaQuery.of(context).size.width * 0.9
+                : 620,
+          ),
+          child: DeepResearchMessageCard(
+            message: message,
+            onSpeak: () => state?._playTTS(message.text),
+          ),
+        ),
+      );
+    }
 
     // Parse proposal
     final notebookProposalRegex = RegExp(r'\[\[PROPOSE_NOTEBOOK:\s*(.*?)\]\]');
@@ -1818,13 +1835,8 @@ class _ChatInputArea extends ConsumerWidget {
     final modelPrefix = (aiSettings?.model ?? '').trim().isEmpty
         ? 'Choose an AI model.'
         : 'AI: $currentModelName.';
-    final helperText = '$modelPrefix ${selectedImage != null
-        ? 'Image attached. Ask a question or combine it with your research context.'
-        : isWebBrowsingEnabled
-            ? 'Web browsing is on for the next message.'
-            : isDeepSearchEnabled
-                ? 'Deep search is on for the next message.'
-                : 'Open the tools menu for image, web, and deep-search options.'}';
+    final helperText =
+        '$modelPrefix ${selectedImage != null ? 'Image attached. Ask a question or combine it with your research context.' : isWebBrowsingEnabled ? 'Web browsing is on for the next message.' : isDeepSearchEnabled ? 'Deep search is on for the next message.' : 'Open the tools menu for image, web, and deep-search options.'}';
 
     return Container(
       decoration: BoxDecoration(
@@ -2087,7 +2099,8 @@ class _ChatInputArea extends ConsumerWidget {
                                   Icons.tune_rounded,
                                   color: hasActiveTools
                                       ? accentColor
-                                      : scheme.onSurface.withValues(alpha: 0.68),
+                                      : scheme.onSurface
+                                          .withValues(alpha: 0.68),
                                   size: 20,
                                 ),
                               ),
@@ -2155,16 +2168,21 @@ class _ChatInputArea extends ConsumerWidget {
                                   : scheme.surface.withValues(alpha: 0.92),
                               borderRadius: BorderRadius.circular(14),
                               border: Border.all(
-                                color: (isRecording ? scheme.error : scheme.outline)
+                                color: (isRecording
+                                        ? scheme.error
+                                        : scheme.outline)
                                     .withValues(alpha: 0.18),
                               ),
                             ),
                             child: IconButton(
                               onPressed: onMic,
-                              tooltip:
-                                  isRecording ? 'Stop voice input' : 'Voice input',
+                              tooltip: isRecording
+                                  ? 'Stop voice input'
+                                  : 'Voice input',
                               icon: Icon(
-                                isRecording ? Icons.stop : Icons.mic_none_rounded,
+                                isRecording
+                                    ? Icons.stop
+                                    : Icons.mic_none_rounded,
                                 color: isRecording
                                     ? scheme.error
                                     : scheme.onSurface.withValues(alpha: 0.72),
@@ -2267,6 +2285,7 @@ enum _EnhancedChatToolAction {
   deepSearch,
   webBrowsing,
 }
+
 class _ComposerStatusChip extends StatelessWidget {
   const _ComposerStatusChip({
     required this.icon,

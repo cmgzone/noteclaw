@@ -29,6 +29,22 @@ import { runNoteClawMcpAgent } from '../services/mcpAgentService.js';
 
 const router = express.Router();
 
+let chatMessageMetadataSchemaPromise: Promise<void> | null = null;
+
+function ensureChatMessageMetadataReady(): Promise<void> {
+    if (!chatMessageMetadataSchemaPromise) {
+        chatMessageMetadataSchemaPromise = pool.query(`
+            ALTER TABLE chat_messages
+            ADD COLUMN IF NOT EXISTS metadata JSONB NOT NULL DEFAULT '{}'::jsonb
+        `).then(() => undefined).catch((error) => {
+            chatMessageMetadataSchemaPromise = null;
+            throw error;
+        });
+    }
+
+    return chatMessageMetadataSchemaPromise;
+}
+
 const LEGACY_MOBILE_PROVIDERS = new Set([
     'gemini',
     'openrouter',
@@ -1052,6 +1068,8 @@ router.get('/chat/history', authenticateToken, async (req: AuthRequest, res: Res
         const userId = req.userId;
         const { notebookId } = req.query;
 
+        await ensureChatMessageMetadataReady();
+
         let query = 'SELECT * FROM chat_messages WHERE user_id = $1';
         const params: any[] = [userId];
 
@@ -1075,15 +1093,23 @@ router.get('/chat/history', authenticateToken, async (req: AuthRequest, res: Res
 router.post('/chat/message', authenticateToken, async (req: AuthRequest, res: Response) => {
     try {
         const userId = req.userId;
-        const { notebookId, role, content } = req.body;
+        const { notebookId, role, content, metadata } = req.body;
 
         if (!content || !role) {
             return res.status(400).json({ error: 'Content and role are required' });
         }
 
+        const safeMetadata = metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+            ? metadata
+            : {};
+
+        await ensureChatMessageMetadataReady();
+
         const result = await pool.query(
-            'INSERT INTO chat_messages (user_id, notebook_id, role, content) VALUES ($1, $2, $3, $4) RETURNING *',
-            [userId, notebookId || null, role, content]
+            `INSERT INTO chat_messages (user_id, notebook_id, role, content, metadata)
+             VALUES ($1, $2, $3, $4, $5::jsonb)
+             RETURNING *`,
+            [userId, notebookId || null, role, content, JSON.stringify(safeMetadata)]
         );
 
         res.status(201).json(result.rows[0]);

@@ -93,6 +93,7 @@ Return only the revised chapter text.
             await for (final update in deepResearchService.research(
               query: '${project.topic} for ${project.targetAudience}',
               notebookId: project.notebookId ?? '',
+              owner: 'ebook:${project.id}',
             )) {
               if (researchComplete) break;
 

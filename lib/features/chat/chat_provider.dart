@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/api/api_service.dart';
@@ -13,7 +14,7 @@ import 'services/suggestion_service.dart';
 
 class ChatNotifier extends StateNotifier<List<Message>> {
   ChatNotifier(this.ref) : super([]) {
-    _loadHistory();
+    unawaited(_initialize());
   }
 
   final Ref ref;
@@ -25,12 +26,16 @@ class ChatNotifier extends StateNotifier<List<Message>> {
   bool get isWebBrowsing => _isWebBrowsing;
   WebBrowsingUpdate? get currentBrowsingUpdate => _currentBrowsingUpdate;
 
+  Future<void> _initialize() async {
+    await _loadHistory();
+    await _resumeDeepResearch();
+  }
+
   Future<void> _loadHistory() async {
     if (!mounted) return;
 
     try {
-      final history =
-          await ref.read(apiServiceProvider).getChatHistory();
+      final history = await ref.read(apiServiceProvider).getChatHistory();
 
       final messages = <Message>[];
 
@@ -66,12 +71,20 @@ class ChatNotifier extends StateNotifier<List<Message>> {
             }
           }
 
+          final metadata = _parseMessageMetadata(data['metadata']);
+          final isDeepResearch = metadata['isDeepResearch'] == true;
+
           messages.add(Message(
             id: data['id']?.toString() ??
                 DateTime.now().millisecondsSinceEpoch.toString(),
             text: contentStr,
             isUser: role.toString() == 'user',
             timestamp: timestamp,
+            isDeepSearch: isDeepResearch,
+            isWebBrowsing: isDeepResearch || metadata['isWebBrowsing'] == true,
+            webBrowsingStatus: metadata['researchStatus']?.toString(),
+            webBrowsingSources: _stringList(metadata['sources']),
+            webBrowsingScreenshots: _stringList(metadata['images']),
           ));
         } catch (e) {
           debugPrint('Error parsing message: $e, data: $data');
@@ -92,6 +105,28 @@ class ChatNotifier extends StateNotifier<List<Message>> {
         state = [];
       }
     }
+  }
+
+  Map<String, dynamic> _parseMessageMetadata(dynamic value) {
+    if (value is Map<String, dynamic>) return value;
+    if (value is Map) return Map<String, dynamic>.from(value);
+    if (value is String && value.trim().isNotEmpty) {
+      try {
+        final decoded = jsonDecode(value);
+        if (decoded is Map) return Map<String, dynamic>.from(decoded);
+      } catch (_) {
+        // Older rows may contain non-JSON metadata. Treat them as untagged.
+      }
+    }
+    return const <String, dynamic>{};
+  }
+
+  List<String> _stringList(dynamic value) {
+    if (value is! List) return const <String>[];
+    return value
+        .map((item) => item.toString())
+        .where((item) => item.isNotEmpty)
+        .toList();
   }
 
   void addAIMessage(String text) {
@@ -123,16 +158,16 @@ class ChatNotifier extends StateNotifier<List<Message>> {
     state = [...state, userMsg];
 
     // 2. Save user message to backend in background (non-blocking)
-      unawaited(
-        ref
-            .read(apiServiceProvider)
-            .saveChatMessage(
-              notebookId: null,
-              role: 'user',
-              content: text,
-            )
-            .catchError((_) => <String, dynamic>{}),
-      );
+    unawaited(
+      ref
+          .read(apiServiceProvider)
+          .saveChatMessage(
+            notebookId: null,
+            role: 'user',
+            content: text,
+          )
+          .catchError((_) => <String, dynamic>{}),
+    );
 
     // Use web browsing mode if enabled
     if (useWebBrowsing) {
@@ -295,7 +330,6 @@ class ChatNotifier extends StateNotifier<List<Message>> {
         webBrowsingStatus: update.status,
         webBrowsingScreenshots: screenshots,
         webBrowsingSources: update.sources,
-        isDeepSearch: true,
       );
 
       if (mounted) {
@@ -328,16 +362,19 @@ class ChatNotifier extends StateNotifier<List<Message>> {
       isUser: false,
       timestamp: DateTime.now(),
       isDeepSearch: true,
+      isWebBrowsing: true,
+      webBrowsingStatus: 'Starting deep research',
     );
     if (mounted) state = [...state, placeholder];
 
     try {
       await for (final update in ref.read(deepResearchServiceProvider).research(
-        query: query,
-        notebookId: '',
-        depth: ResearchDepth.standard,
-        template: ResearchTemplate.general,
-      )) {
+            query: query,
+            notebookId: '',
+            depth: ResearchDepth.standard,
+            template: ResearchTemplate.general,
+            owner: 'global-chat',
+          )) {
         if (!mounted) return;
         final sourceUrls = update.sources
                 ?.map((source) => source.url)
@@ -358,6 +395,11 @@ class ChatNotifier extends StateNotifier<List<Message>> {
             timestamp: DateTime.now(),
             isDeepSearch: true,
             isWebBrowsing: true,
+            webBrowsingStatus: update.error != null
+                ? 'Research failed'
+                : update.isComplete
+                    ? 'Research complete'
+                    : update.status,
             webBrowsingSources: sourceUrls,
             webBrowsingScreenshots: update.images ?? const <String>[],
           ),
@@ -365,14 +407,18 @@ class ChatNotifier extends StateNotifier<List<Message>> {
 
         if (update.isComplete) {
           if (update.error == null && update.result != null) {
-            unawaited(ref
-                .read(apiServiceProvider)
-                .saveChatMessage(
-                  notebookId: null,
-                  role: 'model',
-                  content: update.result!,
-                )
-                .catchError((_) => <String, dynamic>{}));
+            unawaited(ref.read(apiServiceProvider).saveChatMessage(
+              notebookId: null,
+              role: 'model',
+              content: update.result!,
+              metadata: {
+                'isDeepResearch': true,
+                'isWebBrowsing': true,
+                'researchStatus': 'Research complete',
+                'sources': sourceUrls,
+                'images': update.images ?? const <String>[],
+              },
+            ).catchError((_) => <String, dynamic>{}));
           }
           ref.invalidate(userSubscriptionProvider);
           return;
@@ -388,8 +434,88 @@ class ChatNotifier extends StateNotifier<List<Message>> {
           isUser: false,
           timestamp: DateTime.now(),
           isDeepSearch: true,
+          isWebBrowsing: true,
+          webBrowsingStatus: 'Research failed',
         ),
       ];
+    }
+  }
+
+  Future<void> _resumeDeepResearch() async {
+    try {
+      final service = ref.read(deepResearchServiceProvider);
+      final job = await service.getActiveJob('global-chat');
+      if (job == null || !mounted) return;
+
+      final placeholder = Message(
+        id: 'deep-research-${job.jobId}',
+        text: 'Reconnecting to background research...',
+        isUser: false,
+        timestamp: DateTime.now(),
+        isDeepSearch: true,
+        isWebBrowsing: true,
+        webBrowsingStatus: 'Reconnecting to background research',
+      );
+      state = [...state, placeholder];
+
+      await for (final update in service.resume(job)) {
+        if (!mounted) return;
+        final sourceUrls = update.sources
+                ?.map((source) => source.url)
+                .where((url) => url.isNotEmpty)
+                .toList() ??
+            const <String>[];
+        final text = update.error != null
+            ? '⚠️ **Deep Research Error**\n\n${update.error}'
+            : update.isComplete
+                ? (update.result ?? 'Research completed without a report.')
+                : '🔎 ${update.status}';
+        final replacement = Message(
+          id: placeholder.id,
+          text: text,
+          isUser: false,
+          timestamp: DateTime.now(),
+          isDeepSearch: true,
+          isWebBrowsing: true,
+          webBrowsingStatus: update.error != null
+              ? 'Research failed'
+              : update.isComplete
+                  ? 'Research complete'
+                  : update.status,
+          webBrowsingSources: sourceUrls,
+          webBrowsingScreenshots: update.images ?? const <String>[],
+        );
+        final index =
+            state.indexWhere((message) => message.id == placeholder.id);
+        if (index >= 0) {
+          final updated = [...state];
+          updated[index] = replacement;
+          state = updated;
+        } else {
+          state = [...state, replacement];
+        }
+
+        if (update.isComplete) {
+          if (update.error == null && update.result != null) {
+            unawaited(ref.read(apiServiceProvider).saveChatMessage(
+              notebookId: null,
+              role: 'model',
+              content: update.result!,
+              metadata: {
+                'isDeepResearch': true,
+                'isWebBrowsing': true,
+                'researchStatus': 'Research complete',
+                'sources': sourceUrls,
+                'images': update.images ?? const <String>[],
+              },
+            ).catchError((_) => <String, dynamic>{}));
+          }
+          ref.invalidate(userSubscriptionProvider);
+          return;
+        }
+      }
+    } catch (error) {
+      debugPrint('Could not resume deep research: $error');
     }
   }
 

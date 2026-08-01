@@ -144,6 +144,7 @@ class _NotebookChatScreenState extends ConsumerState<NotebookChatScreen> {
         );
       }
     }
+    await _resumeDeepResearchIfNeeded();
   }
 
   @override
@@ -326,6 +327,59 @@ class _NotebookChatScreenState extends ConsumerState<NotebookChatScreen> {
     }
   }
 
+  Future<void> _resumeDeepResearchIfNeeded() async {
+    final service = ref.read(deepResearchServiceProvider);
+    final job =
+        await service.getActiveJob('notebook-chat:${widget.notebookId}');
+    if (job == null || !mounted) return;
+
+    setState(
+        () => _webBrowsingStatus = 'Reconnecting to background research...');
+    await for (final update in service.resume(job)) {
+      if (!mounted) return;
+      setState(() {
+        _webBrowsingStatus = update.status;
+        for (final source in update.sources ?? const <ResearchSource>[]) {
+          if (!_webBrowsingSources.contains(source.url)) {
+            _webBrowsingSources.add(source.url);
+          }
+        }
+        for (final url in update.images ?? const <String>[]) {
+          if (!_webBrowsingScreenshots.contains(url)) {
+            _webBrowsingScreenshots.add(url);
+          }
+        }
+      });
+      _scrollToBottom();
+
+      if (update.isComplete && update.error != null) {
+        setState(() => _webBrowsingStatus = null);
+        return;
+      }
+      if (update.isComplete && update.result != null) {
+        await ref.read(apiServiceProvider).saveChatMessage(
+              role: 'model',
+              content: update.result!,
+              notebookId: widget.notebookId,
+            );
+        if (!mounted) return;
+        setState(() {
+          _messages.add(ChatMessage(
+            text: update.result!,
+            isUser: false,
+            timestamp: DateTime.now(),
+            isWebBrowsing: true,
+            webBrowsingScreenshots: List.from(_webBrowsingScreenshots),
+            webBrowsingSources: List.from(_webBrowsingSources),
+          ));
+          _webBrowsingStatus = null;
+        });
+        _scrollToBottom();
+        return;
+      }
+    }
+  }
+
   Future<void> _handleDeepResearch(String message) async {
     if (!mounted) return;
 
@@ -337,7 +391,8 @@ class _NotebookChatScreenState extends ConsumerState<NotebookChatScreen> {
           notebookId: widget.notebookId,
           depth: ResearchDepth.standard,
           template: ResearchTemplate.general,
-          useNotebookContext: true)) {
+          useNotebookContext: true,
+          owner: 'notebook-chat:${widget.notebookId}')) {
         if (!mounted) return;
 
         setState(() {
@@ -1109,17 +1164,13 @@ class _NotebookChatComposer extends ConsumerWidget {
     final currentModelName =
         currentAIModelDisplayName(availableModels, aiSettings?.model);
     final hasActiveTools = isWebBrowsingEnabled || isDeepResearchEnabled;
-    final accentColor =
-        isWebBrowsingEnabled ? Colors.orange : scheme.primary;
+    final accentColor = isWebBrowsingEnabled ? Colors.orange : scheme.primary;
     final canSend = !isLoading && controller.text.trim().isNotEmpty;
     final modelPrefix = (aiSettings?.model ?? '').trim().isEmpty
         ? 'Choose an AI model.'
         : 'AI: $currentModelName.';
-    final helperText = '$modelPrefix ${isWebBrowsingEnabled
-        ? 'Web browsing is on for the next message.'
-        : isDeepResearchEnabled
-            ? 'Deep research is on for the next message.'
-            : 'Open the tools menu to turn on web browsing or deep research.'}';
+    final helperText =
+        '$modelPrefix ${isWebBrowsingEnabled ? 'Web browsing is on for the next message.' : isDeepResearchEnabled ? 'Deep research is on for the next message.' : 'Open the tools menu to turn on web browsing or deep research.'}';
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 200),
@@ -1278,8 +1329,7 @@ class _NotebookChatComposer extends ConsumerWidget {
                     ),
                     border: InputBorder.none,
                     isCollapsed: true,
-                    contentPadding:
-                        const EdgeInsets.symmetric(vertical: 10),
+                    contentPadding: const EdgeInsets.symmetric(vertical: 10),
                   ),
                   minLines: 1,
                   maxLines: 5,
@@ -1299,20 +1349,16 @@ class _NotebookChatComposer extends ConsumerWidget {
                         : scheme.surface.withValues(alpha: 0.92),
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(
-                      color:
-                          (isVoiceListening ? scheme.error : scheme.outline)
-                              .withValues(alpha: 0.18),
+                      color: (isVoiceListening ? scheme.error : scheme.outline)
+                          .withValues(alpha: 0.18),
                     ),
                   ),
                   child: IconButton(
                     onPressed: isLoading ? null : onToggleVoiceInput,
-                    tooltip: isVoiceListening
-                        ? 'Stop voice input'
-                        : 'Voice input',
+                    tooltip:
+                        isVoiceListening ? 'Stop voice input' : 'Voice input',
                     icon: Icon(
-                      isVoiceListening
-                          ? Icons.stop
-                          : Icons.mic_none_rounded,
+                      isVoiceListening ? Icons.stop : Icons.mic_none_rounded,
                       color: isVoiceListening
                           ? scheme.error
                           : scheme.onSurface.withValues(alpha: 0.72),
@@ -1331,9 +1377,8 @@ class _NotebookChatComposer extends ConsumerWidget {
                             )
                           : AppTheme.premiumGradient)
                       : null,
-                  color: canSend
-                      ? null
-                      : scheme.surface.withValues(alpha: 0.85),
+                  color:
+                      canSend ? null : scheme.surface.withValues(alpha: 0.85),
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(
                     color: canSend

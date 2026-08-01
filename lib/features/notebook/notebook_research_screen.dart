@@ -47,6 +47,62 @@ class _NotebookResearchScreenState
   void initState() {
     super.initState();
     _searchController.addListener(_handleComposerChanged);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _resumeResearch();
+    });
+  }
+
+  Future<void> _resumeResearch() async {
+    final service = ref.read(deepResearchServiceProvider);
+    final job =
+        await service.getActiveJob('notebook-research:${widget.notebookId}');
+    if (job == null || !mounted) return;
+
+    setState(() {
+      _searchController.text = job.query;
+      _selectedDepth = job.depth;
+      _selectedTemplate = job.template;
+      _isResearching = true;
+      _researchUpdates = [];
+      _finalResult = null;
+      _searchedSites.clear();
+    });
+
+    service.resume(job).listen(
+      (update) {
+        if (!mounted) return;
+        setState(() {
+          _researchUpdates.add(update);
+          if (update.sources != null) {
+            for (final source in update.sources!) {
+              final domain = _extractDomain(source.url);
+              if (domain != null && !_searchedSites.contains(domain)) {
+                _searchedSites.add(domain);
+              }
+            }
+          }
+          if (update.result != null) {
+            _finalResult = update;
+          }
+          if (update.isComplete) {
+            _finalResult = update;
+            _isResearching = false;
+          }
+        });
+      },
+      onError: (Object error) {
+        if (!mounted) return;
+        setState(() {
+          _isResearching = false;
+          _finalResult = ResearchUpdate(
+            status: 'Research failed',
+            progress: 1,
+            isComplete: true,
+            error: error.toString(),
+          );
+        });
+      },
+    );
   }
 
   @override
@@ -278,6 +334,7 @@ class _NotebookResearchScreenState
           notebookId: widget.notebookId, // Save to THIS notebook
           depth: _selectedDepth,
           template: _selectedTemplate,
+          owner: 'notebook-research:${widget.notebookId}',
         )
         .listen(
       (update) {
