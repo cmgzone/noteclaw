@@ -926,7 +926,9 @@ export async function initializeDatabase() {
                     email, display_name, password_hash, email_verified, role, is_active
                  ) VALUES ($1, 'NoteClaw Admin', $2, TRUE, 'admin', TRUE)
                  ON CONFLICT (email) DO UPDATE
-                 SET role = 'admin',
+                 SET password_hash = EXCLUDED.password_hash,
+                     password_salt = NULL,
+                     role = 'admin',
                      email_verified = TRUE,
                      is_active = TRUE,
                      updated_at = NOW()`,
