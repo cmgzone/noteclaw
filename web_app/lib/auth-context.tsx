@@ -1,14 +1,14 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
-import api, { User } from "./api";
+import api, { SignupResponse, User } from "./api";
 
 interface AuthContextType {
     user: User | null;
     isLoading: boolean;
     isAuthenticated: boolean;
     login: (email: string, password: string, rememberMe?: boolean) => Promise<void>;
-    signup: (email: string, password: string, displayName?: string) => Promise<void>;
+    signup: (email: string, password: string, displayName?: string) => Promise<SignupResponse>;
     logout: () => void;
     refreshUser: () => Promise<void>;
 }
@@ -40,8 +40,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
 
     const signup = async (email: string, password: string, displayName?: string) => {
-        const { user } = await api.signup(email, password, displayName);
-        setUser(user);
+        const response = await api.signup(email, password, displayName);
+        if (!response.requiresEmailVerification && response.accessToken) {
+            setUser(response.user);
+        }
+        return response;
     };
 
     const logout = () => {

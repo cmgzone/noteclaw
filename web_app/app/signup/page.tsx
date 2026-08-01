@@ -28,7 +28,13 @@ export default function SignupPage() {
 
         setIsLoading(true);
         try {
-            await signup(email, password, displayName || undefined);
+            const result = await signup(email, password, displayName || undefined);
+            if (result.requiresEmailVerification) {
+                router.push(
+                    `/verify-email-required?email=${encodeURIComponent(email)}&sent=${result.verificationEmailSent === true}`,
+                );
+                return;
+            }
             const selectedPlan =
                 typeof window !== "undefined"
                     ? new URLSearchParams(window.location.search).get("plan")

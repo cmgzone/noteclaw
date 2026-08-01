@@ -25,6 +25,12 @@ export default function Settings() {
     const [resendReplyToEmail, setResendReplyToEmail] = useState('');
     const [publicAppUrl, setPublicAppUrl] = useState('');
     const [requireEmailVerification, setRequireEmailVerification] = useState(false);
+    const [emailStatus, setEmailStatus] = useState({
+        provider: 'none',
+        smtpConfigured: false,
+        resendConfigured: false,
+        publicAppUrlConfigured: false,
+    });
 
     useEffect(() => {
         fetchData();
@@ -33,7 +39,7 @@ export default function Settings() {
     const fetchData = async () => {
         setLoading(true);
         try {
-            const [keysResponse, settingsResponse] = await Promise.all([
+            const [keysResponse, settingsResponse, emailStatusResponse] = await Promise.all([
                 api.getApiKeys(),
                 api.getSettings([
                     'resend_from_email',
@@ -42,6 +48,7 @@ export default function Settings() {
                     'public_app_url',
                     'require_email_verification',
                 ]),
+                api.getEmailStatus(),
             ]);
             const nextSettings = settingsResponse.settings || {};
             setApiKeys(keysResponse.apiKeys || []);
@@ -52,6 +59,12 @@ export default function Settings() {
             setRequireEmailVerification(
                 String(nextSettings.require_email_verification || '').toLowerCase() === 'true',
             );
+            setEmailStatus(emailStatusResponse.status || {
+                provider: 'none',
+                smtpConfigured: false,
+                resendConfigured: false,
+                publicAppUrlConfigured: false,
+            });
         } catch (error) {
             console.error(error);
             alert('Failed to fetch settings');
@@ -166,11 +179,11 @@ export default function Settings() {
         }
     };
 
-    const saveResendConfiguration = async (e) => {
+    const saveEmailConfiguration = async (e) => {
         e.preventDefault();
 
         if (!resendFromEmail.trim()) {
-            alert('Resend from email is required');
+            alert('Sender email is required');
             return;
         }
 
@@ -201,18 +214,23 @@ export default function Settings() {
             await Promise.all(updates);
             setResendApiKey('');
             await fetchData();
-            alert('Resend configuration saved!');
+            alert('Email configuration saved!');
         } catch (error) {
             console.error(error);
-            alert('Failed to save Resend configuration: ' + error.message);
+            alert('Failed to save email configuration: ' + error.message);
         } finally {
             setSaving(false);
         }
     };
 
-    const resendApiKeyConfigured = apiKeys.some((key) => key.service_name === 'resend');
+    const resendApiKeyConfigured = emailStatus.resendConfigured || apiKeys.some((key) => key.service_name === 'resend');
     const resendSenderConfigured = resendFromEmail.trim().length > 0;
-    const resendLinkingConfigured = publicAppUrl.trim().length > 0;
+    const resendLinkingConfigured = emailStatus.publicAppUrlConfigured || publicAppUrl.trim().length > 0;
+    const activeEmailProvider = emailStatus.provider === 'smtp'
+        ? 'SMTP'
+        : emailStatus.provider === 'resend'
+            ? 'Resend'
+            : 'Not configured';
 
     if (loading) return (
         <div className="flex items-center justify-center h-64">
@@ -278,21 +296,24 @@ export default function Settings() {
                     </div>
                 )}
 
-                {/* Resend Configuration */}
-                <form onSubmit={saveResendConfiguration} className="bg-muted/50 p-4 rounded-md border border-border mb-6">
+                {/* Email Delivery Configuration */}
+                <form onSubmit={saveEmailConfiguration} className="bg-muted/50 p-4 rounded-md border border-border mb-6">
                     <div className="flex items-start justify-between gap-4 mb-4">
                         <div>
                             <h3 className="text-lg font-semibold flex items-center">
                                 <Mail className="mr-2 h-5 w-5" />
-                                Resend Email Configuration
+                                Email Delivery Configuration
                             </h3>
                             <p className="text-sm text-muted-foreground mt-1">
-                                Used for verification emails and password reset links.
+                                SMTP is used for verification emails and password reset links, with Resend available as an optional fallback.
                             </p>
                         </div>
                         <div className="text-right text-xs space-y-1">
-                            <p className={resendApiKeyConfigured ? 'text-green-600' : 'text-amber-600'}>
-                                {resendApiKeyConfigured ? 'API key configured' : 'API key missing'}
+                            <p className={emailStatus.provider !== 'none' ? 'text-green-600' : 'text-amber-600'}>
+                                Active provider: {activeEmailProvider}
+                            </p>
+                            <p className={emailStatus.smtpConfigured ? 'text-green-600' : 'text-muted-foreground'}>
+                                {emailStatus.smtpConfigured ? 'SMTP configured in hosting' : 'SMTP not configured'}
                             </p>
                             <p className={resendSenderConfigured ? 'text-green-600' : 'text-amber-600'}>
                                 {resendSenderConfigured ? 'Sender email configured' : 'Sender email missing'}
@@ -305,7 +326,7 @@ export default function Settings() {
 
                     <div className="grid gap-4 md:grid-cols-2">
                         <div className="md:col-span-2">
-                            <label className="block text-sm font-medium mb-1">Resend API Key</label>
+                            <label className="block text-sm font-medium mb-1">Resend API Key (optional fallback)</label>
                             <input
                                 type="password"
                                 className="w-full rounded-md border border-border bg-background p-2 font-mono text-sm"
@@ -314,7 +335,7 @@ export default function Settings() {
                                 onChange={(e) => setResendApiKey(e.target.value)}
                             />
                             <p className="mt-1 text-xs text-muted-foreground">
-                                The key is stored encrypted in the backend.
+                                SMTP credentials are managed as protected hosting variables. A Resend fallback key entered here is stored encrypted in the backend.
                             </p>
                         </div>
 
@@ -385,7 +406,7 @@ export default function Settings() {
                             className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
                         >
                             {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                            Save Resend Config
+                            Save Email Settings
                         </button>
                     </div>
                 </form>

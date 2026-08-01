@@ -313,6 +313,10 @@ class ApiService {
         return this.put('/admin/settings', { key, value });
     }
 
+    async getEmailStatus() {
+        return this.get('/admin/email-status');
+    }
+
     // ============ ADMIN - ONBOARDING ============
     async getOnboardingScreens() {
         return this.get('/admin/onboarding');

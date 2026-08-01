@@ -28,6 +28,7 @@ import {
     ensurePlanFeatureAccessReady,
     normalizePlanFeatureAccess,
 } from '../services/planFeatureService.js';
+import { getEmailDeliveryStatus } from '../services/emailService.js';
 
 const router = express.Router();
 const SUPPORTED_ADMIN_NOTIFICATION_TYPES = new Set<NotificationType>(['system']);
@@ -484,6 +485,16 @@ router.delete('/api-keys/:service', async (req: AuthRequest, res: Response) => {
 });
 
 // ==================== APP SETTINGS ====================
+
+router.get('/email-status', async (_req: AuthRequest, res: Response) => {
+    try {
+        const status = await getEmailDeliveryStatus();
+        res.json({ success: true, status });
+    } catch (error) {
+        console.error('Error fetching email delivery status:', error);
+        res.status(500).json({ error: 'Failed to fetch email delivery status' });
+    }
+});
 
 router.get('/settings', async (req: AuthRequest, res: Response) => {
     try {

@@ -1,10 +1,12 @@
 import axios from 'axios';
+import nodemailer from 'nodemailer';
 import pool from '../config/database.js';
 import { getAppSettingValue } from './appSettingsService.js';
 import { decryptSecretAllowLegacy } from './secretEncryptionService.js';
 
 const RESEND_API_URL = 'https://api.resend.com/emails';
 const DEFAULT_FROM_NAME = 'NoteClaw';
+const DEFAULT_SMTP_PORT = 587;
 
 const EMAIL_SETTING_KEYS = {
     fromEmail: 'resend_from_email',
@@ -21,6 +23,27 @@ type ResendConfig = {
     publicAppUrl: string;
 };
 
+type SmtpConfig = {
+    host: string;
+    port: number;
+    secure: boolean;
+    requireTls: boolean;
+    rejectUnauthorized: boolean;
+    tlsServername: string | null;
+    username: string;
+    password: string;
+    fromEmail: string;
+    fromName: string;
+    replyToEmail: string | null;
+};
+
+export type EmailDeliveryStatus = {
+    provider: 'smtp' | 'resend' | 'none';
+    smtpConfigured: boolean;
+    resendConfigured: boolean;
+    publicAppUrlConfigured: boolean;
+};
+
 type EmailPayload = {
     to: string;
     subject: string;
@@ -35,6 +58,22 @@ function normalizeOptionalValue(value: string | null | undefined): string | null
 
 function normalizeRequiredValue(value: string | null | undefined): string {
     return typeof value === 'string' ? value.trim() : '';
+}
+
+function parseBoolean(value: string | null | undefined, fallback: boolean): boolean {
+    const normalized = normalizeRequiredValue(value).toLowerCase();
+    if (!normalized) return fallback;
+    if (['true', '1', 'yes', 'on'].includes(normalized)) return true;
+    if (['false', '0', 'no', 'off'].includes(normalized)) return false;
+    return fallback;
+}
+
+function parseSmtpPort(value: string | null | undefined): number {
+    const parsed = Number.parseInt(normalizeRequiredValue(value), 10);
+    if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65535) {
+        return DEFAULT_SMTP_PORT;
+    }
+    return parsed;
 }
 
 function escapeHtml(value: string): string {
@@ -78,6 +117,62 @@ async function getStoredResendApiKey(): Promise<string | null> {
     }
 }
 
+async function getPublicAppUrl(): Promise<string> {
+    const storedPublicAppUrl = await getAppSettingValue(EMAIL_SETTING_KEYS.publicAppUrl);
+    return (
+        normalizeRequiredValue(storedPublicAppUrl) ||
+        normalizeRequiredValue(process.env.PUBLIC_APP_URL) ||
+        normalizeRequiredValue(process.env.WEB_APP_URL)
+    );
+}
+
+async function getSmtpConfig(): Promise<SmtpConfig | null> {
+    const [storedFromEmail, storedFromName, storedReplyToEmail] = await Promise.all([
+        getAppSettingValue(EMAIL_SETTING_KEYS.fromEmail),
+        getAppSettingValue(EMAIL_SETTING_KEYS.fromName),
+        getAppSettingValue(EMAIL_SETTING_KEYS.replyToEmail),
+    ]);
+
+    const host = normalizeRequiredValue(process.env.SMTP_HOST);
+    const port = parseSmtpPort(process.env.SMTP_PORT);
+    const username =
+        normalizeRequiredValue(process.env.SMTP_USERNAME) ||
+        normalizeRequiredValue(process.env.SMTP_USER);
+    const password = normalizeRequiredValue(process.env.SMTP_PASSWORD);
+    const fromEmail =
+        normalizeRequiredValue(process.env.SMTP_FROM_EMAIL) ||
+        normalizeRequiredValue(storedFromEmail) ||
+        username;
+    const fromName =
+        normalizeRequiredValue(process.env.SMTP_FROM_NAME) ||
+        normalizeRequiredValue(storedFromName) ||
+        DEFAULT_FROM_NAME;
+    const replyToEmail =
+        normalizeOptionalValue(process.env.SMTP_REPLY_TO_EMAIL) ||
+        normalizeOptionalValue(storedReplyToEmail);
+
+    if (!host || !username || !password || !fromEmail) {
+        return null;
+    }
+
+    return {
+        host,
+        port,
+        secure: parseBoolean(process.env.SMTP_SECURE, port === 465),
+        requireTls: parseBoolean(process.env.SMTP_REQUIRE_TLS, port !== 465),
+        rejectUnauthorized: parseBoolean(
+            process.env.SMTP_TLS_REJECT_UNAUTHORIZED,
+            true,
+        ),
+        tlsServername: normalizeOptionalValue(process.env.SMTP_TLS_SERVERNAME),
+        username,
+        password,
+        fromEmail,
+        fromName,
+        replyToEmail,
+    };
+}
+
 async function getResendConfig(): Promise<ResendConfig | null> {
     const [
         storedApiKey,
@@ -119,13 +214,10 @@ async function getResendConfig(): Promise<ResendConfig | null> {
     };
 }
 
-async function sendViaResend(payload: EmailPayload): Promise<boolean> {
-    const config = await getResendConfig();
-    if (!config) {
-        console.warn('[Email] Resend not configured; skipping email send.');
-        return false;
-    }
-
+async function sendViaResend(
+    payload: EmailPayload,
+    config: ResendConfig,
+): Promise<boolean> {
     const from = config.fromName
         ? `${config.fromName} <${config.fromEmail}>`
         : config.fromEmail;
@@ -154,6 +246,85 @@ async function sendViaResend(payload: EmailPayload): Promise<boolean> {
         console.error('[Email] Failed to send via Resend:', error);
         return false;
     }
+}
+
+async function sendViaSmtp(
+    payload: EmailPayload,
+    config: SmtpConfig,
+): Promise<boolean> {
+    const transporter = nodemailer.createTransport({
+        host: config.host,
+        port: config.port,
+        secure: config.secure,
+        requireTLS: config.requireTls,
+        auth: {
+            user: config.username,
+            pass: config.password,
+        },
+        tls: {
+            rejectUnauthorized: config.rejectUnauthorized,
+            ...(config.tlsServername ? { servername: config.tlsServername } : {}),
+        },
+        connectionTimeout: 15000,
+        greetingTimeout: 10000,
+        socketTimeout: 20000,
+    });
+
+    const from = config.fromName
+        ? `${config.fromName} <${config.fromEmail}>`
+        : config.fromEmail;
+
+    try {
+        await transporter.sendMail({
+            from,
+            to: payload.to,
+            subject: payload.subject,
+            html: payload.html,
+            text: payload.text,
+            ...(config.replyToEmail ? { replyTo: config.replyToEmail } : {}),
+        });
+        return true;
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`[Email] Failed to send via SMTP: ${message}`);
+        return false;
+    } finally {
+        transporter.close();
+    }
+}
+
+async function sendWithConfiguredProvider(payload: EmailPayload): Promise<boolean> {
+    const smtpConfig = await getSmtpConfig();
+    if (smtpConfig) {
+        const smtpSent = await sendViaSmtp(payload, smtpConfig);
+        if (smtpSent) {
+            return true;
+        }
+        console.warn('[Email] SMTP delivery failed; checking Resend fallback.');
+    }
+
+    const resendConfig = await getResendConfig();
+    if (resendConfig) {
+        return sendViaResend(payload, resendConfig);
+    }
+
+    console.warn('[Email] No configured email provider; skipping email send.');
+    return false;
+}
+
+export async function getEmailDeliveryStatus(): Promise<EmailDeliveryStatus> {
+    const [smtpConfig, resendConfig, publicAppUrl] = await Promise.all([
+        getSmtpConfig(),
+        getResendConfig(),
+        getPublicAppUrl(),
+    ]);
+
+    return {
+        provider: smtpConfig ? 'smtp' : resendConfig ? 'resend' : 'none',
+        smtpConfigured: smtpConfig !== null,
+        resendConfigured: resendConfig !== null,
+        publicAppUrlConfigured: publicAppUrl.length > 0,
+    };
 }
 
 function buildEmailShell({
@@ -216,13 +387,13 @@ export async function sendVerificationEmail(params: {
     displayName?: string | null;
     token: string;
 }): Promise<boolean> {
-    const config = await getResendConfig();
-    if (!config) {
-        console.warn('[Email] Verification email skipped because Resend is not configured.');
+    const publicAppUrl = await getPublicAppUrl();
+    if (!publicAppUrl) {
+        console.warn('[Email] Verification email skipped because the public app URL is not configured.');
         return false;
     }
 
-    const verificationUrl = joinUrl(config.publicAppUrl, `/verify-email/${encodeURIComponent(params.token)}`);
+    const verificationUrl = joinUrl(publicAppUrl, `/verify-email/${encodeURIComponent(params.token)}`);
     const greetingName = normalizeOptionalValue(params.displayName) || 'there';
     const body = buildEmailShell({
         preview: 'Confirm your NoteClaw email address.',
@@ -237,7 +408,7 @@ export async function sendVerificationEmail(params: {
         footnote: 'If you did not create a NoteClaw account, you can safely ignore this email.',
     });
 
-    return sendViaResend({
+    return sendWithConfiguredProvider({
         to: params.to,
         subject: 'Verify your NoteClaw email',
         html: body.html,
@@ -250,13 +421,13 @@ export async function sendPasswordResetEmail(params: {
     displayName?: string | null;
     token: string;
 }): Promise<boolean> {
-    const config = await getResendConfig();
-    if (!config) {
-        console.warn('[Email] Password reset email skipped because Resend is not configured.');
+    const publicAppUrl = await getPublicAppUrl();
+    if (!publicAppUrl) {
+        console.warn('[Email] Password reset email skipped because the public app URL is not configured.');
         return false;
     }
 
-    const resetUrl = joinUrl(config.publicAppUrl, `/password-reset/${encodeURIComponent(params.token)}`);
+    const resetUrl = joinUrl(publicAppUrl, `/password-reset/${encodeURIComponent(params.token)}`);
     const greetingName = normalizeOptionalValue(params.displayName) || 'there';
     const body = buildEmailShell({
         preview: 'Reset your NoteClaw password.',
@@ -271,7 +442,7 @@ export async function sendPasswordResetEmail(params: {
         footnote: 'If you did not request a password reset, you can ignore this email and your password will stay the same.',
     });
 
-    return sendViaResend({
+    return sendWithConfiguredProvider({
         to: params.to,
         subject: 'Reset your NoteClaw password',
         html: body.html,

@@ -148,7 +148,9 @@ export async function getBooleanAppSetting(
     settingKey: string,
     fallback = false,
 ): Promise<boolean> {
-    const value = (await getAppSettingValue(settingKey))?.trim().toLowerCase();
+    const storedValue = (await getAppSettingValue(settingKey))?.trim();
+    const environmentValue = process.env[settingKey.toUpperCase()]?.trim();
+    const value = (storedValue || environmentValue)?.toLowerCase();
     if (!value) {
         return fallback;
     }

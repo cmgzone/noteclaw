@@ -52,6 +52,16 @@ export interface Subscription {
     feature_access: PlanFeatureAccess;
 }
 
+export interface SignupResponse {
+    success?: boolean;
+    accessToken?: string;
+    refreshToken?: string;
+    user: User;
+    requiresEmailVerification?: boolean;
+    verificationEmailSent?: boolean;
+    message?: string;
+}
+
 export interface PlanFeatureAccess {
     memory_bank: boolean;
     notebook_chat: boolean;
@@ -354,7 +364,15 @@ class ApiService {
 
         if (!response.ok) {
             const error = await response.json().catch(() => ({ error: 'Request failed' }));
-            throw new Error(error.error || 'Request failed');
+            const requestError = new Error(error.error || 'Request failed') as Error & {
+                code?: string;
+                email?: string;
+                emailSent?: boolean;
+            };
+            requestError.code = error.code;
+            requestError.email = error.email;
+            requestError.emailSent = error.emailSent === true;
+            throw requestError;
         }
 
         return response.json();
@@ -403,12 +421,14 @@ class ApiService {
         return data;
     }
 
-    async signup(email: string, password: string, displayName?: string): Promise<{ accessToken: string; refreshToken: string; user: User }> {
-        const data = await this.fetch<{ accessToken: string; refreshToken: string; user: User }>('/auth/signup', {
+    async signup(email: string, password: string, displayName?: string): Promise<SignupResponse> {
+        const data = await this.fetch<SignupResponse>('/auth/signup', {
             method: 'POST',
             body: JSON.stringify({ email, password, displayName }),
         });
-        this.setTokens(data.accessToken, data.refreshToken);
+        if (data.accessToken && data.refreshToken) {
+            this.setTokens(data.accessToken, data.refreshToken);
+        }
         return data;
     }
 
@@ -432,6 +452,27 @@ class ApiService {
         return this.fetch('/auth/forgot-password', {
             method: 'POST',
             body: JSON.stringify({ email }),
+        });
+    }
+
+    async resetPassword(token: string, newPassword: string): Promise<{ success: boolean; message?: string }> {
+        return this.fetch('/auth/reset-password', {
+            method: 'POST',
+            body: JSON.stringify({ token, newPassword }),
+        });
+    }
+
+    async resendVerification(email: string): Promise<{ success: boolean; emailSent?: boolean; message?: string }> {
+        return this.fetch('/auth/resend-verification', {
+            method: 'POST',
+            body: JSON.stringify({ email }),
+        });
+    }
+
+    async verifyEmail(token: string): Promise<{ success: boolean; message?: string }> {
+        return this.fetch('/auth/verify-email', {
+            method: 'POST',
+            body: JSON.stringify({ token }),
         });
     }
 

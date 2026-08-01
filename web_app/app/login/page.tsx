@@ -25,6 +25,13 @@ export default function LoginPage() {
             await login(email, password, rememberMe);
             router.push("/dashboard");
         } catch (err: any) {
+            if (err?.code === "EMAIL_VERIFICATION_REQUIRED") {
+                const verificationEmail = err.email || email;
+                router.push(
+                    `/verify-email-required?email=${encodeURIComponent(verificationEmail)}&sent=${err.emailSent === true}`,
+                );
+                return;
+            }
             setError(err.message || "Login failed. Please check your credentials.");
         } finally {
             setIsLoading(false);
