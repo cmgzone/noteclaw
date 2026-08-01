@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { createElement, Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import {
     CheckCircle2,
     Clipboard,
     ExternalLink,
     Loader2,
-    Mail,
     RefreshCw,
     Save,
     Search,
@@ -21,6 +20,27 @@ function formatDate(value) {
     return new Date(value).toLocaleString();
 }
 
+function formatDay(value) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return 'Unknown date';
+    return date.toLocaleDateString(undefined, {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+    });
+}
+
+function formatTime(value) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return 'Unknown time';
+    return date.toLocaleTimeString(undefined, {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+    });
+}
+
 function isHttpsUrl(value) {
     try {
         return new URL(value).protocol === 'https:';
@@ -33,8 +53,10 @@ export default function PlayTesters() {
     const [testers, setTesters] = useState([]);
     const [total, setTotal] = useState(0);
     const [statusCounts, setStatusCounts] = useState({});
+    const [copyCounts, setCopyCounts] = useState({ copied: 0, uncopied: 0 });
     const [search, setSearch] = useState('');
     const [status, setStatus] = useState('');
+    const [copyFilter, setCopyFilter] = useState('uncopied');
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [busyId, setBusyId] = useState(null);
@@ -49,7 +71,13 @@ export default function PlayTesters() {
         setError('');
         try {
             const [testerResponse, settingsResponse] = await Promise.all([
-                api.getPlayTesters({ search, status }),
+                api.getPlayTesters({
+                    search,
+                    status,
+                    copied: copyFilter === 'copied'
+                        ? true
+                        : copyFilter === 'uncopied' ? false : '',
+                }),
                 api.getSettings([
                     'play_test_opt_in_url',
                     'play_test_group_url',
@@ -59,6 +87,7 @@ export default function PlayTesters() {
             setTesters(testerResponse.testers || []);
             setTotal(testerResponse.total || 0);
             setStatusCounts(testerResponse.statusCounts || {});
+            setCopyCounts(testerResponse.copyCounts || { copied: 0, uncopied: 0 });
             const settings = settingsResponse.settings || {};
             setOptInUrl(settings.play_test_opt_in_url || DEFAULT_OPT_IN_URL);
             setGroupUrl(settings.play_test_group_url || '');
@@ -68,17 +97,31 @@ export default function PlayTesters() {
         } finally {
             setLoading(false);
         }
-    }, [search, status]);
+    }, [copyFilter, search, status]);
 
     useEffect(() => {
         const timer = setTimeout(loadData, 250);
         return () => clearTimeout(timer);
     }, [loadData]);
 
-    const testerEmails = useMemo(
-        () => testers.map((tester) => tester.email).join('\n'),
+    const uncopiedTesters = useMemo(
+        () => testers.filter((tester) => !tester.copiedToPlay),
         [testers],
     );
+
+    const groupedTesters = useMemo(() => {
+        const groups = [];
+        testers.forEach((tester) => {
+            const key = new Date(tester.joinedAt).toDateString();
+            const currentGroup = groups[groups.length - 1];
+            if (!currentGroup || currentGroup.key !== key) {
+                groups.push({ key, label: formatDay(tester.joinedAt), testers: [tester] });
+            } else {
+                currentGroup.testers.push(tester);
+            }
+        });
+        return groups;
+    }, [testers]);
 
     const saveSettings = async (event) => {
         event.preventDefault();
@@ -109,13 +152,53 @@ export default function PlayTesters() {
     };
 
     const copyEmails = async () => {
-        if (!testerEmails) return;
-        await navigator.clipboard.writeText(testerEmails);
-        setMessage(`Copied ${testers.length} tester email${testers.length === 1 ? '' : 's'} for the Play Console list.`);
+        if (!uncopiedTesters.length) return;
+        setBusyId('group-copy');
+        setError('');
+        setMessage('');
+        let copiedToClipboard = false;
+        try {
+            await navigator.clipboard.writeText(
+                uncopiedTesters.map((tester) => tester.email).join('\n'),
+            );
+            copiedToClipboard = true;
+            const response = await api.markPlayTestersCopied(
+                uncopiedTesters.map((tester) => tester.id),
+                'group',
+            );
+            setMessage(`Copied and marked ${response.updated} tester email${response.updated === 1 ? '' : 's'} as one Play Console batch.`);
+            await loadData();
+        } catch (copyError) {
+            setError(copiedToClipboard
+                ? 'The emails were copied, but they could not be marked as copied. Please try again.'
+                : copyError.message || 'Failed to copy tester emails');
+        } finally {
+            setBusyId(null);
+        }
+    };
+
+    const copyOneEmail = async (tester) => {
+        setBusyId(`copy:${tester.id}`);
+        setError('');
+        setMessage('');
+        let copiedToClipboard = false;
+        try {
+            await navigator.clipboard.writeText(tester.email);
+            copiedToClipboard = true;
+            await api.markPlayTestersCopied([tester.id], 'individual');
+            setMessage(`Copied ${tester.email} and marked it as individually copied.`);
+            await loadData();
+        } catch (copyError) {
+            setError(copiedToClipboard
+                ? 'The email was copied, but it could not be marked as copied. Please try again.'
+                : copyError.message || 'Failed to copy tester email');
+        } finally {
+            setBusyId(null);
+        }
     };
 
     const changeStatus = async (tester, nextStatus) => {
-        setBusyId(tester.id);
+        setBusyId(`status:${tester.id}`);
         setError('');
         try {
             const response = await api.updatePlayTester(tester.id, nextStatus, tester.notes);
@@ -131,7 +214,7 @@ export default function PlayTesters() {
     };
 
     const resendInvite = async (tester) => {
-        setBusyId(tester.id);
+        setBusyId(`resend:${tester.id}`);
         setError('');
         setMessage('');
         try {
@@ -174,10 +257,11 @@ export default function PlayTesters() {
                 </div>
             )}
 
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
                 {[
-                    ['Total signups', total, Users],
-                    ['Invited', statusCounts.invited || 0, Mail],
+                    ['Total signups', copyCounts.copied + copyCounts.uncopied, Users],
+                    ['Not copied', copyCounts.uncopied, Clipboard],
+                    ['Copied', copyCounts.copied, CheckCircle2],
                     ['Authorized', statusCounts.authorized || 0, CheckCircle2],
                     ['Active testers', statusCounts.active || 0, Smartphone],
                 ].map(([label, value, Icon]) => (
@@ -187,7 +271,7 @@ export default function PlayTesters() {
                                 <p className="text-sm text-gray-500">{label}</p>
                                 <p className="mt-1 text-2xl font-bold text-gray-900">{value}</p>
                             </div>
-                            <Icon className="h-6 w-6 text-emerald-600" />
+                            {createElement(Icon, { className: 'h-6 w-6 text-emerald-600' })}
                         </div>
                     </div>
                 ))}
@@ -262,16 +346,31 @@ export default function PlayTesters() {
                             <option value="">All statuses</option>
                             {STATUSES.map((value) => <option key={value} value={value}>{value}</option>)}
                         </select>
+                        <select
+                            value={copyFilter}
+                            onChange={(event) => setCopyFilter(event.target.value)}
+                            className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none"
+                        >
+                            <option value="uncopied">Not copied</option>
+                            <option value="copied">Copied</option>
+                            <option value="all">All copy states</option>
+                        </select>
                     </div>
                     <button
                         type="button"
                         onClick={copyEmails}
-                        disabled={!testers.length}
+                        disabled={!uncopiedTesters.length || busyId === 'group-copy'}
                         className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                     >
-                        <Clipboard className="h-4 w-4" />
-                        Copy emails for Play Console
+                        {busyId === 'group-copy'
+                            ? <Loader2 className="h-4 w-4 animate-spin" />
+                            : <Clipboard className="h-4 w-4" />}
+                        Copy {uncopiedTesters.length} uncopied email{uncopiedTesters.length === 1 ? '' : 's'}
                     </button>
+                </div>
+
+                <div className="border-b border-gray-100 bg-gray-50 px-5 py-3 text-xs text-gray-500">
+                    Showing {testers.length} of {total} matching signup{total === 1 ? '' : 's'}. Times use your browser&apos;s local time.
                 </div>
 
                 {loading ? (
@@ -285,46 +384,87 @@ export default function PlayTesters() {
                         <table className="min-w-full divide-y divide-gray-200">
                             <thead className="bg-gray-50">
                                 <tr>
-                                    {['Tester', 'Joined', 'Invite email', 'Play status', 'Actions'].map((heading) => (
+                                    {['Tester', 'Time joined', 'Invite email', 'Copy status', 'Play status', 'Actions'].map((heading) => (
                                         <th key={heading} className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">{heading}</th>
                                     ))}
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100 bg-white">
-                                {testers.map((tester) => (
-                                    <tr key={tester.id}>
-                                        <td className="px-5 py-4">
-                                            <div className="font-medium text-gray-900">{tester.displayName || 'Unnamed tester'}</div>
-                                            <div className="text-sm text-gray-500">{tester.email}</div>
-                                        </td>
-                                        <td className="whitespace-nowrap px-5 py-4 text-sm text-gray-600">{formatDate(tester.joinedAt)}</td>
-                                        <td className="whitespace-nowrap px-5 py-4 text-sm">
-                                            <span className={tester.inviteEmailSent ? 'text-emerald-700' : 'text-amber-700'}>
-                                                {tester.inviteEmailSent ? `Sent ${formatDate(tester.inviteEmailSentAt)}` : 'Not delivered'}
-                                            </span>
-                                        </td>
-                                        <td className="px-5 py-4">
-                                            <select
-                                                value={tester.status}
-                                                disabled={busyId === tester.id}
-                                                onChange={(event) => changeStatus(tester, event.target.value)}
-                                                className="rounded-lg border border-gray-300 px-2 py-1.5 text-sm capitalize focus:border-emerald-500 focus:outline-none"
-                                            >
-                                                {STATUSES.map((value) => <option key={value} value={value}>{value}</option>)}
-                                            </select>
-                                        </td>
-                                        <td className="px-5 py-4">
-                                            <button
-                                                type="button"
-                                                onClick={() => resendInvite(tester)}
-                                                disabled={busyId === tester.id}
-                                                className="inline-flex items-center gap-1.5 text-sm font-medium text-emerald-700 hover:text-emerald-900 disabled:opacity-50"
-                                            >
-                                                {busyId === tester.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                                                Resend
-                                            </button>
-                                        </td>
-                                    </tr>
+                                {groupedTesters.map((group) => (
+                                    <Fragment key={group.key}>
+                                        <tr className="bg-emerald-50/70">
+                                            <td colSpan={6} className="px-5 py-3 text-sm font-semibold text-emerald-900">
+                                                {group.label}
+                                                <span className="ml-2 font-normal text-emerald-700">
+                                                    {group.testers.length} signup{group.testers.length === 1 ? '' : 's'}
+                                                </span>
+                                            </td>
+                                        </tr>
+                                        {group.testers.map((tester) => (
+                                            <tr key={tester.id}>
+                                                <td className="px-5 py-4">
+                                                    <div className="font-medium text-gray-900">{tester.displayName || 'Unnamed tester'}</div>
+                                                    <div className="text-sm text-gray-500">{tester.email}</div>
+                                                </td>
+                                                <td className="whitespace-nowrap px-5 py-4 text-sm text-gray-600">{formatTime(tester.joinedAt)}</td>
+                                                <td className="whitespace-nowrap px-5 py-4 text-sm">
+                                                    <span className={tester.inviteEmailSent ? 'text-emerald-700' : 'text-amber-700'}>
+                                                        {tester.inviteEmailSent ? `Sent ${formatDate(tester.inviteEmailSentAt)}` : 'Not delivered'}
+                                                    </span>
+                                                </td>
+                                                <td className="whitespace-nowrap px-5 py-4 text-sm">
+                                                    {tester.copiedToPlay ? (
+                                                        <div>
+                                                            <span className="inline-flex rounded-full bg-emerald-100 px-2 py-1 text-xs font-semibold capitalize text-emerald-800">
+                                                                Copied {tester.copyMode || ''}
+                                                            </span>
+                                                            <div className="mt-1 text-xs text-gray-500">{formatDate(tester.copiedAt)}</div>
+                                                        </div>
+                                                    ) : (
+                                                        <span className="inline-flex rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-800">
+                                                            Not copied
+                                                        </span>
+                                                    )}
+                                                </td>
+                                                <td className="px-5 py-4">
+                                                    <select
+                                                        value={tester.status}
+                                                        disabled={busyId?.endsWith(tester.id)}
+                                                        onChange={(event) => changeStatus(tester, event.target.value)}
+                                                        className="rounded-lg border border-gray-300 px-2 py-1.5 text-sm capitalize focus:border-emerald-500 focus:outline-none"
+                                                    >
+                                                        {STATUSES.map((value) => <option key={value} value={value}>{value}</option>)}
+                                                    </select>
+                                                </td>
+                                                <td className="px-5 py-4">
+                                                    <div className="flex items-center gap-4">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => copyOneEmail(tester)}
+                                                            disabled={busyId?.endsWith(tester.id)}
+                                                            className="inline-flex items-center gap-1.5 text-sm font-medium text-gray-700 hover:text-gray-900 disabled:opacity-50"
+                                                        >
+                                                            {busyId === `copy:${tester.id}`
+                                                                ? <Loader2 className="h-4 w-4 animate-spin" />
+                                                                : <Clipboard className="h-4 w-4" />}
+                                                            {tester.copiedToPlay ? 'Copy again' : 'Copy'}
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => resendInvite(tester)}
+                                                            disabled={busyId?.endsWith(tester.id)}
+                                                            className="inline-flex items-center gap-1.5 text-sm font-medium text-emerald-700 hover:text-emerald-900 disabled:opacity-50"
+                                                        >
+                                                            {busyId === `resend:${tester.id}`
+                                                                ? <Loader2 className="h-4 w-4 animate-spin" />
+                                                                : <RefreshCw className="h-4 w-4" />}
+                                                            Resend
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </Fragment>
                                 ))}
                             </tbody>
                         </table>

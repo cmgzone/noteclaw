@@ -318,14 +318,19 @@ class ApiService {
     }
 
     // ============ ADMIN - PLAY TESTERS ============
-    async getPlayTesters({ search = '', status = '', limit = 500, offset = 0 } = {}) {
+    async getPlayTesters({ search = '', status = '', copied = '', limit = 500, offset = 0 } = {}) {
         const params = new URLSearchParams({
             limit: String(limit),
             offset: String(offset),
         });
         if (search.trim()) params.set('search', search.trim());
         if (status) params.set('status', status);
+        if (copied !== '') params.set('copied', String(copied));
         return this.get(`/admin/play-testers?${params.toString()}`);
+    }
+
+    async markPlayTestersCopied(ids, mode) {
+        return this.post('/admin/play-testers/mark-copied', { ids, mode });
     }
 
     async updatePlayTester(id, status, notes) {

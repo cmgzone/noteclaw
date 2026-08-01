@@ -12,6 +12,7 @@ export const PLAY_TESTER_STATUSES = [
 ] as const;
 
 export type PlayTesterStatus = typeof PLAY_TESTER_STATUSES[number];
+export type PlayTesterCopyMode = 'group' | 'individual';
 
 type PlayTesterRow = {
     id: string;
@@ -23,6 +24,10 @@ type PlayTesterRow = {
     joined_at: Date | string;
     last_requested_at: Date | string;
     request_count: number;
+    copied_to_play: boolean;
+    copied_at: Date | string | null;
+    copy_mode: PlayTesterCopyMode | null;
+    copy_batch_id: string | null;
     notes: string | null;
     updated_at: Date | string;
 };
@@ -37,6 +42,10 @@ export type PlayTester = {
     joinedAt: Date | string;
     lastRequestedAt: Date | string;
     requestCount: number;
+    copiedToPlay: boolean;
+    copiedAt: Date | string | null;
+    copyMode: PlayTesterCopyMode | null;
+    copyBatchId: string | null;
     notes: string | null;
     updatedAt: Date | string;
 };
@@ -60,6 +69,10 @@ function mapPlayTester(row: PlayTesterRow): PlayTester {
         joinedAt: row.joined_at,
         lastRequestedAt: row.last_requested_at,
         requestCount: Number(row.request_count || 0),
+        copiedToPlay: row.copied_to_play,
+        copiedAt: row.copied_at,
+        copyMode: row.copy_mode,
+        copyBatchId: row.copy_batch_id,
         notes: row.notes,
         updatedAt: row.updated_at,
     };
@@ -95,9 +108,20 @@ export function ensurePlayTesterTable(): Promise<void> {
                     joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                     last_requested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                     request_count INTEGER NOT NULL DEFAULT 1,
+                    copied_to_play BOOLEAN NOT NULL DEFAULT FALSE,
+                    copied_at TIMESTAMPTZ,
+                    copy_mode TEXT,
+                    copy_batch_id UUID,
                     notes TEXT,
                     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 )
+            `);
+            await pool.query(`
+                ALTER TABLE play_testers
+                    ADD COLUMN IF NOT EXISTS copied_to_play BOOLEAN NOT NULL DEFAULT FALSE,
+                    ADD COLUMN IF NOT EXISTS copied_at TIMESTAMPTZ,
+                    ADD COLUMN IF NOT EXISTS copy_mode TEXT,
+                    ADD COLUMN IF NOT EXISTS copy_batch_id UUID
             `);
             await pool.query(`
                 CREATE UNIQUE INDEX IF NOT EXISTS play_testers_email_lower_unique
@@ -198,9 +222,15 @@ export async function getPlayTesterById(testerId: string): Promise<PlayTester | 
 export async function listPlayTesters(params: {
     search?: string;
     status?: PlayTesterStatus | null;
+    copied?: boolean | null;
     limit?: number;
     offset?: number;
-}): Promise<{ testers: PlayTester[]; total: number; statusCounts: Record<string, number> }> {
+}): Promise<{
+    testers: PlayTester[];
+    total: number;
+    statusCounts: Record<string, number>;
+    copyCounts: { copied: number; uncopied: number };
+}> {
     await ensurePlayTesterTable();
 
     const search = params.search?.trim() || '';
@@ -215,13 +245,17 @@ export async function listPlayTesters(params: {
         values.push(params.status);
         clauses.push(`status = $${values.length}`);
     }
+    if (typeof params.copied === 'boolean') {
+        values.push(params.copied);
+        clauses.push(`copied_to_play = $${values.length}`);
+    }
 
     const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
     const limit = Math.min(Math.max(params.limit || 100, 1), 500);
     const offset = Math.max(params.offset || 0, 0);
     values.push(limit, offset);
 
-    const [rows, count, statusCounts] = await Promise.all([
+    const [rows, count, statusCounts, copyCounts] = await Promise.all([
         pool.query<PlayTesterRow>(
             `SELECT * FROM play_testers
              ${where}
@@ -238,6 +272,12 @@ export async function listPlayTesters(params: {
              FROM play_testers
              GROUP BY status`,
         ),
+        pool.query<{ copied: string; uncopied: string }>(`
+            SELECT
+                COUNT(*) FILTER (WHERE copied_to_play)::text AS copied,
+                COUNT(*) FILTER (WHERE NOT copied_to_play)::text AS uncopied
+            FROM play_testers
+        `),
     ]);
 
     return {
@@ -246,7 +286,33 @@ export async function listPlayTesters(params: {
         statusCounts: Object.fromEntries(
             statusCounts.rows.map((row) => [row.status, Number(row.count || 0)]),
         ),
+        copyCounts: {
+            copied: Number(copyCounts.rows[0]?.copied || 0),
+            uncopied: Number(copyCounts.rows[0]?.uncopied || 0),
+        },
     };
+}
+
+export async function markPlayTestersCopied(params: {
+    ids: string[];
+    mode: PlayTesterCopyMode;
+}): Promise<{ updated: number; batchId: string }> {
+    await ensurePlayTesterTable();
+
+    const batchId = crypto.randomUUID();
+    const result = await pool.query<{ id: string }>(
+        `UPDATE play_testers
+         SET copied_to_play = TRUE,
+             copied_at = NOW(),
+             copy_mode = $2,
+             copy_batch_id = $3,
+             updated_at = NOW()
+         WHERE id = ANY($1::uuid[])
+         RETURNING id`,
+        [params.ids, params.mode, batchId],
+    );
+
+    return { updated: result.rowCount || 0, batchId };
 }
 
 export async function updatePlayTester(params: {

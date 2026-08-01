@@ -38,6 +38,7 @@ import {
     getPlayTestingSettings,
     isPlayTesterStatus,
     listPlayTesters,
+    markPlayTestersCopied,
     markPlayTesterInviteSent,
     updatePlayTester,
 } from '../services/playTesterService.js';
@@ -513,13 +514,36 @@ router.get('/play-testers', async (req: AuthRequest, res: Response) => {
         const search = typeof req.query.search === 'string' ? req.query.search : '';
         const rawStatus = typeof req.query.status === 'string' ? req.query.status : '';
         const status = rawStatus && isPlayTesterStatus(rawStatus) ? rawStatus : null;
+        const rawCopied = typeof req.query.copied === 'string' ? req.query.copied : '';
+        const copied = rawCopied === 'true' ? true : rawCopied === 'false' ? false : null;
         const limit = Number.parseInt(String(req.query.limit || '100'), 10);
         const offset = Number.parseInt(String(req.query.offset || '0'), 10);
-        const result = await listPlayTesters({ search, status, limit, offset });
+        const result = await listPlayTesters({ search, status, copied, limit, offset });
         res.json({ success: true, ...result });
     } catch (error) {
         console.error('Error fetching Play testers:', error);
         res.status(500).json({ error: 'Failed to fetch Play testers' });
+    }
+});
+
+router.post('/play-testers/mark-copied', async (req: AuthRequest, res: Response) => {
+    try {
+        const ids = parseBulkIds(req.body?.ids, 500);
+        const mode = req.body?.mode;
+        const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+        if (!ids || !ids.every((id) => uuidPattern.test(id))) {
+            return res.status(400).json({ error: 'One or more tester IDs are invalid' });
+        }
+        if (mode !== 'group' && mode !== 'individual') {
+            return res.status(400).json({ error: 'Copy mode must be group or individual' });
+        }
+
+        const result = await markPlayTestersCopied({ ids, mode });
+        res.json({ success: true, ...result });
+    } catch (error) {
+        console.error('Error marking Play tester emails as copied:', error);
+        res.status(500).json({ error: 'Failed to mark tester emails as copied' });
     }
 });
 
