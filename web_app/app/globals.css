@@ -211,6 +211,29 @@ a {
   animation: typing 1.2s ease-in-out infinite;
 }
 
+.showcase-scroll {
+  scrollbar-color: rgba(95, 212, 196, 0.35) transparent;
+  scrollbar-width: thin;
+  scroll-snap-type: x proximity;
+}
+
+.showcase-scroll figure {
+  scroll-snap-align: start;
+}
+
+.showcase-scroll::-webkit-scrollbar {
+  height: 6px;
+}
+
+.showcase-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.showcase-scroll::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(95, 212, 196, 0.3);
+}
+
 @media (max-width: 640px) {
   .site-grid {
     background-size: 38px 38px;

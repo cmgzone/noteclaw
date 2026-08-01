@@ -59,6 +59,45 @@ const AGENTS: Agent[] = [
   { name: "OpenClaw", by: "Autonomous", transport: "Full memory stack", hue: "#5fd4c4", d: OPENCLAW_D },
 ];
 
+const APP_SCREENS = [
+  {
+    src: "/screenshots/app-memory.png",
+    eyebrow: "01 / MEMORY",
+    title: "Memory bank",
+    alt: "NoteClaw Android app showing pinned notebooks and shared agent memories",
+  },
+  {
+    src: "/screenshots/app-agents.png",
+    eyebrow: "02 / AGENTS",
+    title: "Connected agents",
+    alt: "NoteClaw Android app showing live MCP agent connections and shared sessions",
+  },
+  {
+    src: "/screenshots/app-chat.png",
+    eyebrow: "03 / CHAT",
+    title: "Shared memory chat",
+    alt: "NoteClaw Android app showing a conversation with a coding agent",
+  },
+  {
+    src: "/screenshots/app-mission-control.png",
+    eyebrow: "04 / PLAN",
+    title: "Mission control",
+    alt: "NoteClaw Android app showing a synchronized project mission-control workspace",
+  },
+  {
+    src: "/screenshots/app-fact-check.png",
+    eyebrow: "05 / VERIFY",
+    title: "Fact checking",
+    alt: "NoteClaw Android app showing the evidence-backed fact verification workspace",
+  },
+  {
+    src: "/screenshots/app-code-review.png",
+    eyebrow: "06 / REVIEW",
+    title: "Code review",
+    alt: "NoteClaw Android app showing the multi-lens code review console",
+  },
+] as const;
+
 function AgentIcon({ d, className, style }: { d: string; className?: string; style?: React.CSSProperties }) {
   return (
     <svg viewBox="0 0 24 24" className={className} style={style} fill="currentColor" aria-hidden="true">
@@ -100,6 +139,7 @@ export default function LandingPage() {
       <div className="relative z-10">
         <Hero />
         <AgentMarquee />
+        <ProductShowcase />
         <MemoryBento />
         <SetupTerminal />
         <FinalCta />
@@ -463,6 +503,85 @@ function AgentMarquee() {
           </div>
         </div>
       </Reveal>
+    </section>
+  );
+}
+
+function ProductShowcase() {
+  return (
+    <section id="product" className="relative px-4 py-24 sm:px-6 lg:px-8">
+      <div className="wash left-[-18rem] top-1/4 h-[34rem] w-[34rem] bg-vio/[0.08]" aria-hidden="true" />
+      <div className="wash right-[-16rem] bottom-0 h-[32rem] w-[32rem] bg-teal/[0.08]" aria-hidden="true" />
+
+      <div className="mx-auto max-w-7xl">
+        <Reveal className="flex flex-col justify-between gap-6 lg:flex-row lg:items-end">
+          <div className="max-w-3xl">
+            <div className="inline-flex items-center gap-2 rounded-full border border-mint/25 bg-mint/[0.06] px-3 py-1.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-mint" />
+              <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-mint">
+                Real app · captured on Android
+              </span>
+            </div>
+            <h2 className="mt-5 font-display text-[clamp(2.4rem,5vw,4.5rem)] font-bold leading-[1.03] tracking-[-0.045em] text-balance">
+              One command center.
+              <span className="block text-sky">Every part of the work.</span>
+            </h2>
+          </div>
+          <p className="max-w-md text-sm leading-7 text-mut sm:text-base">
+            Capture durable memory, talk to connected agents, steer projects,
+            verify claims, and review code from the same private workspace.
+          </p>
+        </Reveal>
+
+        <Reveal delay={0.1}>
+          <div className="relative mt-12 overflow-hidden rounded-[32px] border border-line/90 bg-[#07101f] shadow-[0_40px_100px_-55px_rgba(95,212,196,0.45)]">
+            <Image
+              src="/app-showcase-bg.png"
+              alt=""
+              fill
+              sizes="(max-width: 1280px) 100vw, 1280px"
+              className="object-cover opacity-80"
+            />
+            <div
+              className="absolute inset-0 bg-[linear-gradient(180deg,rgba(5,10,22,0.12),rgba(5,10,22,0.5))]"
+              aria-hidden="true"
+            />
+
+            <div className="showcase-scroll relative overflow-x-auto px-5 pb-7 pt-8 sm:px-8 sm:pb-9 sm:pt-10">
+              <div className="flex w-max items-start gap-5 pr-5 sm:gap-7 sm:pr-8">
+                {APP_SCREENS.map((screen, index) => (
+                  <figure
+                    key={screen.src}
+                    className={`group w-[184px] shrink-0 sm:w-[230px] ${index % 2 ? "pt-10" : ""}`}
+                  >
+                    <figcaption className="mb-3 px-1">
+                      <p className="font-mono text-[9px] tracking-[0.18em] text-teal/80">
+                        {screen.eyebrow}
+                      </p>
+                      <p className="mt-1 text-sm font-semibold text-fg/90">{screen.title}</p>
+                    </figcaption>
+                    <div className="rounded-[26px] border border-white/15 bg-[#020611] p-1.5 shadow-[0_26px_70px_-28px_rgba(0,0,0,0.95)] transition duration-500 group-hover:-translate-y-1.5 group-hover:border-teal/35 group-hover:shadow-[0_30px_80px_-30px_rgba(95,212,196,0.4)]">
+                      <Image
+                        src={screen.src}
+                        alt={screen.alt}
+                        width={720}
+                        height={1600}
+                        sizes="(max-width: 640px) 184px, 230px"
+                        className="h-auto w-full rounded-[20px]"
+                      />
+                    </div>
+                  </figure>
+                ))}
+              </div>
+            </div>
+
+            <div className="relative flex items-center justify-between border-t border-white/[0.07] px-5 py-3 font-mono text-[9px] uppercase tracking-[0.17em] text-dim sm:px-8">
+              <span>Swipe or scroll to explore</span>
+              <span className="text-mint">6 live workspaces</span>
+            </div>
+          </div>
+        </Reveal>
+      </div>
     </section>
   );
 }
