@@ -43,6 +43,7 @@ ersAdminDocumentsfinish productnoteclaw*
 
 # Local export artifacts
 NOTBOOK_LLM_Project.zip
+/output/pdf/NoteClaw-signing-key-recovery-*.pdf
 
 .idea/
 .vscode/
