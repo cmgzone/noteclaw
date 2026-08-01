@@ -1556,26 +1556,63 @@ class _ConnectionCard extends StatelessWidget {
                   color: scheme.surfaceContainerHighest.withValues(alpha: 0.45),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: Row(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const Expanded(
-                      child: SelectableText(
-                        'npx -y @noteclaw/mcp-server',
-                        style: TextStyle(
-                          fontFamily: 'monospace',
-                          fontSize: 12,
-                        ),
-                      ),
+                    const Text(
+                      'Windows PowerShell',
+                      style:
+                          TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
                     ),
-                    IconButton(
-                      onPressed: () => _copy(
-                        context,
-                        'npx -y @noteclaw/mcp-server',
-                        'Local MCP command',
-                      ),
-                      tooltip: 'Copy local command',
-                      visualDensity: VisualDensity.compact,
-                      icon: const Icon(LucideIcons.copy, size: 17),
+                    Row(
+                      children: [
+                        const Expanded(
+                            child: SelectableText(
+                          'irm ${EnvConfig.productionBackendUrl}/api/mcp/install.ps1 | iex',
+                          style: TextStyle(
+                            fontFamily: 'monospace',
+                            fontSize: 12,
+                          ),
+                        )),
+                        IconButton(
+                          onPressed: () => _copy(
+                            context,
+                            'irm ${EnvConfig.productionBackendUrl}/api/mcp/install.ps1 | iex',
+                            'Windows MCP installer',
+                          ),
+                          tooltip: 'Copy Windows installer',
+                          visualDensity: VisualDensity.compact,
+                          icon: const Icon(LucideIcons.copy, size: 17),
+                        ),
+                      ],
+                    ),
+                    const Divider(height: 18),
+                    const Text(
+                      'macOS / Linux',
+                      style:
+                          TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+                    ),
+                    Row(
+                      children: [
+                        const Expanded(
+                            child: SelectableText(
+                          'curl -fsSL ${EnvConfig.productionBackendUrl}/api/mcp/install.sh | bash',
+                          style: TextStyle(
+                            fontFamily: 'monospace',
+                            fontSize: 12,
+                          ),
+                        )),
+                        IconButton(
+                          onPressed: () => _copy(
+                            context,
+                            'curl -fsSL ${EnvConfig.productionBackendUrl}/api/mcp/install.sh | bash',
+                            'macOS/Linux MCP installer',
+                          ),
+                          tooltip: 'Copy macOS/Linux installer',
+                          visualDensity: VisualDensity.compact,
+                          icon: const Icon(LucideIcons.copy, size: 17),
+                        ),
+                      ],
                     ),
                   ],
                 ),

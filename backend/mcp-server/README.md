@@ -35,6 +35,8 @@ by NoteClaw.
 - `deep_research_status` — check job progress and obtain the completed session ID
 - `deep_research_result` — retrieve the completed report and citations
 - `research_save_to_notebook` — store the report and source list in a notebook
+- `image_generate` / `video_generate` — create plan-gated, credit-metered media
+- `media_generation_status` / `media_generation_download` — follow and retrieve media jobs
 
 Web search, deep research, and code review require an active plan entitlement.
 The metered costs are 1 credit for web search, 2 credits for code review, 5
@@ -68,6 +70,18 @@ request. The first MCP discovery request creates a private token-scoped agent
 session and notebook. Permitted notebook topics are exposed as MCP Resources.
 The canonical guide is exposed as `noteclaw://instructions/AGENTS.md`. The
 token remains permanently bound to that session.
+
+Append a profile when a client benefits from a smaller tool catalog:
+
+```text
+https://notebackend.pikpam.com/mcp?profile=memory
+```
+
+Supported profiles are `memory`, `planning`, `research`, `media`, `github`,
+and `all` (the default). Plan-disabled tools are omitted from discovery even
+inside a selected profile. NoteClaw currently uses manually generated bearer
+tokens for hosted MCP. Clients that require browser OAuth should use the local
+stdio bridge until an account-consent authorization server is configured.
 
 ### Local stdio fallback
 

@@ -5,6 +5,7 @@ import { Bot, Settings, Users, Activity, Save, Loader2, ToggleLeft, ToggleRight,
 export default function McpSettings() {
     const [settings, setSettings] = useState(null);
     const [stats, setStats] = useState(null);
+    const [diagnostics, setDiagnostics] = useState(null);
     const [users, setUsers] = useState([]);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -17,14 +18,16 @@ export default function McpSettings() {
     const fetchData = async () => {
         setLoading(true);
         try {
-            const [settingsRes, statsRes, usageRes] = await Promise.all([
+            const [settingsRes, statsRes, usageRes, diagnosticsRes] = await Promise.all([
                 api.getMcpSettings(),
                 api.getMcpStats(),
                 api.getMcpUsage(),
+                api.getMcpDiagnostics(),
             ]);
             setSettings(settingsRes.settings);
             setStats(statsRes);
             setUsers(usageRes.users || []);
+            setDiagnostics(diagnosticsRes);
         } catch (error) {
             console.error('Failed to fetch MCP data:', error);
             alert('Failed to load MCP settings');
@@ -78,16 +81,16 @@ export default function McpSettings() {
                     <ul className="list-disc list-inside space-y-1 text-sm">
                         <li>401: Invalid or expired API key. Generate a new token in Settings -&gt; Agent Connections.</li>
                         <li>403: MCP disabled or insufficient permissions. Check MCP is enabled and your token permissions.</li>
-                        <li>429: Rate limit exceeded. Call get_quota and retry later.</li>
+                        <li>429: Daily tool-call limit reached. Review the user or plan quota here and retry after reset.</li>
                         <li>503: Service unavailable. Wait briefly and retry.</li>
-                        <li>Network: Verify BACKEND_URL and CODING_AGENT_API_KEY in your .env.</li>
+                        <li>Network: Verify the hosted URL and NOTECLAW_API_TOKEN in the client configuration.</li>
                     </ul>
                 </div>
             </div>
 
             {/* Tabs */}
             <div className="flex gap-2 border-b border-border pb-4">
-                {['settings', 'usage', 'stats'].map((tab) => (
+                {['settings', 'usage', 'stats', 'diagnostics'].map((tab) => (
                     <button
                         key={tab}
                         onClick={() => setActiveTab(tab)}
@@ -117,6 +120,10 @@ export default function McpSettings() {
 
             {activeTab === 'stats' && (
                 <StatsTab stats={stats} settings={settings} />
+            )}
+
+            {activeTab === 'diagnostics' && (
+                <DiagnosticsTab diagnostics={diagnostics} onRefresh={fetchData} />
             )}
         </div>
     );
@@ -515,6 +522,125 @@ function StatsTab({ stats, settings }) {
                     </div>
                 </div>
             )}
+        </div>
+    );
+}
+
+function DiagnosticsTab({ diagnostics, onRefresh }) {
+    const [checking, setChecking] = useState(false);
+    const [checkResult, setCheckResult] = useState(null);
+    const summary = diagnostics?.diagnostics?.summary || {};
+    const recent = diagnostics?.diagnostics?.recent || [];
+    const tools = diagnostics?.diagnostics?.tools || [];
+    const server = diagnostics?.server || {};
+
+    const runCheck = async () => {
+        setChecking(true);
+        try {
+            const result = await api.runMcpDiagnosticCheck();
+            setCheckResult(result);
+            await onRefresh();
+        } catch (error) {
+            setCheckResult({ status: 'failed', error: error.message });
+        } finally {
+            setChecking(false);
+        }
+    };
+
+    return (
+        <div className="space-y-6">
+            <div className="flex items-center justify-between gap-4">
+                <div>
+                    <h3 className="text-lg font-semibold flex items-center gap-2">
+                        <Activity className="h-5 w-5" />
+                        MCP Diagnostics
+                    </h3>
+                    <p className="text-sm text-muted-foreground mt-1">
+                        Discovery and tool execution events from hosted and in-app MCP clients.
+                    </p>
+                </div>
+                <button
+                    onClick={runCheck}
+                    disabled={checking}
+                    className="flex items-center gap-2 px-4 py-2 rounded-lg bg-secondary hover:bg-secondary/80 text-sm"
+                >
+                    <RefreshCw className={`h-4 w-4 ${checking ? 'animate-spin' : ''}`} />
+                    {checking ? 'Checking...' : 'Run check'}
+                </button>
+            </div>
+
+            {checkResult && (
+                <div className={`rounded-lg border p-4 text-sm ${
+                    checkResult.status === 'ok'
+                        ? 'border-green-500/30 bg-green-500/10 text-green-600'
+                        : 'border-red-500/30 bg-red-500/10 text-red-600'
+                }`}>
+                    {checkResult.status === 'ok'
+                        ? `Protocol initialized successfully. ${checkResult.check?.toolCount || 0} entitled tools discovered in ${checkResult.check?.durationMs || 0} ms.`
+                        : `MCP check failed: ${checkResult.error || 'Incomplete tool metadata'}`}
+                </div>
+            )}
+
+            <div className="rounded-lg bg-card border border-border p-5">
+                <div className="grid gap-3 md:grid-cols-2 text-sm">
+                    <div><span className="text-muted-foreground">Status:</span> <span className="text-green-500 font-medium">{diagnostics?.status || 'unknown'}</span></div>
+                    <div><span className="text-muted-foreground">Version:</span> {server.version || '-'}</div>
+                    <div className="break-all"><span className="text-muted-foreground">Remote endpoint:</span> {server.remoteUrl || '-'}</div>
+                    <div><span className="text-muted-foreground">Authentication:</span> {server.authentication || '-'}</div>
+                </div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-4">
+                {[
+                    ['Events (24h)', summary.total_events || 0],
+                    ['Successful', summary.successful_events || 0],
+                    ['Failed', summary.failed_events || 0],
+                    ['Average latency', `${summary.average_duration_ms || 0} ms`],
+                ].map(([label, value]) => (
+                    <div key={label} className="rounded-lg bg-card border border-border p-5">
+                        <div className="text-xs text-muted-foreground">{label}</div>
+                        <div className="text-2xl font-bold mt-2">{value}</div>
+                    </div>
+                ))}
+            </div>
+
+            <div className="grid gap-6 lg:grid-cols-2">
+                <div className="rounded-lg bg-card border border-border overflow-hidden">
+                    <div className="font-semibold p-4 border-b border-border">Most-used tools</div>
+                    <div className="divide-y divide-border">
+                        {tools.length === 0 ? (
+                            <div className="p-6 text-sm text-muted-foreground">No tool calls recorded yet.</div>
+                        ) : tools.map((tool) => (
+                            <div key={tool.tool_name} className="p-3 flex items-center justify-between text-sm">
+                                <span className="font-mono">{tool.tool_name}</span>
+                                <span className="text-muted-foreground">{tool.count} calls | {tool.failures} failed | {tool.average_duration_ms} ms</span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                <div className="rounded-lg bg-card border border-border overflow-hidden">
+                    <div className="font-semibold p-4 border-b border-border">Recent events</div>
+                    <div className="max-h-96 overflow-auto divide-y divide-border">
+                        {recent.length === 0 ? (
+                            <div className="p-6 text-sm text-muted-foreground">Connect an agent or use an in-app tool to populate diagnostics.</div>
+                        ) : recent.map((event) => (
+                            <div key={event.id} className="p-3 text-sm space-y-1">
+                                <div className="flex items-center justify-between gap-3">
+                                    <span className="font-mono">{event.tool_name || event.method}</span>
+                                    <span className={event.success ? 'text-green-500' : 'text-red-500'}>
+                                        {event.success ? 'Success' : 'Failed'}
+                                    </span>
+                                </div>
+                                <div className="text-xs text-muted-foreground">
+                                    {event.transport} | {event.duration_ms} ms | {new Date(event.created_at).toLocaleString()}
+                                </div>
+                                {event.error ? <div className="text-xs text-red-500 break-words">{event.error}</div> : null}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </div>
         </div>
     );
 }

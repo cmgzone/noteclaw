@@ -3,6 +3,8 @@ import type { PoolClient } from 'pg';
 import pool from '../config/database.js';
 import { authenticateToken, requireAdmin, type AuthRequest } from '../middleware/auth.js';
 import { mcpLimitsService } from '../services/mcpLimitsService.js';
+import { getMcpDiagnostics } from '../services/mcpDiagnosticsService.js';
+import { runMcpSelfCheck } from '../services/mcpAgentService.js';
 import { notificationService, type NotificationType } from '../services/notificationService.js';
 import { cleanupTextUserTablesForDeletedAccount } from '../services/accountCleanupService.js';
 import {
@@ -2124,6 +2126,50 @@ router.get('/mcp-stats', async (req: AuthRequest, res: Response) => {
     } catch (error) {
         console.error('Error fetching MCP stats:', error);
         res.status(500).json({ error: 'Failed to fetch MCP stats' });
+    }
+});
+
+router.get('/mcp-diagnostics', async (req: AuthRequest, res: Response) => {
+    try {
+        const requestedLimit = Number(req.query.limit || 50);
+        const diagnostics = await getMcpDiagnostics(
+            Number.isFinite(requestedLimit) ? requestedLimit : 50,
+        );
+        const backendUrl = (process.env.BACKEND_URL || '').replace(/\/+$/, '');
+        res.json({
+            status: 'ok',
+            server: {
+                version: '2.5.1',
+                transport: 'streamable-http',
+                remoteUrl: backendUrl ? `${backendUrl}/mcp` : '/mcp',
+                healthUrl: backendUrl ? `${backendUrl}/mcp/health` : '/mcp/health',
+                authentication: 'bearer-personal-access-token',
+                profiles: ['all', 'memory', 'planning', 'research', 'media', 'github'],
+            },
+            diagnostics,
+        });
+    } catch (error) {
+        console.error('Error fetching MCP diagnostics:', error);
+        res.status(500).json({ error: 'Failed to fetch MCP diagnostics' });
+    }
+});
+
+router.post('/mcp-diagnostics/check', async (req: AuthRequest, res: Response) => {
+    try {
+        const backendUrl = (
+            process.env.BACKEND_URL || `${req.protocol}://${req.get('host')}`
+        ).replace(/\/+$/, '');
+        const check = await runMcpSelfCheck({
+            authorizationHeader: req.get('authorization') || '',
+            backendUrl,
+        });
+        res.json({ status: check.success ? 'ok' : 'warning', check });
+    } catch (error: any) {
+        console.error('MCP self-check failed:', error);
+        res.status(500).json({
+            status: 'failed',
+            error: error?.message || 'MCP self-check failed',
+        });
     }
 });
 

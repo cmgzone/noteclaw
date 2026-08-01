@@ -9,14 +9,15 @@
       },
       "disabled": false,
       "autoApprove": [
-        "verify_code",
-        "analyze_code",
-        "get_followup_messages"
+        "memory_topics_list",
+        "memory_topic_get",
+        "memory_get",
+        "agent_chat_messages_list"
       ]
     }
   },
   "_comments": {
     "NOTECLAW_API_TOKEN": "Generate from NoteClaw app: Settings -> Agent Connections -> Generate New Token",
-    "communication": "Use get_followup_messages to check for user messages, respond_to_followup to reply"
+    "communication": "Use agent_chat_messages_list to check for user messages and agent_chat_respond to reply"
   }
 }

@@ -25,6 +25,7 @@ import {
 import { getCache, setCache, CacheTTL, CacheKeys, getOrSetCache } from '../services/cacheService.js';
 import pool from '../config/database.js';
 import { encryptSecret, decryptSecretAllowLegacy } from '../services/secretEncryptionService.js';
+import { runNoteClawMcpAgent } from '../services/mcpAgentService.js';
 
 const router = express.Router();
 
@@ -679,6 +680,7 @@ router.post('/chat/stream', async (req: AuthRequest, res: Response) => {
             billingFeature: requestedBillingFeature,
             useDeepSearch = false,
             hasImage = false,
+            enableTools = true,
         } = req.body;
         const userId = req.userId!;
         const userApiKey = (req.get('x-user-api-key') || '').trim();
@@ -848,6 +850,58 @@ router.post('/chat/stream', async (req: AuthRequest, res: Response) => {
         res.setHeader('Cache-Control', 'no-cache');
         res.setHeader('Connection', 'keep-alive');
         res.flushHeaders();
+
+        if (enableTools !== false) {
+            try {
+                const backendUrl = (
+                    process.env.BACKEND_URL || `${req.protocol}://${req.get('host')}`
+                ).replace(/\/+$/, '');
+                const agentResult = await runNoteClawMcpAgent({
+                    userId,
+                    authorizationHeader: req.get('authorization') || '',
+                    backendUrl,
+                    provider,
+                    model,
+                    messages,
+                    maxTokens,
+                    apiKey: effectiveApiKey || undefined,
+                    onToolEvent: async (event) => {
+                        if (event.status !== 'started') return;
+                        const label = event.tool
+                            .split('_')
+                            .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+                            .join(' ');
+                        const statusText = `> Using NoteClaw: ${label}...\n\n`;
+                        res.write(`data: ${JSON.stringify({
+                            type: 'tool',
+                            tool: event.tool,
+                            status: event.status,
+                            content: statusText,
+                            text: statusText,
+                        })}\n\n`);
+                    },
+                });
+
+                const chunkSize = 500;
+                for (let offset = 0; offset < agentResult.response.length; offset += chunkSize) {
+                    const chunk = agentResult.response.slice(offset, offset + chunkSize);
+                    res.write(`data: ${JSON.stringify({
+                        type: 'content',
+                        content: chunk,
+                        text: chunk,
+                        toolsUsed: agentResult.toolsUsed,
+                    })}\n\n`);
+                }
+                res.write('data: [DONE]\n\n');
+                res.end();
+                return;
+            } catch (agentError: any) {
+                console.warn(
+                    '[AI Stream] MCP agent loop unavailable; falling back to plain streaming:',
+                    agentError?.message || agentError,
+                );
+            }
+        }
 
         let generator;
         if (provider === ALIBABA_TOKEN_PLAN_PROVIDER) {

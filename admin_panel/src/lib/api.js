@@ -398,6 +398,14 @@ class ApiService {
         return this.get('/admin/mcp-stats');
     }
 
+    async getMcpDiagnostics(limit = 50) {
+        return this.get(`/admin/mcp-diagnostics?limit=${limit}`);
+    }
+
+    async runMcpDiagnosticCheck() {
+        return this.post('/admin/mcp-diagnostics/check', {});
+    }
+
     async getMcpUserLimits(userId) {
         return this.get(`/admin/mcp-user-limits/${userId}`);
     }

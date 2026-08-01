@@ -2,11 +2,15 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import axios from 'axios';
 import { Router, type Response } from 'express';
 
-import { createNoteClawMcpServer } from '../../mcp-server/dist/serverFactory.js';
+import {
+  createNoteClawMcpServer,
+  type ToolProfile,
+} from '../../mcp-server/dist/serverFactory.js';
 import {
   authenticateToken,
   type AuthRequest,
 } from '../middleware/auth.js';
+import { recordMcpProtocolEvent } from '../services/mcpDiagnosticsService.js';
 
 const router = Router();
 
@@ -30,12 +34,41 @@ const configuredOrigins = () =>
       process.env.WEB_APP_URL,
       process.env.ADMIN_APP_URL,
       process.env.BACKEND_URL,
+      'https://claude.ai',
+      'https://chatgpt.com',
+      'https://chat.openai.com',
+      ...(process.env.MCP_ALLOWED_ORIGINS || '').split(','),
       process.env.NODE_ENV !== 'production' ? 'http://localhost:3000' : null,
       process.env.NODE_ENV !== 'production' ? 'http://127.0.0.1:3000' : null,
     ]
       .filter((value): value is string => Boolean(value))
-      .map((value) => value.replace(/\/+$/, '')),
+      .map((value) => value.trim().replace(/\/+$/, ''))
+      .filter(Boolean),
   );
+
+const toolProfiles = new Set<ToolProfile>([
+  'all',
+  'memory',
+  'planning',
+  'research',
+  'media',
+  'github',
+]);
+
+const readToolProfile = (value: unknown): ToolProfile => {
+  const normalized = typeof value === 'string' ? value.trim() : '';
+  return toolProfiles.has(normalized as ToolProfile)
+    ? normalized as ToolProfile
+    : 'all';
+};
+
+const authenticationChallenge = (req: AuthRequest) => {
+  const backendUrl = (
+    process.env.BACKEND_URL ||
+    `${req.protocol}://${req.get('host')}`
+  ).replace(/\/+$/, '');
+  return `Bearer realm="NoteClaw MCP", resource_metadata="${backendUrl}/.well-known/oauth-protected-resource/mcp"`;
+};
 
 router.use((req, res, next) => {
   const origin = req.headers.origin?.replace(/\/+$/, '');
@@ -48,11 +81,38 @@ router.use((req, res, next) => {
   next();
 });
 
-router.use(authenticateToken);
+router.get('/health', (_req, res) => {
+  res.json({
+    status: 'ok',
+    protocol: 'mcp-streamable-http',
+    version: '2.5.1',
+    authentication: 'bearer-personal-access-token',
+    profiles: [...toolProfiles],
+  });
+});
+
+router.use((req: AuthRequest, res, next) => {
+  if (!req.headers.authorization) {
+    res.setHeader('WWW-Authenticate', authenticationChallenge(req));
+    return jsonRpcError(res, 401, 'A NoteClaw MCP bearer token is required');
+  }
+  next();
+});
+
+router.use((req: AuthRequest, res, next) => {
+  // Keep the MCP authentication challenge on every authentication failure,
+  // including expired or revoked personal tokens handled by the shared
+  // authentication middleware. Remove it again for successful requests.
+  res.setHeader('WWW-Authenticate', authenticationChallenge(req));
+  void authenticateToken(req, res, () => {
+    res.removeHeader('WWW-Authenticate');
+    next();
+  });
+});
 
 router.use((req: AuthRequest, res, next) => {
   if (req.authMethod !== 'api_token') {
-    res.setHeader('WWW-Authenticate', 'Bearer realm="NoteClaw MCP"');
+    res.setHeader('WWW-Authenticate', authenticationChallenge(req));
     return jsonRpcError(
       res,
       401,
@@ -63,10 +123,11 @@ router.use((req: AuthRequest, res, next) => {
 });
 
 router.post('/', async (req: AuthRequest, res) => {
+  const requestStartedAt = Date.now();
   const authorization = req.headers.authorization || '';
   const apiToken = authorization.match(/^Bearer\s+(.+)$/i)?.[1]?.trim();
   if (!apiToken) {
-    res.setHeader('WWW-Authenticate', 'Bearer realm="NoteClaw MCP"');
+    res.setHeader('WWW-Authenticate', authenticationChallenge(req));
     return jsonRpcError(res, 401, 'A bearer token is required');
   }
 
@@ -76,10 +137,32 @@ router.post('/', async (req: AuthRequest, res) => {
   ).replace(/\/+$/, '');
 
   const messages = Array.isArray(req.body) ? req.body : [req.body];
+  const rpcMethod = typeof messages[0]?.method === 'string'
+    ? messages[0].method
+    : 'unknown';
   const initializeRequest = messages.find(
     (message) => message?.method === 'initialize',
   );
   const reportedClientInfo = initializeRequest?.params?.clientInfo;
+  const clientName = typeof reportedClientInfo?.name === 'string'
+    ? reportedClientInfo.name.trim().slice(0, 120)
+    : null;
+  if (rpcMethod !== 'tools/call') {
+    res.on('finish', () => {
+      void recordMcpProtocolEvent({
+        userId: req.userId,
+        tokenId: req.tokenId,
+        clientName,
+        transport: 'streamable-http',
+        method: rpcMethod,
+        success: res.statusCode < 400,
+        durationMs: Date.now() - requestStartedAt,
+        details: { profile: readToolProfile(req.query.profile) },
+      }).catch((error) => {
+        console.error('Could not record MCP protocol diagnostics:', error);
+      });
+    });
+  }
   if (
     reportedClientInfo &&
     typeof reportedClientInfo.name === 'string' &&
@@ -117,6 +200,21 @@ router.post('/', async (req: AuthRequest, res) => {
   const server = createNoteClawMcpServer({
     backendUrl,
     apiToken,
+    toolProfile: readToolProfile(req.query.profile),
+    onToolEvent: async (event) => {
+      await recordMcpProtocolEvent({
+        userId: req.userId,
+        tokenId: req.tokenId,
+        clientName,
+        transport: 'streamable-http',
+        method: 'tools/call',
+        toolName: event.tool,
+        success: event.success,
+        durationMs: event.durationMs,
+        error: event.error,
+        details: { profile: readToolProfile(req.query.profile) },
+      });
+    },
   });
   const transport = new StreamableHTTPServerTransport({
     sessionIdGenerator: undefined,

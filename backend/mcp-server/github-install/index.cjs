@@ -43503,7 +43503,7 @@ var VideoGenerateSchema = external_exports.object({
 var MediaGenerationGetSchema = external_exports.object({
   generationId: external_exports.string().uuid()
 });
-var tools = [
+var rawTools = [
   {
     name: "noteclaw_instructions_get",
     description: "Read the canonical AGENTS.md guide for using NoteClaw memory, live chat, planning mode, and safe multi-agent collaboration. Call this when a client cannot read MCP resources directly.",
@@ -43886,7 +43886,11 @@ var tools = [
           description: "Named memory segment.",
           default: "default"
         }
-      }
+      },
+      anyOf: [
+        { required: ["agentSessionId"] },
+        { required: ["agentIdentifier"] }
+      ]
     }
   },
   {
@@ -43925,7 +43929,11 @@ var tools = [
           type: "string",
           description: "Stable identity of the agent making this shared-memory write."
         }
-      }
+      },
+      anyOf: [
+        { required: ["agentSessionId"] },
+        { required: ["agentIdentifier"] }
+      ]
     }
   },
   {
@@ -43950,7 +43958,11 @@ var tools = [
           type: "string",
           description: "Stable identity of the agent requesting compaction."
         }
-      }
+      },
+      anyOf: [
+        { required: ["agentSessionId"] },
+        { required: ["agentIdentifier"] }
+      ]
     }
   },
   {
@@ -44262,6 +44274,144 @@ var tools = [
     }
   }
 ];
+var READ_ONLY_TOOLS = /* @__PURE__ */ new Set([
+  "noteclaw_instructions_get",
+  "memory_sessions_list",
+  "memory_topics_list",
+  "memory_topic_get",
+  "memory_chat",
+  "agent_chat_messages_list",
+  "planning_plans_list",
+  "planning_plan_get",
+  "memory_get",
+  "get_websocket_info",
+  "review_code",
+  "web_search",
+  "fact_check",
+  "github_status",
+  "github_repositories_list",
+  "github_code_search",
+  "deep_research_status",
+  "deep_research_result",
+  "media_generation_status",
+  "media_generation_download"
+]);
+var OPEN_WORLD_TOOLS = /* @__PURE__ */ new Set([
+  "web_search",
+  "fact_check",
+  "github_status",
+  "github_repositories_list",
+  "github_code_search",
+  "github_file_save_to_notebook",
+  "deep_research_start",
+  "deep_research_status",
+  "deep_research_result",
+  "research_save_to_notebook",
+  "image_generate",
+  "video_generate",
+  "media_generation_status",
+  "media_generation_download"
+]);
+var IDEMPOTENT_TOOLS = /* @__PURE__ */ new Set([
+  ...READ_ONLY_TOOLS,
+  "memory_session_open",
+  "planning_task_update",
+  "planning_task_status_update"
+]);
+var TOOL_FEATURES = {
+  memory_session_open: "memory_bank",
+  memory_sessions_list: "memory_bank",
+  notebook_create: "memory_bank",
+  source_create: "memory_bank",
+  memory_topics_list: "memory_bank",
+  memory_topic_get: "memory_bank",
+  memory_get: "memory_bank",
+  memory_put: "memory_bank",
+  memory_compact: "memory_bank",
+  memory_chat: "notebook_chat",
+  agent_chat_messages_list: "websocket_collaboration",
+  agent_chat_respond: "websocket_collaboration",
+  get_websocket_info: "websocket_collaboration",
+  review_code: "code_review",
+  web_search: "web_search",
+  fact_check: "web_search",
+  deep_research_start: "deep_research",
+  deep_research_status: "deep_research",
+  deep_research_result: "deep_research",
+  research_save_to_notebook: "research_save_to_notebook",
+  image_generate: "image_generation",
+  video_generate: "video_generation"
+};
+var TOOL_PROFILES = {
+  memory: /* @__PURE__ */ new Set([
+    "noteclaw_instructions_get",
+    "memory_session_open",
+    "memory_sessions_list",
+    "notebook_create",
+    "source_create",
+    "memory_topics_list",
+    "memory_topic_get",
+    "memory_chat",
+    "memory_get",
+    "memory_put",
+    "memory_compact",
+    "get_websocket_info",
+    "agent_chat_messages_list",
+    "agent_chat_respond"
+  ]),
+  planning: /* @__PURE__ */ new Set([
+    "noteclaw_instructions_get",
+    "planning_plans_list",
+    "planning_plan_get",
+    "planning_plan_create",
+    "planning_requirement_create",
+    "planning_design_note_create",
+    "planning_task_create",
+    "planning_task_update",
+    "planning_task_status_update",
+    "planning_task_output_add"
+  ]),
+  research: /* @__PURE__ */ new Set([
+    "noteclaw_instructions_get",
+    "web_search",
+    "fact_check",
+    "deep_research_start",
+    "deep_research_status",
+    "deep_research_result",
+    "research_save_to_notebook"
+  ]),
+  media: /* @__PURE__ */ new Set([
+    "noteclaw_instructions_get",
+    "image_generate",
+    "video_generate",
+    "media_generation_status",
+    "media_generation_download"
+  ]),
+  github: /* @__PURE__ */ new Set([
+    "noteclaw_instructions_get",
+    "github_status",
+    "github_repositories_list",
+    "github_code_search",
+    "github_file_save_to_notebook",
+    "source_create"
+  ])
+};
+var humanizeToolName = (name) => name.split("_").map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
+var tools = rawTools.map((tool) => ({
+  ...tool,
+  title: tool.title || humanizeToolName(tool.name),
+  outputSchema: tool.outputSchema || {
+    type: "object",
+    additionalProperties: true
+  },
+  annotations: {
+    title: tool.title || humanizeToolName(tool.name),
+    readOnlyHint: READ_ONLY_TOOLS.has(tool.name),
+    destructiveHint: false,
+    idempotentHint: IDEMPOTENT_TOOLS.has(tool.name),
+    openWorldHint: OPEN_WORLD_TOOLS.has(tool.name)
+  }
+}));
 function createNoteClawMcpServer(options) {
   const backendUrl2 = options.backendUrl.replace(/\/+$/, "");
   const api = axios_default.create({
@@ -44295,6 +44445,9 @@ function createNoteClawMcpServer(options) {
   );
   let bootstrapPromise = null;
   const ensureBootstrap = () => {
+    if (options.bootstrap === false) {
+      return Promise.resolve();
+    }
     if (!bootstrapPromise) {
       const client = server.getClientVersion();
       bootstrapPromise = api.post("/memory/bootstrap", {
@@ -44305,9 +44458,34 @@ function createNoteClawMcpServer(options) {
     }
     return bootstrapPromise;
   };
+  const getAdvertisedTools = async () => {
+    const profile = options.toolProfile || "all";
+    const profileFiltered = profile === "all" ? tools : tools.filter((tool) => TOOL_PROFILES[profile].has(tool.name));
+    try {
+      const response = await accountApi.get("/subscriptions/me", {
+        timeout: 1e4
+      });
+      const subscription = response.data?.subscription || {};
+      if (subscription.mcp_enabled === false) {
+        return profileFiltered.filter(
+          (tool) => tool.name === "noteclaw_instructions_get"
+        );
+      }
+      const access = subscription.feature_access;
+      if (!access || typeof access !== "object" || Array.isArray(access)) {
+        return profileFiltered;
+      }
+      return profileFiltered.filter((tool) => {
+        const feature = TOOL_FEATURES[tool.name];
+        return !feature || access[feature] !== false;
+      });
+    } catch {
+      return profileFiltered;
+    }
+  };
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     await ensureBootstrap();
-    return { tools };
+    return { tools: await getAdvertisedTools() };
   });
   server.setRequestHandler(ListResourcesRequestSchema, async () => {
     await ensureBootstrap();
@@ -44368,8 +44546,16 @@ function createNoteClawMcpServer(options) {
   });
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args = {} } = request.params;
+    const startedAt = Date.now();
+    let eventError;
     try {
       await ensureBootstrap();
+      const advertisedTools = await getAdvertisedTools();
+      if (!advertisedTools.some((tool) => tool.name === name)) {
+        throw new Error(
+          `Tool ${name} is not available in this MCP profile or subscription plan.`
+        );
+      }
       switch (name) {
         case "noteclaw_instructions_get": {
           return textResult({
@@ -44761,31 +44947,42 @@ ${evidence || "No sources found."}`;
           throw new Error(`Unknown tool: ${name}`);
       }
     } catch (error48) {
+      eventError = formatError2(error48);
+      const payload = formatErrorPayload(error48);
       return {
         content: [
           {
             type: "text",
-            text: JSON.stringify(
-              formatErrorPayload(error48),
-              null,
-              2
-            )
+            text: JSON.stringify(payload, null, 2)
           }
         ],
+        structuredContent: payload,
         isError: true
       };
+    } finally {
+      try {
+        await options.onToolEvent?.({
+          tool: name,
+          success: !eventError,
+          durationMs: Date.now() - startedAt,
+          error: eventError
+        });
+      } catch {
+      }
     }
   });
   return server;
 }
 function textResult(value) {
+  const structuredContent = value && typeof value === "object" && !Array.isArray(value) ? value : { value };
   return {
     content: [
       {
         type: "text",
         text: JSON.stringify(value, null, 2)
       }
-    ]
+    ],
+    structuredContent
   };
 }
 function parseJsonObject(value) {

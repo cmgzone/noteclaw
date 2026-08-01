@@ -115,6 +115,24 @@ const healthHandler = (req: express.Request, res: express.Response) => {
 
 app.get('/health', healthHandler);
 app.get('/api/health', healthHandler);
+const mcpProtectedResourceMetadata = (req: express.Request, res: express.Response) => {
+    const backendUrl = (
+        process.env.BACKEND_URL || `${req.protocol}://${req.get('host')}`
+    ).replace(/\/+$/, '');
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    res.json({
+        resource: `${backendUrl}/mcp`,
+        resource_name: 'NoteClaw MCP',
+        scopes_supported: ['mcp:tools', 'mcp:resources'],
+        bearer_methods_supported: ['header'],
+        authorization_servers: [],
+        authorization_note:
+            'Use a revocable nclaw_ personal access token in the Authorization header. OAuth browser consent is not enabled; clients that require OAuth should use the local stdio bridge.',
+        documentation: `${backendUrl}/api/mcp/manifest`,
+    });
+};
+app.get('/.well-known/oauth-protected-resource', mcpProtectedResourceMetadata);
+app.get('/.well-known/oauth-protected-resource/mcp', mcpProtectedResourceMetadata);
 app.use('/mcp', remoteMcpRoutes);
 
 // Memory-bank, account, subscription, and administration surfaces.

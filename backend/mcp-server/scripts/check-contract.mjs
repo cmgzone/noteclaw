@@ -114,6 +114,30 @@ try {
     );
   }
 
+  for (const tool of response.tools) {
+    if (
+      !tool.title ||
+      !tool.outputSchema ||
+      !tool.annotations ||
+      typeof tool.annotations.readOnlyHint !== 'boolean' ||
+      typeof tool.annotations.openWorldHint !== 'boolean'
+    ) {
+      throw new Error(`MCP metadata is incomplete for ${tool.name}`);
+    }
+  }
+
+  const instructions = await client.callTool({
+    name: 'noteclaw_instructions_get',
+    arguments: {},
+  });
+  if (
+    instructions.isError ||
+    !instructions.structuredContent ||
+    typeof instructions.structuredContent !== 'object'
+  ) {
+    throw new Error('MCP tool results are missing structuredContent');
+  }
+
   console.log(JSON.stringify(actualTools));
 } finally {
   await client.close();

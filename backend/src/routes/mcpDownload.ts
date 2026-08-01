@@ -66,6 +66,15 @@ const buildManifest = (req: Request) => {
   return {
     ...pkg,
     serverName: 'coding-agent-mcp',
+    remoteUrl: `${backendUrl}/mcp`,
+    healthUrl: `${backendUrl}/mcp/health`,
+    authentication: {
+      type: 'bearer-personal-access-token',
+      tokenPrefix: 'nclaw_',
+      oauthBrowserConsent: false,
+    },
+    profiles: ['all', 'memory', 'planning', 'research', 'media', 'github'],
+    npmPublished: false,
     runtimeUrl: `${backendUrl}/api/mcp/index.cjs`,
     downloadUrl: `${backendUrl}/api/mcp/download`,
     manifestUrl: `${backendUrl}/api/mcp/manifest`,
@@ -352,7 +361,7 @@ router.get('/config', async (req: Request, res: Response) => {
         args: ['%USERPROFILE%\\.noteclaw-mcp\\index.cjs'],
         env: {
           BACKEND_URL: backendUrl,
-          CODING_AGENT_API_KEY: 'YOUR_API_TOKEN_HERE',
+          NOTECLAW_API_TOKEN: 'YOUR_API_TOKEN_HERE',
         },
       },
     },
@@ -365,7 +374,7 @@ router.get('/config', async (req: Request, res: Response) => {
         args: ['$HOME/.noteclaw-mcp/index.cjs'],
         env: {
           BACKEND_URL: backendUrl,
-          CODING_AGENT_API_KEY: 'YOUR_API_TOKEN_HERE',
+          NOTECLAW_API_TOKEN: 'YOUR_API_TOKEN_HERE',
         },
       },
     },

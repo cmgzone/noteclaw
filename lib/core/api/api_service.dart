@@ -1184,6 +1184,7 @@ class ApiService {
           if (billingFeature != null) 'billingFeature': billingFeature,
           'useDeepSearch': useDeepSearch,
           'hasImage': hasImage,
+          'enableTools': true,
         },
         options: Options(
           responseType: ResponseType.stream,
