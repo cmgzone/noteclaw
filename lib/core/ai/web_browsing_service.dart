@@ -174,7 +174,11 @@ Instructions:
 Response:''';
 
       // Use AI provider to generate response
-      await ref.read(aiProvider.notifier).generateContent(prompt);
+      // Route synthesis through the backend so the selected provider and
+      // credit accounting are authoritative for every Flutter build.
+      await ref
+          .read(aiProvider.notifier)
+          .generateContent(prompt, billingFeature: 'chat_message');
       final response =
           ref.read(aiProvider).lastResponse ?? 'Unable to generate response';
 

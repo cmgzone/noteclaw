@@ -209,6 +209,14 @@ class ApiService {
         return this.get('/admin/models/default');
     }
 
+    async getFeatureCreditCosts() {
+        return this.get('/admin/feature-credit-costs');
+    }
+
+    async updateFeatureCreditCost(feature, creditCost) {
+        return this.put(`/admin/feature-credit-costs/${encodeURIComponent(feature)}`, { creditCost });
+    }
+
     // ============ ADMIN - API KEYS ============
     async getApiKeys() {
         return this.get('/admin/api-keys');

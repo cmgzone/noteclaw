@@ -60,6 +60,7 @@ export async function cleanupTextUserTablesForDeletedAccount(
         'agent_memory_entries',
         'agent_sessions',
         'media_uploads',
+        'media_generations',
         'research_jobs',
         'agent_skills',
         'user_ai_models',

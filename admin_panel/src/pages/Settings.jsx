@@ -12,6 +12,8 @@ export default function Settings() {
     const [newKeyService, setNewKeyService] = useState('');
     const [newKeyValue, setNewKeyValue] = useState('');
     const [alibabaTokenPlanKey, setAlibabaTokenPlanKey] = useState('');
+    const [alibabaModelStudioKey, setAlibabaModelStudioKey] = useState('');
+    const [alibabaModelStudioBaseUrl, setAlibabaModelStudioBaseUrl] = useState('');
 
     // Payment Configuration
     const [paypalClientId, setPaypalClientId] = useState('');
@@ -48,6 +50,7 @@ export default function Settings() {
                     'resend_reply_to_email',
                     'public_app_url',
                     'require_email_verification',
+                    'alibaba_model_studio_base_url',
                 ]),
                 api.getEmailStatus(),
             ]);
@@ -60,6 +63,7 @@ export default function Settings() {
             setRequireEmailVerification(
                 String(nextSettings.require_email_verification || '').toLowerCase() === 'true',
             );
+            setAlibabaModelStudioBaseUrl(nextSettings.alibaba_model_studio_base_url || '');
             setEmailStatus(emailStatusResponse.status || {
                 provider: 'none',
                 smtpConfigured: false,
@@ -133,6 +137,7 @@ export default function Settings() {
                 'GOOGLE_CLOUD_TTS_API_KEY': 'google_cloud_tts',
                 'OPENROUTER_API_KEY': 'openrouter',
                 'ALIBABA_TOKEN_PLAN_API_KEY': 'alibaba_token_plan',
+                'ALIBABA_MODEL_STUDIO_API_KEY': 'alibaba_model_studio',
                 'RESEND_API_KEY': 'resend',
                 'SERPER_API_KEY': 'serper',
                 'DEEPGRAM_API_KEY': 'deepgram',
@@ -149,6 +154,7 @@ export default function Settings() {
                 'PUBLIC_APP_URL': 'public_app_url',
                 'WEB_APP_URL': 'public_app_url',
                 'REQUIRE_EMAIL_VERIFICATION': 'require_email_verification',
+                'ALIBABA_MODEL_STUDIO_BASE_URL': 'alibaba_model_studio_base_url',
             };
 
             for (const line of lines) {
@@ -424,7 +430,7 @@ export default function Settings() {
                                 Alibaba Model Studio Token Plan
                             </h3>
                             <p className="mt-1 text-sm text-muted-foreground">
-                                Save the dedicated Singapore Token Plan key and NoteClaw will fetch the available model IDs directly from Alibaba.
+                                Save the dedicated Singapore Token Plan key. Synced text, image, and video models will consume this plan when selected in NoteClaw or through MCP.
                             </p>
                         </div>
                         {apiKeys.some(k => k.service_name === 'alibaba_token_plan') && (
@@ -459,6 +465,56 @@ export default function Settings() {
                     <p className="mt-2 text-xs text-muted-foreground">
                         The key stays on the backend and is stored encrypted. Use a Token Plan key beginning with <span className="font-mono">sk-sp-</span>.
                     </p>
+                </div>
+
+                {/* Alibaba production media generation */}
+                <div className="bg-muted/50 p-4 rounded-md border border-border mb-6">
+                    <div className="flex items-start justify-between gap-4 mb-4">
+                        <div>
+                            <h3 className="text-lg font-semibold flex items-center"><Key className="mr-2 h-5 w-5" />Alibaba Image &amp; Video Generation</h3>
+                            <p className="mt-1 text-sm text-muted-foreground">Optional standard Model Studio channel for app and MCP media generation. Token Plan catalog models use the separate sk-sp key above.</p>
+                        </div>
+                        {apiKeys.some(k => k.service_name === 'alibaba_model_studio') && <p className="text-xs text-green-600 flex items-center"><Shield className="h-3 w-3 mr-1" /> Configured</p>}
+                    </div>
+                    <div className="grid gap-3">
+                        <input
+                            type="url"
+                            className="rounded-md border border-border bg-background p-2 font-mono text-sm"
+                            placeholder="https://WORKSPACE_ID.ap-southeast-1.maas.aliyuncs.com"
+                            value={alibabaModelStudioBaseUrl}
+                            onChange={(event) => setAlibabaModelStudioBaseUrl(event.target.value)}
+                        />
+                        <div className="flex gap-2 flex-col sm:flex-row">
+                            <input
+                                type="password"
+                                className="flex-1 rounded-md border border-border bg-background p-2 font-mono text-sm"
+                                placeholder="Standard sk-... key"
+                                value={alibabaModelStudioKey}
+                                onChange={(event) => setAlibabaModelStudioKey(event.target.value)}
+                            />
+                            <button
+                                type="button"
+                                disabled={saving || !alibabaModelStudioBaseUrl.trim() || (!alibabaModelStudioKey && !apiKeys.some(k => k.service_name === 'alibaba_model_studio'))}
+                                onClick={async () => {
+                                    setSaving(true);
+                                    try {
+                                        if (alibabaModelStudioKey) await api.setApiKey('alibaba_model_studio', alibabaModelStudioKey, 'Alibaba Model Studio production API key');
+                                        await api.updateSetting('alibaba_model_studio_base_url', alibabaModelStudioBaseUrl.trim());
+                                        setAlibabaModelStudioKey('');
+                                        await fetchData();
+                                        alert('Alibaba media generation settings saved.');
+                                    } catch (error) {
+                                        alert(`Failed to save Alibaba media settings: ${error.message}`);
+                                    } finally {
+                                        setSaving(false);
+                                    }
+                                }}
+                                className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
+                            >
+                                {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />} Save Media Settings
+                            </button>
+                        </div>
+                    </div>
                 </div>
 
                 {/* PayPal Configuration */}

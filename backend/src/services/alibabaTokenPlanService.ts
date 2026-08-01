@@ -52,6 +52,20 @@ export function formatAlibabaModelName(modelId: string): string {
         .replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
+export function inferAlibabaModelCapabilities(modelId: string): string[] {
+    const normalized = modelId.toLowerCase();
+    if (normalized.includes('t2v') || normalized.includes('i2v') || normalized.includes('video')) {
+        return ['video'];
+    }
+    if (normalized.includes('image') || normalized.includes('wan') && !normalized.includes('audio')) {
+        return ['image'];
+    }
+    if (normalized.includes('audio') || normalized.includes('tts') || normalized.includes('asr')) {
+        return ['audio'];
+    }
+    return ['text'];
+}
+
 export function validateAlibabaTokenPlanApiKey(apiKey: string): string {
     const normalized = apiKey.trim();
     if (!normalized.startsWith('sk-sp-')) {
@@ -103,6 +117,7 @@ export async function syncAlibabaTokenPlanModels(modelIds: string[]): Promise<{
                 `UPDATE ai_models
                  SET name = $3,
                      description = $4,
+                     capabilities = $5::jsonb,
                      is_active = TRUE,
                      updated_at = CURRENT_TIMESTAMP
                  WHERE provider = $1 AND model_id = $2
@@ -112,6 +127,7 @@ export async function syncAlibabaTokenPlanModels(modelIds: string[]): Promise<{
                     modelId,
                     formatAlibabaModelName(modelId),
                     'Fetched from Alibaba Cloud Model Studio Token Plan (Singapore).',
+                    JSON.stringify(inferAlibabaModelCapabilities(modelId)),
                 ],
             );
 
@@ -120,13 +136,14 @@ export async function syncAlibabaTokenPlanModels(modelIds: string[]): Promise<{
                     `INSERT INTO ai_models (
                         name, model_id, provider, description,
                         cost_input, cost_output, context_window,
-                        is_active, is_premium, is_default
-                     ) VALUES ($1, $2, $3, $4, 0, 0, 0, TRUE, FALSE, FALSE)`,
+                        is_active, is_premium, is_default, capabilities
+                     ) VALUES ($1, $2, $3, $4, 0, 0, 0, TRUE, FALSE, FALSE, $5::jsonb)`,
                     [
                         formatAlibabaModelName(modelId),
                         modelId,
                         ALIBABA_TOKEN_PLAN_PROVIDER,
                         'Fetched from Alibaba Cloud Model Studio Token Plan (Singapore).',
+                        JSON.stringify(inferAlibabaModelCapabilities(modelId)),
                     ],
                 );
             }

@@ -501,6 +501,122 @@ export async function initializeDatabase() {
                 created_at TIMESTAMPTZ DEFAULT NOW(),
                 updated_at TIMESTAMPTZ DEFAULT NOW()
             );
+
+            CREATE TABLE IF NOT EXISTS feature_credit_costs (
+                feature_key TEXT PRIMARY KEY,
+                credit_cost INTEGER NOT NULL CHECK (credit_cost >= 0),
+                updated_by UUID REFERENCES users(id) ON DELETE SET NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );
+        `);
+
+        await client.query(`
+            ALTER TABLE ai_models
+            ADD COLUMN IF NOT EXISTS capabilities JSONB NOT NULL DEFAULT '["text"]'::jsonb
+        `);
+        await client.query(`
+            UPDATE ai_models
+            SET capabilities = CASE
+                WHEN model_id ILIKE '%t2v%' OR model_id ILIKE '%i2v%' OR model_id ILIKE '%video%'
+                    THEN '["video"]'::jsonb
+                WHEN model_id ILIKE '%image%'
+                    THEN '["image"]'::jsonb
+                WHEN model_id ILIKE '%audio%' OR model_id ILIKE '%tts%' OR model_id ILIKE '%asr%'
+                    THEN '["audio"]'::jsonb
+                ELSE capabilities
+            END,
+            updated_at = NOW()
+            WHERE provider = 'alibaba_token_plan'
+              AND capabilities = '["text"]'::jsonb
+        `);
+
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS research_sessions (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                notebook_id UUID REFERENCES notebooks(id) ON DELETE SET NULL,
+                query TEXT NOT NULL,
+                report TEXT,
+                summary TEXT,
+                insights JSONB,
+                source_count INTEGER DEFAULT 0,
+                depth VARCHAR(20) DEFAULT 'standard',
+                template VARCHAR(50) DEFAULT 'general',
+                status VARCHAR(20) DEFAULT 'completed',
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                completed_at TIMESTAMPTZ
+            );
+
+            CREATE TABLE IF NOT EXISTS research_sources (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                session_id UUID NOT NULL REFERENCES research_sessions(id) ON DELETE CASCADE,
+                url TEXT NOT NULL,
+                title TEXT,
+                content TEXT,
+                snippet TEXT,
+                credibility VARCHAR(20) DEFAULT 'unknown',
+                credibility_score INTEGER DEFAULT 60,
+                created_at TIMESTAMPTZ DEFAULT NOW()
+            );
+
+            CREATE TABLE IF NOT EXISTS research_jobs (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                query TEXT NOT NULL,
+                config JSONB NOT NULL DEFAULT '{}',
+                status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                status_message TEXT,
+                progress DECIMAL(4,3) DEFAULT 0,
+                session_id UUID REFERENCES research_sessions(id) ON DELETE SET NULL,
+                error TEXT,
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                completed_at TIMESTAMPTZ
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_research_sessions_user_id ON research_sessions(user_id);
+            CREATE INDEX IF NOT EXISTS idx_research_sources_session_id ON research_sources(session_id);
+            CREATE INDEX IF NOT EXISTS idx_research_jobs_user_status ON research_jobs(user_id, status);
+        `);
+
+        await client.query(`
+            ALTER TABLE research_sessions ADD COLUMN IF NOT EXISTS report TEXT;
+            ALTER TABLE research_sessions ADD COLUMN IF NOT EXISTS depth VARCHAR(20) DEFAULT 'standard';
+            ALTER TABLE research_sessions ADD COLUMN IF NOT EXISTS template VARCHAR(50) DEFAULT 'general';
+            ALTER TABLE research_sessions ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'completed';
+            ALTER TABLE research_sources ADD COLUMN IF NOT EXISTS snippet TEXT;
+            ALTER TABLE research_sources ADD COLUMN IF NOT EXISTS credibility VARCHAR(20) DEFAULT 'unknown';
+            ALTER TABLE research_sources ADD COLUMN IF NOT EXISTS credibility_score INTEGER DEFAULT 60;
+        `);
+
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS media_generations (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                kind VARCHAR(20) NOT NULL CHECK (kind IN ('image', 'video')),
+                provider TEXT NOT NULL,
+                model TEXT NOT NULL,
+                prompt TEXT NOT NULL,
+                parameters JSONB NOT NULL DEFAULT '{}',
+                status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                provider_task_id TEXT,
+                provider_result_url TEXT,
+                public_url TEXT,
+                storage_path TEXT,
+                media_data BYTEA,
+                content_type TEXT,
+                filename TEXT,
+                error TEXT,
+                credits_charged INTEGER NOT NULL DEFAULT 0,
+                credits_refunded BOOLEAN NOT NULL DEFAULT FALSE,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                completed_at TIMESTAMPTZ
+            );
+            CREATE INDEX IF NOT EXISTS idx_media_generations_user_created
+                ON media_generations(user_id, created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_media_generations_task
+                ON media_generations(provider_task_id);
         `);
 
         // Gamification tables - split into smaller chunks

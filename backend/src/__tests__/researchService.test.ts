@@ -4,16 +4,23 @@ import {
 } from '../services/researchService.js';
 
 describe('researchService model resolution', () => {
-  it('forces OpenRouter for slash-delimited model ids', () => {
+  it('keeps explicit provider metadata authoritative', () => {
     expect(
       normalizeResearchProvider('gemini', 'meta-llama/llama-3.3-70b-instruct'),
+    ).toBe('gemini');
+  });
+
+  it('keeps explicit OpenRouter routing for its Gemini aliases', () => {
+    expect(
+      normalizeResearchProvider('openrouter', 'gemini-2.5-flash'),
     ).toBe('openrouter');
   });
 
-  it('forces Gemini for direct Gemini model ids', () => {
-    expect(
-      normalizeResearchProvider('openrouter', 'gemini-2.5-flash'),
-    ).toBe('gemini');
+  it('preserves Alibaba Token Plan for DeepSeek and Qwen model ids', () => {
+    expect(normalizeResearchProvider('alibaba_token_plan', 'deepseek-v4-pro'))
+      .toBe('alibaba_token_plan');
+    expect(normalizeResearchProvider('alibaba_token_plan', 'qwen3.7-max'))
+      .toBe('alibaba_token_plan');
   });
 
   it('strips OpenRouter-specific Gemini prefixes and tiers for Gemini fallback', () => {

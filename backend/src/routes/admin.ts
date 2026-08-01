@@ -48,6 +48,12 @@ import {
     markPlayTesterInviteSent,
     updatePlayTester,
 } from '../services/playTesterService.js';
+import {
+    FeatureCreditDefinitions,
+    listFeatureCreditCosts,
+    setFeatureCreditCost,
+    type MeteredCreditFeature,
+} from '../services/creditService.js';
 
 const router = express.Router();
 const SUPPORTED_ADMIN_NOTIFICATION_TYPES = new Set<NotificationType>(['system']);
@@ -82,6 +88,33 @@ function normalizeAdminNotificationType(rawType: unknown): NotificationType {
 // All admin routes require authentication AND admin role
 router.use(authenticateToken);
 router.use(requireAdmin);
+
+router.get('/feature-credit-costs', async (_req: AuthRequest, res: Response) => {
+    try {
+        res.set('Cache-Control', 'no-store');
+        res.json({ features: await listFeatureCreditCosts() });
+    } catch (error) {
+        console.error('[Admin] Failed to list feature credit costs:', error);
+        res.status(500).json({ error: 'Failed to load feature credit costs' });
+    }
+});
+
+router.put('/feature-credit-costs/:feature', async (req: AuthRequest, res: Response) => {
+    try {
+        const feature = String(req.params.feature || '') as MeteredCreditFeature;
+        const known = FeatureCreditDefinitions.some((definition) => definition.key === feature);
+        if (!known) {
+            return res.status(404).json({ error: 'Unknown metered feature' });
+        }
+
+        const creditCost = Number(req.body?.creditCost ?? req.body?.credit_cost);
+        const savedCost = await setFeatureCreditCost(feature, creditCost, req.userId);
+        res.json({ feature, creditCost: savedCost });
+    } catch (error: any) {
+        const message = error instanceof Error ? error.message : 'Failed to update credit cost';
+        res.status(message.startsWith('Credit cost') ? 400 : 500).json({ error: message });
+    }
+});
 
 async function ensureGooglePlayCatalogReady(): Promise<void> {
     await ensureGooglePlayCatalogColumns((sql, params) => pool.query(sql, params));
@@ -331,15 +364,18 @@ router.post('/models', async (req: AuthRequest, res: Response) => {
         const contextWindow = req.body.contextWindow ?? req.body.context_window ?? 0;
         const isActive = req.body.isActive ?? req.body.is_active ?? true;
         const isPremium = req.body.isPremium ?? req.body.is_premium ?? false;
+        const capabilities = Array.isArray(req.body.capabilities)
+            ? req.body.capabilities.filter((value: unknown) => ['text', 'image', 'video', 'audio'].includes(String(value)))
+            : ['text'];
 
         const result = await pool.query(`
             INSERT INTO ai_models (
                 name, model_id, provider, description, 
                 cost_input, cost_output, context_window, 
-                is_active, is_premium
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                is_active, is_premium, capabilities
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)
             RETURNING *
-        `, [name, modelId, provider, description, costInput, costOutput, contextWindow, isActive, isPremium]);
+        `, [name, modelId, provider, description, costInput, costOutput, contextWindow, isActive, isPremium, JSON.stringify(capabilities)]);
 
         await clearAIModelCatalogCache();
         res.json({ model: result.rows[0] });
@@ -362,15 +398,19 @@ router.put('/models/:id', async (req: AuthRequest, res: Response) => {
         const contextWindow = req.body.contextWindow ?? req.body.context_window;
         const isActive = req.body.isActive ?? req.body.is_active;
         const isPremium = req.body.isPremium ?? req.body.is_premium;
+        const capabilities = Array.isArray(req.body.capabilities)
+            ? req.body.capabilities.filter((value: unknown) => ['text', 'image', 'video', 'audio'].includes(String(value)))
+            : ['text'];
 
         const result = await pool.query(`
             UPDATE ai_models SET
                 name = $1, model_id = $2, provider = $3, description = $4,
                 cost_input = $5, cost_output = $6, context_window = $7,
-                is_active = $8, is_premium = $9, updated_at = CURRENT_TIMESTAMP
-            WHERE id = $10
+                is_active = $8, is_premium = $9, capabilities = $10::jsonb,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = $11
             RETURNING *
-        `, [name, modelId, provider, description, costInput, costOutput, contextWindow, isActive, isPremium, id]);
+        `, [name, modelId, provider, description, costInput, costOutput, contextWindow, isActive, isPremium, JSON.stringify(capabilities), id]);
 
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Model not found' });
@@ -405,26 +445,29 @@ router.delete('/models/:id', async (req: AuthRequest, res: Response) => {
 
 // Set default AI model
 router.put('/models/:id/set-default', async (req: AuthRequest, res: Response) => {
+    const client = await pool.connect();
     try {
         const { id } = req.params;
         
-        await pool.query('BEGIN');
+        await client.query('BEGIN');
         
         // Remove default from all models
-        await pool.query('UPDATE ai_models SET is_default = FALSE');
+        await client.query('UPDATE ai_models SET is_default = FALSE');
         
         // Set the specified model as default
-        const result = await pool.query(
-            'UPDATE ai_models SET is_default = TRUE WHERE id = $1 AND is_active = TRUE RETURNING *',
+        const result = await client.query(
+            `UPDATE ai_models SET is_default = TRUE
+             WHERE id = $1 AND is_active = TRUE AND capabilities ? 'text'
+             RETURNING *`,
             [id]
         );
         
         if (result.rows.length === 0) {
-            await pool.query('ROLLBACK');
-            return res.status(404).json({ error: 'Model not found or not active' });
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: 'Model not found, inactive, or not a text model' });
         }
         
-        await pool.query('COMMIT');
+        await client.query('COMMIT');
         await clearAIModelCatalogCache();
         
         res.json({ 
@@ -433,9 +476,11 @@ router.put('/models/:id/set-default', async (req: AuthRequest, res: Response) =>
             message: 'Default model updated successfully'
         });
     } catch (error) {
-        await pool.query('ROLLBACK');
+        await client.query('ROLLBACK').catch(() => undefined);
         console.error('Error setting default model:', error);
         res.status(500).json({ error: 'Failed to set default model' });
+    } finally {
+        client.release();
     }
 });
 
@@ -449,7 +494,9 @@ router.get('/models/default', async (req: AuthRequest, res: Response) => {
         if (result.rows.length === 0) {
             // If no default set, return the first active model
             const fallback = await pool.query(
-                'SELECT * FROM ai_models WHERE is_active = TRUE ORDER BY created_at ASC LIMIT 1'
+                `SELECT * FROM ai_models
+                 WHERE is_active = TRUE AND capabilities ? 'text'
+                 ORDER BY created_at ASC LIMIT 1`
             );
             return res.json({ model: fallback.rows[0] || null });
         }

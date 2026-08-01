@@ -30,6 +30,7 @@ class AIModel {
   final bool canAccess;
   final bool isUserModel;
   final bool hasPersonalApiKey;
+  final List<String> capabilities;
 
   AIModel({
     required this.id,
@@ -45,6 +46,7 @@ class AIModel {
     this.canAccess = true,
     this.isUserModel = false,
     this.hasPersonalApiKey = false,
+    this.capabilities = const ['text'],
   });
 
   factory AIModel.fromMap(Map<String, dynamic> map) {
@@ -66,6 +68,10 @@ class AIModel {
       isUserModel: map['is_user_model'] ?? map['isUserModel'] ?? false,
       hasPersonalApiKey:
           map['has_personal_api_key'] ?? map['hasPersonalApiKey'] ?? false,
+      capabilities: (map['capabilities'] as List?)
+              ?.map((value) => value.toString())
+              .toList() ??
+          const ['text'],
     );
   }
 
@@ -82,6 +88,7 @@ class AIModel {
       'is_premium': isPremium,
       'is_user_model': isUserModel,
       'has_personal_api_key': hasPersonalApiKey,
+      'capabilities': capabilities,
     };
   }
 }

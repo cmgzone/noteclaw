@@ -19,6 +19,8 @@ import {
     consumeCredits,
     refundCredits,
     calculateChatCreditCost,
+    getFeatureCreditCost,
+    type MeteredCreditFeature,
 } from '../services/creditService.js';
 import { getCache, setCache, CacheTTL, CacheKeys, getOrSetCache } from '../services/cacheService.js';
 import pool from '../config/database.js';
@@ -48,14 +50,35 @@ function serializeAIModelForClient(model: Record<string, any>) {
     };
 }
 
-function resolveCreditCostFromFeature(
+async function resolveCreditCostFromFeature(
     feature: string | undefined,
     options: { useDeepSearch?: boolean; hasImage?: boolean } = {},
-): number {
+): Promise<number> {
     const normalized = (feature || '').trim().toLowerCase();
 
+    const meteredFeature: MeteredCreditFeature | null = (() => {
+        switch (normalized) {
+            case 'notebook_chat': return 'notebook_chat';
+            case 'image_chat': return 'image_chat';
+            case 'web_search': return 'web_search';
+            case 'web_search_chat':
+            case 'web_browsing_chat': return 'web_search_chat';
+            case 'deep_research': return 'deep_research';
+            case 'code_review': return 'code_review';
+            case 'image_generation': return 'image_generation';
+            case 'video_generation': return 'video_generation';
+            case 'chat_message': return 'chat_message';
+            default: return null;
+        }
+    })();
+
+    if (meteredFeature) {
+        return getFeatureCreditCost(meteredFeature, {
+            depth: normalized === 'deep_research' && options.useDeepSearch ? 'standard' : undefined,
+        });
+    }
+
     switch (normalized) {
-        case 'chat_message':
         case 'planning_ai_chat':
         case 'language_learning_chat':
         case 'wellness_chat':
@@ -63,16 +86,10 @@ function resolveCreditCostFromFeature(
         case 'source_note_ai':
         case 'ad_generation':
             return 1;
-        case 'image_chat':
-            return 2;
         case 'meal_plan':
             return 2;
         case 'tutor_session':
             return 3;
-        case 'web_browsing_chat':
-            return 3;
-        case 'deep_research':
-            return 5;
         default:
             return calculateChatCreditCost({
                 useDeepSearch: options.useDeepSearch,
@@ -180,7 +197,7 @@ router.get('/models', authenticateToken, async (req: AuthRequest, res: Response)
         const hasPremiumAccess = userId ? await userHasPremiumAccess(userId) : false;
 
         const result = await pool.query(
-            'SELECT id, name, model_id, provider, description, context_window, is_active, is_premium, is_default FROM ai_models WHERE is_active = true ORDER BY is_default DESC NULLS LAST, provider, name'
+            'SELECT id, name, model_id, provider, description, context_window, is_active, is_premium, is_default, capabilities FROM ai_models WHERE is_active = true ORDER BY is_default DESC NULLS LAST, provider, name'
         );
 
         const userModelsResult = await pool.query(
@@ -226,15 +243,19 @@ router.get('/models', authenticateToken, async (req: AuthRequest, res: Response)
 router.get('/models/default', authenticateToken, async (req: AuthRequest, res: Response) => {
     try {
         const result = await pool.query(
-            'SELECT id, name, model_id, provider, description, context_window, is_active, is_premium FROM ai_models WHERE is_default = TRUE AND is_active = TRUE LIMIT 1'
+            `SELECT id, name, model_id, provider, description, context_window,
+                    is_active, is_premium, capabilities
+             FROM ai_models
+             WHERE is_default = TRUE AND is_active = TRUE AND capabilities ? 'text'
+             LIMIT 1`
         );
         
         if (result.rows.length === 0) {
             // If no default set, return gemini-2.0-flash or first active model
             const fallback = await pool.query(
-                `SELECT id, name, model_id, provider, description, context_window, is_active, is_premium 
+                `SELECT id, name, model_id, provider, description, context_window, is_active, is_premium, capabilities
                  FROM ai_models 
-                 WHERE is_active = TRUE 
+                 WHERE is_active = TRUE AND capabilities ? 'text'
                  ORDER BY 
                    CASE WHEN model_id = 'gemini-2.0-flash' THEN 0 ELSE 1 END,
                    created_at ASC 
@@ -580,13 +601,13 @@ router.post('/chat', async (req: AuthRequest, res: Response) => {
                 : '';
 
         if (!isByok && billingFeature.length > 0) {
-            creditCost = resolveCreditCostFromFeature(billingFeature, {
+            creditCost = await resolveCreditCostFromFeature(billingFeature, {
                 useDeepSearch: !!useDeepSearch,
                 hasImage: !!hasImage,
             });
 
             const creditCheck = await checkCredits(userId, creditCost);
-            if (!creditCheck.hasEnough) {
+            if (creditCost > 0 && !creditCheck.hasEnough) {
                 return res.status(402).json({
                     error: 'Insufficient credits',
                     message: `You need ${creditCost} credits but only have ${creditCheck.currentBalance} credits available.`,
@@ -618,7 +639,7 @@ router.post('/chat', async (req: AuthRequest, res: Response) => {
                 });
             }
 
-            consumedCredits = true;
+            consumedCredits = creditCost > 0;
         }
 
         let response: string;
@@ -736,13 +757,13 @@ router.post('/chat/stream', async (req: AuthRequest, res: Response) => {
                             : 'chat_message';
 
             // STEP 1: Calculate credit cost
-            creditCost = resolveCreditCostFromFeature(effectiveBillingFeature, { useDeepSearch, hasImage });
+            creditCost = await resolveCreditCostFromFeature(effectiveBillingFeature, { useDeepSearch, hasImage });
             console.log(`[AI Stream] Credit cost: ${creditCost} (feature: ${effectiveBillingFeature}, deepSearch: ${useDeepSearch}, image: ${hasImage})`);
 
             // STEP 2: Check if user has enough credits BEFORE processing
             const creditCheck = await checkCredits(userId, creditCost);
 
-            if (!creditCheck.hasEnough) {
+            if (creditCost > 0 && !creditCheck.hasEnough) {
                 console.log(`[AI Stream] Insufficient credits for user ${userId}. Required: ${creditCost}, Available: ${creditCheck.currentBalance}`);
                 return res.status(402).json({
                     error: 'Insufficient credits',
@@ -777,7 +798,7 @@ router.post('/chat/stream', async (req: AuthRequest, res: Response) => {
                 });
             }
 
-            consumedCredits = true;
+            consumedCredits = creditCost > 0;
             console.log(`[AI Stream] Credits consumed. New balance: ${consumeResult.newBalance}`);
         }
 

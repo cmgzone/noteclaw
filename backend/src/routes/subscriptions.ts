@@ -1,7 +1,10 @@
 import express, { type Request, type Response, type Router } from 'express';
 import pool from '../config/database.js';
 import { authenticateToken, type AuthRequest } from '../middleware/auth.js';
-import { consumeCredits as consumeCreditsAtomic } from '../services/creditService.js';
+import {
+    consumeCredits as consumeCreditsAtomic,
+    listFeatureCreditCosts,
+} from '../services/creditService.js';
 import {
     attachGooglePlayProductMetadata,
     ensureGooglePlayCatalogColumns,
@@ -1010,6 +1013,16 @@ router.post('/webhook/stripe', express.raw({ type: 'application/json' }), async 
 
 // Protected routes
 router.use(authenticateToken);
+
+router.get('/feature-costs', async (_req: AuthRequest, res: Response) => {
+    try {
+        res.set('Cache-Control', 'private, max-age=60');
+        res.json({ features: await listFeatureCreditCosts() });
+    } catch (error) {
+        console.error('[Subscriptions] Failed to load feature costs:', error);
+        res.status(500).json({ error: 'Failed to load feature costs' });
+    }
+});
 
 // Get current user's subscription
 router.get('/me', async (req: AuthRequest, res: Response) => {

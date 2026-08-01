@@ -7,6 +7,7 @@ import 'package:lucide_icons/lucide_icons.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/search/search_provider.dart';
+import '../../core/api/api_service.dart';
 import '../../core/search/serper_service.dart';
 import '../../features/sources/source_provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -159,14 +160,6 @@ class _WebSearchScreenState extends ConsumerState<WebSearchScreen> {
     if (_isDeepResearch) {
       _performDeepResearch(query);
     } else {
-      // Check and consume credits for web search
-      final hasCredits = await ref.tryUseCredits(
-        context: context,
-        amount: CreditCosts.webSearch,
-        feature: 'web_search',
-      );
-      if (!hasCredits) return;
-
       try {
         await ref
             .read(searchProvider.notifier)
@@ -189,18 +182,6 @@ class _WebSearchScreenState extends ConsumerState<WebSearchScreen> {
 
   Future<void> _performDeepResearch(String query) async {
     FocusScope.of(context).unfocus();
-
-    // Check and consume credits for deep research (more for deep mode)
-    final creditAmount = _selectedDepth == ResearchDepth.deep
-        ? CreditCosts.deepResearch * 2
-        : CreditCosts.deepResearch;
-
-    final hasCredits = await ref.tryUseCredits(
-      context: context,
-      amount: creditAmount,
-      feature: 'deep_research',
-    );
-    if (!hasCredits) return;
 
     setState(() {
       _isResearching = true;
@@ -281,6 +262,84 @@ class _WebSearchScreenState extends ConsumerState<WebSearchScreen> {
         );
       },
     );
+  }
+
+  Future<void> _saveCurrentSearchToAgentMemory() async {
+    try {
+      final agents = await ref.read(apiServiceProvider).getAgentMemories();
+      if (!mounted) return;
+      if (agents.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Connect an agent before saving search results to memory.')),
+        );
+        return;
+      }
+      final selected = await showModalBottomSheet<Map<String, dynamic>>(
+        context: context,
+        showDragHandle: true,
+        builder: (context) => SafeArea(
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              const ListTile(title: Text('Pass search to agent memory'), subtitle: Text('Choose the agent that should receive this research context.')),
+              ...agents.map((agent) {
+                final session = Map<String, dynamic>.from(agent['session'] ?? {});
+                return ListTile(
+                  leading: const Icon(Icons.smart_toy_outlined),
+                  title: Text(session['agentName']?.toString() ?? 'Agent'),
+                  subtitle: Text(session['agentIdentifier']?.toString() ?? ''),
+                  onTap: () => Navigator.pop(context, agent),
+                );
+              }),
+            ],
+          ),
+        ),
+      );
+      if (selected == null || !mounted) return;
+      final session = Map<String, dynamic>.from(selected['session'] ?? {});
+      final sessionId = session['id']?.toString() ?? '';
+      if (sessionId.isEmpty) throw Exception('Selected agent has no session ID.');
+      final searchState = ref.read(searchProvider);
+      final now = DateTime.now().toUtc().toIso8601String();
+      final item = _isDeepResearch
+          ? <String, dynamic>{
+              'id': 'deep-research-$now',
+              'type': 'deep_research',
+              'query': _searchController.text.trim(),
+              'report': _finalResult?.result,
+              'sources': _currentResearchSources().map((source) => source.toJson()).toList(),
+              'capturedAt': now,
+            }
+          : <String, dynamic>{
+              'id': 'web-search-$now',
+              'type': 'web_search',
+              'query': searchState.lastQuery ?? _searchController.text.trim(),
+              'results': searchState.results.map((result) => {
+                    'title': result.title,
+                    'url': result.link,
+                    'snippet': result.snippet,
+                    if (result.date != null) 'date': result.date,
+                  }).toList(),
+              'capturedAt': now,
+            };
+      await ref.read(apiServiceProvider).updateAgentMemory(
+        agentSessionId: sessionId,
+        namespace: 'web_research',
+        mode: 'append',
+        historyField: 'entries',
+        item: item,
+        dedupeKey: 'id',
+        maxHistoryItems: 100,
+        actorIdentifier: 'noteclaw_flutter',
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Search context added to agent memory.')));
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not save to agent memory: $error')));
+      }
+    }
   }
 
   Future<void> _loadSearchHistory() async {
@@ -882,9 +941,10 @@ $content''',
   }
 
   int get _estimatedDeepResearchCreditCost {
+    final costs = ref.watch(featureCreditCostsProvider).valueOrNull;
     return _selectedDepth == ResearchDepth.deep
-        ? CreditCosts.deepResearch * 2
-        : CreditCosts.deepResearch;
+        ? (costs?['deep_research_deep'] ?? CreditCosts.deepResearch * 2)
+        : (costs?['deep_research'] ?? CreditCosts.deepResearch);
   }
 
   List<ResearchUpdate> _visibleResearchUpdates() {
@@ -1411,9 +1471,10 @@ $content''',
           const SizedBox(height: 10),
           ...ResearchDepth.values.map((depth) {
             final selected = _selectedDepth == depth;
+            final costs = ref.watch(featureCreditCostsProvider).valueOrNull;
             final credits = depth == ResearchDepth.deep
-                ? CreditCosts.deepResearch * 2
-                : CreditCosts.deepResearch;
+                ? (costs?['deep_research_deep'] ?? CreditCosts.deepResearch * 2)
+                : (costs?['deep_research'] ?? CreditCosts.deepResearch);
 
             return Padding(
               padding: const EdgeInsets.only(bottom: 10),
@@ -2398,6 +2459,12 @@ $content''',
       appBar: AppBar(
         title: const Text('Web Search'),
         actions: [
+          if (searchState.results.isNotEmpty)
+            IconButton(
+              icon: const Icon(Icons.memory),
+              tooltip: 'Pass results to agent memory',
+              onPressed: _saveCurrentSearchToAgentMemory,
+            ),
           Consumer(builder: (context, ref, _) {
             final mode = ref.watch(themeModeProvider);
             return IconButton(

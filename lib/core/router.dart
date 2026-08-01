@@ -23,6 +23,7 @@ import '../features/search/web_search_screen.dart';
 import '../features/settings/agent_connections_screen.dart';
 import '../features/settings/account_settings_screen.dart';
 import '../features/settings/privacy_policy_screen.dart';
+import '../features/studio/visual_studio_screen.dart';
 import '../features/subscription/screens/paid_access_gate.dart';
 import '../features/subscription/screens/subscription_screen.dart';
 import 'auth/custom_auth_guard.dart';
@@ -153,6 +154,25 @@ GoRouter createRouter(ProviderContainer container) {
             child: WebSearchScreen(initialDeepResearch: true),
           ),
         ),
+      ),
+      GoRoute(
+        path: '/visual-studio',
+        name: 'visual-studio',
+        pageBuilder: (context, state) {
+          final extra = state.extra;
+          final notebookId =
+              extra is Map ? extra['notebookId']?.toString() : null;
+          final notebookTitle =
+              extra is Map ? extra['notebookTitle']?.toString() : null;
+          return buildTransitionPage(
+            child: PaidAccessGate(
+              child: VisualStudioScreen(
+                notebookId: notebookId,
+                notebookTitle: notebookTitle,
+              ),
+            ),
+          );
+        },
       ),
       GoRoute(
         path: '/fact-check',

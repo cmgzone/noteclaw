@@ -20,7 +20,7 @@ final availableModelsProvider =
     final dbModels = await service.listModels();
 
     for (final m in dbModels) {
-      if (!m.isActive) continue;
+      if (!m.isActive || !m.capabilities.contains('text')) continue;
       final provider = m.provider.trim().toLowerCase();
       if (provider.isEmpty) continue;
 
@@ -52,6 +52,7 @@ String formatAIProviderName(String provider) {
     'openai': 'OpenAI',
     'anthropic': 'Anthropic',
     'alibaba_token_plan': 'Alibaba Token Plan',
+    'alibaba_model_studio': 'Alibaba Model Studio',
   };
   if (knownNames.containsKey(normalized)) return knownNames[normalized]!;
 
@@ -67,7 +68,13 @@ final selectedAIModelProvider = StateProvider<String>((ref) => '');
 final currentAIModelIdProvider = FutureProvider<String>((ref) async {
   final prefs = await SharedPreferences.getInstance();
   final saved = prefs.getString('ai_model');
-  if (saved != null && saved.isNotEmpty) return saved;
+  if (saved != null && saved.isNotEmpty) {
+    final availableModels = await ref.watch(availableModelsProvider.future);
+    final stillAvailable = availableModels.values
+        .expand((models) => models)
+        .any((model) => model.id == saved);
+    if (stillAvailable) return saved;
+  }
 
   try {
     final service = ref.read(aiModelServiceProvider);

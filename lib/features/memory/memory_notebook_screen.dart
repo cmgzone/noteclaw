@@ -44,6 +44,100 @@ class _MemoryNotebookScreenState extends ConsumerState<MemoryNotebookScreen> {
     await _detail;
   }
 
+  Future<void> _editMemory(
+    MemoryNotebookDetail detail,
+    MemorySource source,
+  ) async {
+    if (!source.isMemorySource || detail.notebook.session.id.isEmpty) return;
+    final controller = TextEditingController(
+      text: const JsonEncoder.withIndent('  ').convert(source.memory),
+    );
+    String? validationError;
+    final shouldSave = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text('Edit ${source.namespace} memory'),
+          content: SizedBox(
+            width: 620,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                    'Edit the JSON object. Version checking prevents overwriting a newer agent update.'),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: controller,
+                  minLines: 12,
+                  maxLines: 20,
+                  style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+                  decoration: InputDecoration(
+                    border: const OutlineInputBorder(),
+                    errorText: validationError,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Cancel')),
+            FilledButton(
+              onPressed: () {
+                try {
+                  final decoded = jsonDecode(controller.text);
+                  if (decoded is! Map) {
+                    throw const FormatException('Memory must be a JSON object');
+                  }
+                  Navigator.pop(dialogContext, true);
+                } catch (error) {
+                  setDialogState(
+                      () => validationError = 'Invalid JSON: $error');
+                }
+              },
+              child: const Text('Save memory'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (shouldSave != true || !mounted) {
+      controller.dispose();
+      return;
+    }
+
+    try {
+      final memory =
+          Map<String, dynamic>.from(jsonDecode(controller.text) as Map);
+      await ref.read(apiServiceProvider).updateAgentMemory(
+            agentSessionId: detail.notebook.session.id,
+            namespace: source.namespace,
+            mode: 'replace',
+            memory: memory,
+            expectedVersion: source.version,
+            actorIdentifier: 'noteclaw_flutter',
+          );
+      await _refresh();
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('Memory updated')));
+      }
+    } catch (error) {
+      if (mounted) {
+        final message = error.toString().contains('409')
+            ? 'This memory changed while you were editing. Refresh and try again.'
+            : 'Failed to update memory: $error';
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(message)));
+      }
+    } finally {
+      controller.dispose();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -102,15 +196,35 @@ class _MemoryNotebookScreenState extends ConsumerState<MemoryNotebookScreen> {
                       children: [
                         _NotebookHeader(detail: detail),
                         const SizedBox(height: 12),
-                        FilledButton.icon(
-                          onPressed: () => context.push(
-                            '/memory-notebooks/${detail.notebook.id}/chat',
-                          ),
-                          icon: const Icon(
-                            LucideIcons.messagesSquare,
-                            size: 18,
-                          ),
-                          label: const Text('Chat with this memory'),
+                        Wrap(
+                          spacing: 10,
+                          runSpacing: 10,
+                          children: [
+                            FilledButton.icon(
+                              onPressed: () => context.push(
+                                '/memory-notebooks/${detail.notebook.id}/chat',
+                              ),
+                              icon: const Icon(
+                                LucideIcons.messagesSquare,
+                                size: 18,
+                              ),
+                              label: const Text('Chat with this memory'),
+                            ),
+                            OutlinedButton.icon(
+                              onPressed: () => context.push(
+                                '/visual-studio',
+                                extra: {
+                                  'notebookId': detail.notebook.id,
+                                  'notebookTitle': detail.notebook.title,
+                                },
+                              ),
+                              icon: const Icon(
+                                LucideIcons.wand2,
+                                size: 18,
+                              ),
+                              label: const Text('Visual Studio'),
+                            ),
+                          ],
                         ),
                         const SizedBox(height: 18),
                         _MemoryBrowser(
@@ -119,6 +233,7 @@ class _MemoryNotebookScreenState extends ConsumerState<MemoryNotebookScreen> {
                           onSelected: (source) => setState(
                             () => _selectedSourceId = source.id,
                           ),
+                          onEdit: (source) => _editMemory(detail, source),
                         ),
                       ],
                     ),
@@ -244,11 +359,13 @@ class _MemoryBrowser extends StatelessWidget {
     required this.sources,
     required this.selected,
     required this.onSelected,
+    required this.onEdit,
   });
 
   final List<MemorySource> sources;
   final MemorySource? selected;
   final ValueChanged<MemorySource> onSelected;
+  final ValueChanged<MemorySource> onEdit;
 
   @override
   Widget build(BuildContext context) {
@@ -273,7 +390,7 @@ class _MemoryBrowser extends StatelessWidget {
                 onSelected: onSelected,
               ),
               const SizedBox(height: 12),
-              _SourceViewer(source: selected!),
+              _SourceViewer(source: selected!, onEdit: onEdit),
             ],
           );
         }
@@ -292,7 +409,7 @@ class _MemoryBrowser extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 12),
-              Expanded(child: _SourceViewer(source: selected!)),
+              Expanded(child: _SourceViewer(source: selected!, onEdit: onEdit)),
             ],
           ),
         );
@@ -456,9 +573,10 @@ class _SourceItem extends StatelessWidget {
 }
 
 class _SourceViewer extends StatelessWidget {
-  const _SourceViewer({required this.source});
+  const _SourceViewer({required this.source, required this.onEdit});
 
   final MemorySource source;
+  final ValueChanged<MemorySource> onEdit;
 
   Future<void> _copy(BuildContext context) async {
     await Clipboard.setData(ClipboardData(text: source.content));
@@ -508,6 +626,12 @@ class _SourceViewer extends StatelessWidget {
                       ),
                     ],
                   ),
+                ),
+                IconButton(
+                  onPressed:
+                      source.isMemorySource ? () => onEdit(source) : null,
+                  tooltip: 'Edit memory',
+                  icon: const Icon(LucideIcons.pencil, size: 17),
                 ),
                 IconButton(
                   onPressed: () => _copy(context),

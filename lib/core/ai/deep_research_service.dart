@@ -155,6 +155,16 @@ class DeepResearchService {
       // Listen to the stream and yield updates
       await for (final event in stream) {
         try {
+          final eventError = event['error']?.toString();
+          if (eventError != null && eventError.isNotEmpty) {
+            yield ResearchUpdate(
+              status: event['status']?.toString() ?? 'Research failed',
+              progress: 1.0,
+              isComplete: true,
+              error: eventError,
+            );
+            return;
+          }
           // Backend sends progress updates with status, progress, sources, etc.
           final status = event['status'] as String? ?? 'Processing...';
           final progress = (event['progress'] as num?)?.toDouble() ?? 0.0;

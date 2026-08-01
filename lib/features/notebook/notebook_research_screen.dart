@@ -76,9 +76,10 @@ class _NotebookResearchScreenState
   }
 
   int get _estimatedCreditCost {
+    final costs = ref.watch(featureCreditCostsProvider).valueOrNull;
     return _selectedDepth == ResearchDepth.deep
-        ? CreditCosts.deepResearch * 2
-        : CreditCosts.deepResearch;
+        ? (costs?['deep_research_deep'] ?? CreditCosts.deepResearch * 2)
+        : (costs?['deep_research'] ?? CreditCosts.deepResearch);
   }
 
   Notebook? _currentNotebook(List<Notebook> notebooks) {
@@ -262,13 +263,6 @@ class _NotebookResearchScreenState
     if (query.isEmpty) return;
 
     FocusScope.of(context).unfocus();
-
-    final hasCredits = await ref.tryUseCredits(
-      context: context,
-      amount: _estimatedCreditCost,
-      feature: 'deep_research',
-    );
-    if (!hasCredits) return;
 
     setState(() {
       _isResearching = true;
@@ -773,9 +767,10 @@ class _NotebookResearchScreenState
           const SizedBox(height: 10),
           ...ResearchDepth.values.map((depth) {
             final selected = _selectedDepth == depth;
+            final costs = ref.watch(featureCreditCostsProvider).valueOrNull;
             final credits = depth == ResearchDepth.deep
-                ? CreditCosts.deepResearch * 2
-                : CreditCosts.deepResearch;
+                ? (costs?['deep_research_deep'] ?? CreditCosts.deepResearch * 2)
+                : (costs?['deep_research'] ?? CreditCosts.deepResearch);
 
             return Padding(
               padding: const EdgeInsets.only(bottom: 10),

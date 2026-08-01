@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/api/api_service.dart';
 import '../../core/ai/web_browsing_service.dart';
+import '../../core/ai/deep_research_service.dart';
 import '../subscription/providers/subscription_provider.dart';
 import 'message.dart';
 import 'stream_provider.dart';
@@ -139,6 +140,11 @@ class ChatNotifier extends StateNotifier<List<Message>> {
       return;
     }
 
+    if (useDeepSearch) {
+      await _handleDeepResearch(text);
+      return;
+    }
+
     // Pass chat history to stream provider for context
     final chatHistory = state.where((m) => m.id != userMsg.id).toList();
 
@@ -240,7 +246,7 @@ class ChatNotifier extends StateNotifier<List<Message>> {
   Future<void> _handleWebBrowsing(String query) async {
     // Check credits first
     final creditManager = ref.read(creditManagerProvider);
-    if (creditManager.currentBalance <= 0) {
+    if (creditManager.currentBalance < 0) {
       final errorMsg = Message(
         id: DateTime.now().millisecondsSinceEpoch.toString(),
         text:
@@ -300,14 +306,6 @@ class ChatNotifier extends StateNotifier<List<Message>> {
     _isWebBrowsing = false;
     _currentBrowsingUpdate = null;
 
-    // Consume credits after successful browsing
-    try {
-      await creditManager.useCredits(
-          amount: CreditCosts.chatMessage * 3, feature: 'web_browsing_chat');
-    } catch (e) {
-      debugPrint('Error consuming credits: $e');
-    }
-
     // Save AI response
     if (state.isNotEmpty && !state.last.isUser) {
       try {
@@ -321,6 +319,78 @@ class ChatNotifier extends StateNotifier<List<Message>> {
 
     // Generate Smart Suggestions
     _generateSuggestions();
+  }
+
+  Future<void> _handleDeepResearch(String query) async {
+    final placeholder = Message(
+      id: DateTime.now().microsecondsSinceEpoch.toString(),
+      text: 'Starting deep research…',
+      isUser: false,
+      timestamp: DateTime.now(),
+      isDeepSearch: true,
+    );
+    if (mounted) state = [...state, placeholder];
+
+    try {
+      await for (final update in ref.read(deepResearchServiceProvider).research(
+        query: query,
+        notebookId: '',
+        depth: ResearchDepth.standard,
+        template: ResearchTemplate.general,
+      )) {
+        if (!mounted) return;
+        final sourceUrls = update.sources
+                ?.map((source) => source.url)
+                .where((url) => url.isNotEmpty)
+                .toList() ??
+            const <String>[];
+        final text = update.error != null
+            ? '⚠️ **Deep Research Error**\n\n${update.error}'
+            : update.isComplete
+                ? (update.result ?? 'Research completed without a report.')
+                : '🔎 ${update.status}';
+        state = [
+          ...state.sublist(0, state.length - 1),
+          Message(
+            id: placeholder.id,
+            text: text,
+            isUser: false,
+            timestamp: DateTime.now(),
+            isDeepSearch: true,
+            isWebBrowsing: true,
+            webBrowsingSources: sourceUrls,
+            webBrowsingScreenshots: update.images ?? const <String>[],
+          ),
+        ];
+
+        if (update.isComplete) {
+          if (update.error == null && update.result != null) {
+            unawaited(ref
+                .read(apiServiceProvider)
+                .saveChatMessage(
+                  notebookId: null,
+                  role: 'model',
+                  content: update.result!,
+                )
+                .catchError((_) => <String, dynamic>{}));
+          }
+          ref.invalidate(userSubscriptionProvider);
+          return;
+        }
+      }
+    } catch (error) {
+      if (!mounted) return;
+      state = [
+        ...state.sublist(0, state.length - 1),
+        Message(
+          id: placeholder.id,
+          text: '⚠️ **Deep Research Error**\n\n$error',
+          isUser: false,
+          timestamp: DateTime.now(),
+          isDeepSearch: true,
+        ),
+      ];
+    }
   }
 
   Future<void> _generateSuggestions() async {

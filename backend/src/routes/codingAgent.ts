@@ -45,6 +45,7 @@ import {
   getResearchJobStatus,
   searchWeb,
   startBackgroundResearch,
+  normalizeResearchProvider,
   type ResearchConfig,
   type ResearchDepth,
   type ResearchTemplate,
@@ -99,7 +100,7 @@ const chargeFeatureCredits = async (
     };
   }
 
-  const amount = getFeatureCreditCost(feature, { depth: options.depth });
+  const amount = await getFeatureCreditCost(feature, { depth: options.depth });
   const result = await consumeCredits(
     userId,
     amount,
@@ -5388,7 +5389,7 @@ router.post('/research/jobs', authenticateToken, async (req: Request, res: Respo
       template,
       notebookId,
       useNotebookContext: req.body?.useNotebookContext === true && Boolean(notebookId),
-      provider: req.body?.provider === 'openrouter' ? 'openrouter' : 'gemini',
+      provider: normalizeResearchProvider(req.body?.provider, req.body?.model),
       model: typeof req.body?.model === 'string' && req.body.model.trim()
         ? req.body.model.trim()
         : undefined,

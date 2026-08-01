@@ -6,32 +6,67 @@ import {
     performCloudResearch,
     startBackgroundResearch,
     getResearchJobStatus,
+    normalizeResearchProvider,
     type ResearchConfig,
     type ResearchDepth,
     type ResearchTemplate
 } from '../services/researchService.js';
+import {
+    consumeCredits,
+    getFeatureCreditCost,
+    refundCredits,
+} from '../services/creditService.js';
 
 const router = express.Router();
 router.use(authenticateToken);
 
+async function chargeResearch(userId: string, depth: string, skip: boolean) {
+    if (skip) return 0;
+    const amount = await getFeatureCreditCost('deep_research', { depth });
+    const result = await consumeCredits(userId, amount, 'deep_research', { depth });
+    if (!result.success) {
+        const error = new Error(result.error || 'Unable to deduct research credits') as Error & { status?: number };
+        error.status = result.error === 'Insufficient credits' ? 402 : 400;
+        throw error;
+    }
+    return amount;
+}
+
+function buildResearchConfig(body: Record<string, any>): ResearchConfig {
+    const depth = ['quick', 'standard', 'deep'].includes(body.depth)
+        ? body.depth as ResearchDepth
+        : 'standard';
+    const supportedTemplates: ResearchTemplate[] = [
+        'general', 'academic', 'productComparison', 'marketAnalysis', 'howToGuide', 'prosAndCons',
+    ];
+    const template = supportedTemplates.includes(body.template)
+        ? body.template
+        : 'general';
+    return {
+        depth,
+        template,
+        notebookId: typeof body.notebookId === 'string' ? body.notebookId : undefined,
+        useNotebookContext: body.useNotebookContext === true,
+        provider: normalizeResearchProvider(body.provider, body.model),
+        model: typeof body.model === 'string' && body.model.trim().length > 0
+            ? body.model.trim()
+            : undefined,
+    };
+}
+
 // Start cloud research (synchronous - waits for completion)
 router.post('/cloud', async (req: AuthRequest, res: Response) => {
+    let charged = 0;
     try {
-        const { query, depth = 'standard', template = 'general', notebookId, provider, model, useNotebookContext = false } = req.body;
+        const { query } = req.body;
         const userApiKey = (req.get('x-user-api-key') || '').trim() || undefined;
 
         if (!query) {
             return res.status(400).json({ error: 'Query is required' });
         }
 
-        const config: ResearchConfig = {
-            depth: depth as ResearchDepth,
-            template: template as ResearchTemplate,
-            notebookId,
-            useNotebookContext: useNotebookContext === true,
-            provider: provider === 'openrouter' ? 'openrouter' : 'gemini',
-            model: typeof model === 'string' && model.length > 0 ? model : undefined
-        };
+        const config = buildResearchConfig(req.body);
+        charged = await chargeResearch(req.userId!, config.depth, !!userApiKey);
 
         // Set longer timeout for research
         req.setTimeout(300000); // 5 minutes
@@ -47,37 +82,38 @@ router.post('/cloud', async (req: AuthRequest, res: Response) => {
             sources: result.sources
         });
     } catch (error: any) {
+        if (charged > 0) {
+            await refundCredits(req.userId!, charged, 'deep_research', { reason: error.message, route: 'research_cloud' }).catch(console.error);
+        }
         console.error('Cloud research error:', error);
-        res.status(500).json({ error: error.message || 'Research failed' });
+        res.status(error.status || 500).json({ error: error.message || 'Research failed' });
     }
 });
 
 // Stream cloud research (SSE)
-router.post('/stream', async (req: AuthRequest, res: Response) => {
+router.post(['/stream', '/deep'], async (req: AuthRequest, res: Response) => {
+    let charged = 0;
     try {
-        const { query, depth = 'standard', template = 'general', notebookId, provider, model, useNotebookContext = false } = req.body;
+        const { query } = req.body;
         const userApiKey = (req.get('x-user-api-key') || '').trim() || undefined;
 
         if (!query) {
             return res.status(400).json({ error: 'Query is required' });
         }
 
-        const config: ResearchConfig = {
-            depth: depth as ResearchDepth,
-            template: template as ResearchTemplate,
-            notebookId,
-            useNotebookContext: useNotebookContext === true,
-            provider: provider === 'openrouter' ? 'openrouter' : 'gemini',
-            model: typeof model === 'string' && model.length > 0 ? model : undefined
-        };
+        const config = buildResearchConfig(req.body);
+        charged = await chargeResearch(req.userId!, config.depth, !!userApiKey);
 
         // Set headers for SSE
         res.setHeader('Content-Type', 'text/event-stream');
-        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Cache-Control', 'no-cache, no-transform');
         res.setHeader('Connection', 'keep-alive');
+        res.setHeader('X-Accel-Buffering', 'no');
+        res.flushHeaders?.();
 
         const result = await performCloudResearch(req.userId!, query, config, (progress) => {
             res.write(`data: ${JSON.stringify(progress)}\n\n`);
+            res.flush?.();
         }, {
             apiKey: userApiKey
         });
@@ -90,30 +126,47 @@ router.post('/stream', async (req: AuthRequest, res: Response) => {
         res.end();
 
     } catch (error: any) {
+        if (charged > 0) {
+            await refundCredits(req.userId!, charged, 'deep_research', { reason: error.message, route: 'research_stream' }).catch(console.error);
+        }
         console.error('Stream research error:', error);
-        // If headers haven't been sent (unlikely for SSE if started), send JSON error
-        // But for SSE, we usually send an error event
-        res.write(`data: ${JSON.stringify({ error: error.message || 'Research failed' })}\n\n`);
+        if (!res.headersSent) {
+            return res.status(error.status || 500).json({ error: error.message || 'Research failed' });
+        }
+        res.write(`data: ${JSON.stringify({
+            status: 'Research failed',
+            error: error.message || 'Research failed',
+            progress: 1,
+            isComplete: true,
+        })}\n\n`);
+        res.flush?.();
         res.end();
     }
 });
 
 // Start background research (async - returns job ID immediately)
 router.post('/background', async (req: AuthRequest, res: Response) => {
+    let charged = 0;
     try {
-        const { query, depth = 'standard', template = 'general', notebookId } = req.body;
+        const { query } = req.body;
 
         if (!query) {
             return res.status(400).json({ error: 'Query is required' });
         }
 
-        const config: ResearchConfig = {
-            depth: depth as ResearchDepth,
-            template: template as ResearchTemplate,
-            notebookId
-        };
+        const config = buildResearchConfig(req.body);
+        charged = await chargeResearch(req.userId!, config.depth, false);
 
-        const jobId = await startBackgroundResearch(req.userId!, query, config);
+        const jobId = await startBackgroundResearch(req.userId!, query, config, {
+            onFailed: async (error) => {
+                if (charged > 0) {
+                    await refundCredits(req.userId!, charged, 'deep_research', {
+                        reason: error.message,
+                        route: 'research_background',
+                    });
+                }
+            },
+        });
 
         res.json({
             success: true,
@@ -121,8 +174,11 @@ router.post('/background', async (req: AuthRequest, res: Response) => {
             message: 'Research started in background'
         });
     } catch (error: any) {
+        if (charged > 0) {
+            await refundCredits(req.userId!, charged, 'deep_research', { reason: error.message, route: 'research_background_start' }).catch(console.error);
+        }
         console.error('Background research error:', error);
-        res.status(500).json({ error: error.message || 'Failed to start research' });
+        res.status(error.status || 500).json({ error: error.message || 'Failed to start research' });
     }
 });
 
@@ -207,13 +263,14 @@ router.get('/sessions/:id', async (req: AuthRequest, res: Response) => {
 
 // Save research session (for client-side research)
 router.post('/sessions', async (req: AuthRequest, res: Response) => {
+    const client = await pool.connect();
     try {
         const { id, notebookId, query, report, sources } = req.body;
         const sessionId = id || uuidv4();
 
-        await pool.query('BEGIN');
+        await client.query('BEGIN');
 
-        const sessionRes = await pool.query(
+        const sessionRes = await client.query(
             `INSERT INTO research_sessions (id, user_id, notebook_id, query, report)
              VALUES ($1, $2, $3, $4, $5) 
              ON CONFLICT (id) DO UPDATE SET report = $5
@@ -224,11 +281,11 @@ router.post('/sessions', async (req: AuthRequest, res: Response) => {
         // Insert sources if provided
         if (sources && Array.isArray(sources)) {
             // Clear existing sources for this session if updating
-            await pool.query('DELETE FROM research_sources WHERE session_id = $1', [sessionId]);
+            await client.query('DELETE FROM research_sources WHERE session_id = $1', [sessionId]);
 
             for (const s of sources) {
                 const sId = uuidv4();
-                await pool.query(
+                await client.query(
                     `INSERT INTO research_sources (id, session_id, title, url, content, snippet, credibility, credibility_score)
                      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
                     [sId, sessionId, s.title, s.url, s.content, s.snippet, s.credibility || 'unknown', s.credibilityScore || 60]
@@ -236,12 +293,14 @@ router.post('/sessions', async (req: AuthRequest, res: Response) => {
             }
         }
 
-        await pool.query('COMMIT');
+        await client.query('COMMIT');
         res.status(201).json({ success: true, session: sessionRes.rows[0] });
     } catch (error) {
-        await pool.query('ROLLBACK');
+        await client.query('ROLLBACK');
         console.error('Save research session error:', error);
         res.status(500).json({ error: 'Failed to save research session' });
+    } finally {
+        client.release();
     }
 });
 

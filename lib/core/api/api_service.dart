@@ -813,6 +813,8 @@ class ApiService {
     int? summaryMaxItems,
     String? compactToNamespace,
     String? dedupeKey,
+    int? expectedVersion,
+    String? actorIdentifier,
   }) async {
     return await put<Map<String, dynamic>>('/coding-agent/memory', {
       if (agentSessionId != null && agentSessionId.isNotEmpty)
@@ -830,6 +832,9 @@ class ApiService {
       if (summaryMaxItems != null) 'summaryMaxItems': summaryMaxItems,
       if (compactToNamespace != null) 'compactToNamespace': compactToNamespace,
       if (dedupeKey != null) 'dedupeKey': dedupeKey,
+      if (expectedVersion != null) 'expectedVersion': expectedVersion,
+      if (actorIdentifier != null && actorIdentifier.isNotEmpty)
+        'actorIdentifier': actorIdentifier,
     });
   }
 
@@ -1446,6 +1451,18 @@ class ApiService {
     });
   }
 
+  Future<Map<String, int>> getFeatureCreditCosts() async {
+    final response =
+        await get<Map<String, dynamic>>('/subscriptions/feature-costs');
+    final features = (response['features'] as List?) ?? const [];
+    return {
+      for (final feature in features.whereType<Map>())
+        if (feature['key'] != null)
+          feature['key'].toString():
+              int.tryParse(feature['creditCost']?.toString() ?? '') ?? 0,
+    };
+  }
+
   // ============ VOICE MODELS ============
 
   Future<List<Map<String, dynamic>>> getVoiceModels() async {
@@ -1477,6 +1494,56 @@ class ApiService {
   }
 
   // ============ MEDIA ============
+
+  Future<Map<String, dynamic>> generateImage({
+    required String prompt,
+    String? model,
+    String? provider,
+    String size = '1024*1024',
+  }) async {
+    final response = await post<Map<String, dynamic>>('/generation/image', {
+      'prompt': prompt,
+      'size': size,
+      if (model != null && model.isNotEmpty) 'model': model,
+      if (provider != null && provider.isNotEmpty) 'provider': provider,
+    });
+    return Map<String, dynamic>.from(response['generation'] ?? {});
+  }
+
+  Future<Map<String, dynamic>> generateVideo({
+    required String prompt,
+    String? model,
+    String? provider,
+    String size = '1280*720',
+    int duration = 5,
+  }) async {
+    final response = await post<Map<String, dynamic>>('/generation/video', {
+      'prompt': prompt,
+      'size': size,
+      'duration': duration,
+      if (model != null && model.isNotEmpty) 'model': model,
+      if (provider != null && provider.isNotEmpty) 'provider': provider,
+    });
+    return Map<String, dynamic>.from(response['generation'] ?? {});
+  }
+
+  Future<Map<String, dynamic>> getMediaGeneration(String id) async {
+    final response = await get<Map<String, dynamic>>('/generation/$id');
+    return Map<String, dynamic>.from(response['generation'] ?? {});
+  }
+
+  Future<List<Map<String, dynamic>>> listMediaGenerations() async {
+    final response = await get<Map<String, dynamic>>('/generation');
+    return List<Map<String, dynamic>>.from(response['generations'] ?? []);
+  }
+
+  Future<Uint8List> downloadMediaGeneration(String id) async {
+    final response = await _dio.get(
+      _normalizeEndpoint('/generation/$id/download'),
+      options: Options(responseType: ResponseType.bytes),
+    );
+    return Uint8List.fromList(List<int>.from(response.data));
+  }
 
   Future<Uint8List?> getMediaBytes(String sourceId) async {
     try {

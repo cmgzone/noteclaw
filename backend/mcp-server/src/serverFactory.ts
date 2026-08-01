@@ -277,7 +277,7 @@ const DeepResearchStartSchema = z.object({
   template: z.enum(researchTemplates).optional().default('general'),
   notebookId: z.string().min(1).optional(),
   useNotebookContext: z.boolean().optional().default(false),
-  provider: z.enum(['gemini', 'openrouter']).optional().default('gemini'),
+  provider: z.enum(['gemini', 'openrouter', 'alibaba_token_plan']).optional().default('gemini'),
   model: z.string().min(1).optional(),
 });
 
@@ -296,6 +296,25 @@ const ResearchSaveToNotebookSchema = z.object({
   sessionId: z.string().min(1),
   notebookId: z.string().min(1).optional(),
   title: z.string().min(1).max(180).optional(),
+});
+
+const ImageGenerateSchema = z.object({
+  prompt: z.string().min(1).max(5_000),
+  model: z.string().min(1).max(200).optional(),
+  provider: z.enum(['alibaba_token_plan', 'alibaba_model_studio']).optional(),
+  size: z.string().regex(/^\d{2,5}[x*]\d{2,5}$/).optional().default('1024*1024'),
+});
+
+const VideoGenerateSchema = z.object({
+  prompt: z.string().min(1).max(5_000),
+  model: z.string().min(1).max(200).optional(),
+  provider: z.enum(['alibaba_token_plan', 'alibaba_model_studio']).optional(),
+  size: z.string().regex(/^\d{2,5}[x*]\d{2,5}$/).optional().default('1280*720'),
+  duration: z.number().int().min(2).max(15).optional().default(5),
+});
+
+const MediaGenerationGetSchema = z.object({
+  generationId: z.string().uuid(),
 });
 
 const tools: Tool[] = [
@@ -858,8 +877,8 @@ const tools: Tool[] = [
   {
     name: 'web_search',
     description:
-      'Search the live web and return compact, citable results. Costs 1 NoteClaw ' +
-      'credit; failed searches are refunded. This paid tool ' +
+      'Search the live web and return compact, citable results. Uses the ' +
+      'administrator-configured web-search tariff; failed searches are refunded. This paid tool ' +
       'supports allowlists and blocklists for domain control. Cite factual ' +
       'claims with the returned URLs and verify important claims on the source page.',
     inputSchema: {
@@ -1001,7 +1020,7 @@ const tools: Tool[] = [
     description:
       'Start an asynchronous multi-step web research job. It generates research ' +
       'angles, collects sources, ranks credibility, and synthesizes a cited report. ' +
-      'Standard and quick depth cost 5 NoteClaw credits; deep depth costs 10. ' +
+      'The administrator configures standard and extended-research tariffs. ' +
       'Failed jobs are refunded. Use notebookId with useNotebookContext to align ' +
       'research with saved memories.',
     inputSchema: {
@@ -1088,6 +1107,69 @@ const tools: Tool[] = [
         },
       },
       required: ['sessionId'],
+    },
+  },
+  {
+    name: 'image_generate',
+    description:
+      'Generate an image with Alibaba Token Plan or standard Model Studio models configured by the ' +
+      'NoteClaw administrator. The configured image-generation credit tariff is ' +
+      'charged only when the request starts and is refunded on failure.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        prompt: { type: 'string', maxLength: 5000 },
+        model: { type: 'string', description: 'Optional Alibaba image model ID.' },
+        provider: {
+          type: 'string',
+          enum: ['alibaba_token_plan', 'alibaba_model_studio'],
+          description: 'Optional provider channel; the model catalog provider is used when omitted.',
+        },
+        size: { type: 'string', default: '1024*1024', description: 'Width*height.' },
+      },
+      required: ['prompt'],
+    },
+  },
+  {
+    name: 'video_generate',
+    description:
+      'Start an asynchronous Alibaba video generation. Use media_generation_status ' +
+      'until it completes, then media_generation_download for the downloadable URL. ' +
+      'The configured video-generation credit tariff is refunded if the task fails.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        prompt: { type: 'string', maxLength: 5000 },
+        model: { type: 'string', description: 'Optional Alibaba video model ID.' },
+        provider: {
+          type: 'string',
+          enum: ['alibaba_token_plan', 'alibaba_model_studio'],
+          description: 'Optional provider channel; the model catalog provider is used when omitted.',
+        },
+        size: { type: 'string', default: '1280*720', description: 'Width*height.' },
+        duration: { type: 'integer', minimum: 2, maximum: 15, default: 5 },
+      },
+      required: ['prompt'],
+    },
+  },
+  {
+    name: 'media_generation_status',
+    description: 'Get current status and download metadata for an image or video generation.',
+    inputSchema: {
+      type: 'object',
+      properties: { generationId: { type: 'string', format: 'uuid' } },
+      required: ['generationId'],
+    },
+  },
+  {
+    name: 'media_generation_download',
+    description:
+      'Return the durable download URL for a completed generation. The URL is public ' +
+      'when CDN storage is configured; otherwise it uses the same NoteClaw bearer token.',
+    inputSchema: {
+      type: 'object',
+      properties: { generationId: { type: 'string', format: 'uuid' } },
+      required: ['generationId'],
     },
   },
 ];
@@ -1632,6 +1714,44 @@ export function createNoteClawMcpServer(
           },
         );
         return textResult(response.data);
+      }
+
+      case 'image_generate': {
+        const input = ImageGenerateSchema.parse(args);
+        const response = await accountApi.post('/generation/image', input, { timeout: 240_000 });
+        return textResult(response.data);
+      }
+
+      case 'video_generate': {
+        const input = VideoGenerateSchema.parse(args);
+        const response = await accountApi.post('/generation/video', input, { timeout: 90_000 });
+        return textResult(response.data);
+      }
+
+      case 'media_generation_status': {
+        const input = MediaGenerationGetSchema.parse(args);
+        const response = await accountApi.get(`/generation/${encodeURIComponent(input.generationId)}`);
+        return textResult(response.data);
+      }
+
+      case 'media_generation_download': {
+        const input = MediaGenerationGetSchema.parse(args);
+        const response = await accountApi.get(`/generation/${encodeURIComponent(input.generationId)}`);
+        const generation = response.data?.generation;
+        if (generation?.status !== 'completed') {
+          throw new Error(`Generation is ${generation?.status || 'not found'} and is not ready to download.`);
+        }
+        const publicUrl = generation.publicUrl || null;
+        return textResult({
+          success: true,
+          generationId: input.generationId,
+          filename: generation.filename,
+          contentType: generation.contentType,
+          downloadUrl: publicUrl || `${backendUrl}/api/generation/${encodeURIComponent(input.generationId)}/download`,
+          authenticationRequired: !publicUrl,
+          authentication:
+            publicUrl ? 'none' : 'Send Authorization: Bearer <the NoteClaw API token configured for this MCP server>.',
+        });
       }
 
         default:

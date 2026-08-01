@@ -15,7 +15,8 @@ import {
     Cloud,
     Cpu,
     Bell,
-    Database
+    Database,
+    Coins
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -31,6 +32,7 @@ export default function Layout() {
         { name: 'Notifications', href: '/notifications', icon: Bell },
         { name: 'Subscription Plans', href: '/subscription-plans', icon: CreditCard },
         { name: 'Credit Packages', href: '/credit-packages', icon: Package },
+        { name: 'Feature Costs', href: '/feature-costs', icon: Coins },
         { name: 'Transactions', href: '/transactions', icon: Receipt },
         { name: 'Storage & CDN', href: '/storage', icon: Cloud },
         { name: 'MCP Settings', href: '/mcp-settings', icon: Cpu },

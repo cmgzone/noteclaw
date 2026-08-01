@@ -16,6 +16,7 @@ import McpSettings from './pages/McpSettings';
 import NotificationManager from './pages/NotificationManager';
 import DataManager from './pages/DataManager';
 import PlayTesters from './pages/PlayTesters';
+import FeatureCosts from './pages/FeatureCosts';
 
 function ProtectedRoute() {
   const { user, loading } = useAuth();
@@ -44,6 +45,7 @@ function Router() {
               <Route path="/notifications" element={<NotificationManager />} />
               <Route path="/subscription-plans" element={<SubscriptionPlans />} />
               <Route path="/credit-packages" element={<CreditPackages />} />
+              <Route path="/feature-costs" element={<FeatureCosts />} />
               <Route path="/transactions" element={<PaymentTransactions />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/storage" element={<StorageManager />} />

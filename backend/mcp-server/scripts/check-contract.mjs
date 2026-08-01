@@ -11,6 +11,8 @@ const expectedTools = [
   'noteclaw_instructions_get',
   'memory_session_open',
   'memory_sessions_list',
+  'notebook_create',
+  'source_create',
   'memory_topics_list',
   'memory_topic_get',
   'memory_chat',
@@ -40,6 +42,10 @@ const expectedTools = [
   'deep_research_status',
   'deep_research_result',
   'research_save_to_notebook',
+  'image_generate',
+  'video_generate',
+  'media_generation_status',
+  'media_generation_download',
 ];
 
 const client = new Client({

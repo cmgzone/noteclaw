@@ -37,6 +37,7 @@ class _PlanSharingSheetState extends ConsumerState<PlanSharingSheet> {
   bool _isLoadingAgents = true;
   List<AgentAccess> _sharedAgents = [];
   List<_AvailableAgent> _availableAgents = [];
+  String? _selectedMemoryAgentId;
   String? _error;
 
   @override
@@ -74,6 +75,8 @@ class _PlanSharingSheetState extends ConsumerState<PlanSharingSheet> {
               'active',
         );
       }).toList();
+      _selectedMemoryAgentId ??=
+          _availableAgents.isEmpty ? null : _availableAgents.first.sessionId;
 
       setState(() => _isLoadingAgents = false);
     } catch (e) {
@@ -226,6 +229,40 @@ class _PlanSharingSheetState extends ConsumerState<PlanSharingSheet> {
           onChanged: _togglePrivacy,
           isLoading: _isLoading,
         ).animate().fadeIn(delay: 100.ms),
+        if (_availableAgents.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text('Pass plan to agent memory', style: text.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 4),
+                  Text('Stores the current requirements, design notes, tasks, and status in the selected agent’s durable memory.', style: text.bodySmall),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    initialValue: _selectedMemoryAgentId,
+                    decoration: const InputDecoration(labelText: 'Agent', border: OutlineInputBorder(), isDense: true),
+                    items: _availableAgents.map((agent) => DropdownMenuItem(
+                      value: agent.sessionId,
+                      child: Text(agent.name),
+                    )).toList(),
+                    onChanged: _isLoading ? null : (value) => setState(() => _selectedMemoryAgentId = value),
+                  ),
+                  const SizedBox(height: 10),
+                  FilledButton.icon(
+                    onPressed: _isLoading || _selectedMemoryAgentId == null
+                        ? null
+                        : () => _syncPlanToMemory(_availableAgents.firstWhere((agent) => agent.sessionId == _selectedMemoryAgentId)),
+                    icon: const Icon(LucideIcons.brain, size: 17),
+                    label: const Text('Sync current plan to memory'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
         const SizedBox(height: 24),
         // Shared agents section
         _SectionHeader(
@@ -317,6 +354,40 @@ class _PlanSharingSheetState extends ConsumerState<PlanSharingSheet> {
             content: Text('Failed to update privacy: $e'),
             backgroundColor: Theme.of(context).colorScheme.error,
           ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _syncPlanToMemory(_AvailableAgent agent) async {
+    setState(() => _isLoading = true);
+    try {
+      await ref.read(apiServiceProvider).updateAgentMemory(
+        agentSessionId: agent.sessionId,
+        namespace: 'plan_${widget.plan.id}',
+        mode: 'replace',
+        memory: {
+          'type': 'plan',
+          'planId': widget.plan.id,
+          'title': widget.plan.title,
+          'status': widget.plan.status.name,
+          'plan': widget.plan.toJson(),
+          'syncedAt': DateTime.now().toUtc().toIso8601String(),
+          'source': 'noteclaw_flutter',
+        },
+        actorIdentifier: 'noteclaw_flutter',
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Plan synced to ${agent.name} memory.')),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to sync plan: $error')),
         );
       }
     } finally {

@@ -11,8 +11,11 @@ import 'package:http/http.dart' as http;
 import '../../core/ai/gemini_image_service.dart';
 import '../../core/ai/ai_settings_service.dart';
 import '../../core/security/ai_api_key_resolver.dart';
+import '../../core/api/api_service.dart';
 import '../sources/source_provider.dart';
 import '../sources/source.dart';
+
+enum _GenerationKind { image, video }
 
 class VisualStudioScreen extends ConsumerStatefulWidget {
   const VisualStudioScreen({
@@ -31,6 +34,11 @@ class VisualStudioScreen extends ConsumerStatefulWidget {
 class _VisualStudioScreenState extends ConsumerState<VisualStudioScreen> {
   final _promptController = TextEditingController();
   String? _generatedImageUrl;
+  Uint8List? _generatedVideoBytes;
+  _GenerationKind _generationKind = _GenerationKind.image;
+  List<Map<String, dynamic>> _mediaModels = const [];
+  String? _selectedMediaModel;
+  String? _selectedMediaProvider;
   String? _providerLabel;
   String? _modelLabel;
   String? _backendLabel;
@@ -42,6 +50,7 @@ class _VisualStudioScreenState extends ConsumerState<VisualStudioScreen> {
   void initState() {
     super.initState();
     _loadImageRoutePreview();
+    _loadMediaModels();
   }
 
   @override
@@ -51,15 +60,68 @@ class _VisualStudioScreenState extends ConsumerState<VisualStudioScreen> {
   }
 
   Future<void> _loadImageRoutePreview() async {
-    final route = await _resolveImageRoute();
     if (!mounted) return;
     setState(() {
-      _providerLabel = route.providerLabel;
-      _modelLabel = route.modelLabel;
-      _backendLabel = route.backendLabel;
-      _backendNote = route.note;
-      _keySourceLabel = route.keySourceLabel;
+      _providerLabel = 'Alibaba Model Studio';
+      _modelLabel = _selectedMediaModel ?? 'Admin default';
+      _backendLabel = 'NoteClaw backend';
+      _backendNote =
+          'Generated files are stored for authenticated download. Failed jobs are refunded automatically.';
+      _keySourceLabel = 'Admin-managed key';
     });
+  }
+
+  bool _modelSupports(Map<String, dynamic> model, _GenerationKind kind) {
+    final capabilities = (model['capabilities'] as List?)
+            ?.map((value) => value.toString().toLowerCase())
+            .toList() ??
+        const <String>[];
+    if (capabilities.contains(kind.name)) return true;
+    final id = (model['model_id'] ?? '').toString().toLowerCase();
+    return kind == _GenerationKind.image
+        ? id.contains('image')
+        : id.contains('video') || id.contains('t2v') || id.contains('i2v');
+  }
+
+  String _modelProvider(Map<String, dynamic> model) {
+    return (model['provider_key'] ??
+            model['catalog_provider'] ??
+            model['provider'] ??
+            '')
+        .toString()
+        .toLowerCase();
+  }
+
+  String _modelOptionValue(Map<String, dynamic> model) {
+    return '${_modelProvider(model)}::${model['model_id']}';
+  }
+
+  String _providerDisplayName(String? provider) {
+    return provider == 'alibaba_token_plan'
+        ? 'Alibaba Token Plan'
+        : 'Alibaba Model Studio';
+  }
+
+  Future<void> _loadMediaModels() async {
+    try {
+      final models = await ref.read(apiServiceProvider).getAIModels();
+      if (!mounted) return;
+      setState(() {
+        _mediaModels = models
+            .where((model) => model['is_active'] != false)
+            .where((model) => _modelSupports(model, _generationKind))
+            .toList();
+        _selectedMediaModel = _mediaModels.isEmpty
+            ? null
+            : (_mediaModels.first['model_id'] ?? '').toString();
+        _selectedMediaProvider =
+            _mediaModels.isEmpty ? null : _modelProvider(_mediaModels.first);
+        _providerLabel = _providerDisplayName(_selectedMediaProvider);
+        _modelLabel = _selectedMediaModel ?? 'Admin default';
+      });
+    } catch (_) {
+      // The backend has safe default model IDs when the catalog is unavailable.
+    }
   }
 
   void _generateImage() async {
@@ -70,6 +132,7 @@ class _VisualStudioScreenState extends ConsumerState<VisualStudioScreen> {
     setState(() {
       _isGenerating = true;
       _generatedImageUrl = null;
+      _generatedVideoBytes = null;
     });
 
     try {
@@ -77,28 +140,71 @@ class _VisualStudioScreenState extends ConsumerState<VisualStudioScreen> {
         rawPrompt,
         aspectRatio: aspectRatio,
       );
-      final settings = await AISettingsService.getSettingsWithDefault(ref.read);
-      final route = await _resolveImageRoute(
-        providerOverride: settings.provider,
-        modelOverride: settings.model,
-      );
+      final api = ref.read(apiServiceProvider);
+      if (_generationKind == _GenerationKind.image) {
+        final generation = await api.generateImage(
+          prompt: prompt,
+          model: _selectedMediaModel,
+          provider: _selectedMediaProvider,
+          size: aspectRatio == '16:9'
+              ? '1344*768'
+              : aspectRatio == '9:16'
+                  ? '768*1344'
+                  : '1024*1024',
+        );
+        final id = generation['id']?.toString();
+        if (id == null || id.isEmpty) {
+          throw Exception('Backend returned no generation ID.');
+        }
+        final bytes = await api.downloadMediaGeneration(id);
+        if (!mounted) return;
+        setState(() {
+          _generatedImageUrl = 'data:image/png;base64,${base64Encode(bytes)}';
+          _providerLabel =
+              _providerDisplayName(generation['provider']?.toString());
+          _modelLabel = generation['model']?.toString() ?? _selectedMediaModel;
+          _backendLabel = 'NoteClaw backend';
+          _backendNote = 'Stored and ready to download or share.';
+          _keySourceLabel = 'Admin-managed key';
+          _isGenerating = false;
+        });
+        return;
+      }
 
-      final imageService = GeminiImageService(apiKey: route.apiKey);
-      final result = await imageService.generateImageResult(
-        prompt,
-        provider: settings.provider,
-        model: settings.model,
-        aspectRatio: aspectRatio,
+      var generation = await api.generateVideo(
+        prompt: prompt,
+        model: _selectedMediaModel,
+        provider: _selectedMediaProvider,
+        size: aspectRatio == '9:16' ? '720*1280' : '1280*720',
       );
+      final id = generation['id']?.toString();
+      if (id == null || id.isEmpty) {
+        throw Exception('Backend returned no generation ID.');
+      }
+      for (var attempt = 0; attempt < 150; attempt++) {
+        if (!mounted) return;
+        final status = generation['status']?.toString();
+        if (status == 'completed') break;
+        if (status == 'failed') {
+          throw Exception(generation['error'] ?? 'Video generation failed.');
+        }
+        await Future.delayed(const Duration(seconds: 4));
+        generation = await api.getMediaGeneration(id);
+      }
+      if (generation['status'] != 'completed') {
+        throw Exception('Video generation timed out.');
+      }
+      final bytes = await api.downloadMediaGeneration(id);
 
       if (mounted) {
         setState(() {
-          _generatedImageUrl = result.imageUrl;
-          _providerLabel = route.providerLabel;
-          _modelLabel = route.modelLabel;
-          _backendLabel = result.backendLabel;
-          _backendNote = result.note ?? route.note;
-          _keySourceLabel = route.displayKeySourceLabelFor(result.backend);
+          _generatedVideoBytes = bytes;
+          _providerLabel =
+              _providerDisplayName(generation['provider']?.toString());
+          _modelLabel = generation['model']?.toString() ?? _selectedMediaModel;
+          _backendLabel = 'NoteClaw backend';
+          _backendNote = 'Video stored and ready to download or share.';
+          _keySourceLabel = 'Admin-managed key';
           _isGenerating = false;
         });
       }
@@ -145,8 +251,9 @@ class _VisualStudioScreenState extends ConsumerState<VisualStudioScreen> {
   }
 
   int _sourceScore(Source source, Set<String> keywords) {
-    final haystack =
-        '${source.title} ${source.content}'.replaceAll(RegExp(r'\s+'), ' ').toLowerCase();
+    final haystack = '${source.title} ${source.content}'
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .toLowerCase();
     var score = source.title.trim().isNotEmpty ? 2 : 0;
 
     for (final keyword in keywords) {
@@ -379,6 +486,28 @@ Art direction:
     }
   }
 
+  Future<void> _saveAndShareVideo() async {
+    final bytes = _generatedVideoBytes;
+    if (bytes == null) return;
+    try {
+      final tempDir = await getTemporaryDirectory();
+      final file = File(
+          '${tempDir.path}/noteclaw_video_${DateTime.now().millisecondsSinceEpoch}.mp4');
+      await file.writeAsBytes(bytes);
+      await Share.shareXFiles(
+        [XFile(file.path, mimeType: 'video/mp4')],
+        text:
+            'Generated with NoteClaw Visual Studio: ${_promptController.text}',
+      );
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to save/share video: $error')),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -389,90 +518,171 @@ Art direction:
         title: const Text('Visual Studio'),
         centerTitle: true,
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (widget.notebookTitle != null &&
-                widget.notebookTitle!.trim().isNotEmpty) ...[
-              Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: scheme.primary.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(
-                    color: scheme.primary.withValues(alpha: 0.14),
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      LucideIcons.bookOpen,
-                      size: 18,
-                      color: scheme.primary,
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        'Using notebook: ${widget.notebookTitle}',
-                        style: text.bodyMedium?.copyWith(
-                          fontWeight: FontWeight.w600,
+      body: LayoutBuilder(
+        builder: (context, constraints) => SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              minHeight:
+                  constraints.maxHeight > 48 ? constraints.maxHeight - 48 : 0,
+            ),
+            child: IntrinsicHeight(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (widget.notebookTitle != null &&
+                      widget.notebookTitle!.trim().isNotEmpty) ...[
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: scheme.primary.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: scheme.primary.withValues(alpha: 0.14),
                         ),
                       ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            LucideIcons.bookOpen,
+                            size: 18,
+                            color: scheme.primary,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              'Using notebook: ${widget.notebookTitle}',
+                              style: text.bodyMedium?.copyWith(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+                  _buildRoutingCard(scheme, text),
+                  const SizedBox(height: 16),
+                  SegmentedButton<_GenerationKind>(
+                    segments: const [
+                      ButtonSegment(
+                        value: _GenerationKind.image,
+                        icon: Icon(LucideIcons.image),
+                        label: Text('Image'),
+                      ),
+                      ButtonSegment(
+                        value: _GenerationKind.video,
+                        icon: Icon(LucideIcons.video),
+                        label: Text('Video'),
+                      ),
+                    ],
+                    selected: {_generationKind},
+                    onSelectionChanged: _isGenerating
+                        ? null
+                        : (selection) {
+                            setState(() {
+                              _generationKind = selection.first;
+                              _generatedImageUrl = null;
+                              _generatedVideoBytes = null;
+                              _selectedMediaModel = null;
+                              _selectedMediaProvider = null;
+                            });
+                            _loadMediaModels();
+                          },
+                  ),
+                  if (_mediaModels.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      initialValue: _mediaModels.any((model) =>
+                              model['model_id']?.toString() ==
+                                  _selectedMediaModel &&
+                              _modelProvider(model) == _selectedMediaProvider)
+                          ? '${_selectedMediaProvider ?? ''}::${_selectedMediaModel ?? ''}'
+                          : null,
+                      decoration: const InputDecoration(
+                        labelText: 'Generation model',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                      items: _mediaModels
+                          .map((model) => DropdownMenuItem(
+                                value: _modelOptionValue(model),
+                                child: Text(
+                                  '${model['name']?.toString() ?? model['model_id']?.toString() ?? 'Model'} (${_providerDisplayName(_modelProvider(model))})',
+                                ),
+                              ))
+                          .toList(),
+                      onChanged: (value) {
+                        final selected = _mediaModels.where(
+                          (model) => _modelOptionValue(model) == value,
+                        );
+                        if (selected.isEmpty) return;
+                        final model = selected.first;
+                        setState(() {
+                          _selectedMediaModel = model['model_id']?.toString();
+                          _selectedMediaProvider = _modelProvider(model);
+                          _providerLabel =
+                              _providerDisplayName(_selectedMediaProvider);
+                          _modelLabel = _selectedMediaModel ?? 'Admin default';
+                        });
+                      },
                     ),
                   ],
-                ),
-              ),
-              const SizedBox(height: 16),
-            ],
-            _buildRoutingCard(scheme, text),
-            const SizedBox(height: 16),
-            // Prompt Input
-            TextField(
-              controller: _promptController,
-              maxLines: 3,
-              decoration: InputDecoration(
-                hintText: widget.notebookTitle != null
-                    ? 'Describe the image you want to create from this notebook...'
-                    : 'Describe the image you want to generate...',
-                border:
-                    OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                filled: true,
-                fillColor:
-                    scheme.surfaceContainerHighest.withValues(alpha: 0.3),
+                  const SizedBox(height: 16),
+                  // Prompt Input
+                  TextField(
+                    controller: _promptController,
+                    maxLines: 3,
+                    decoration: InputDecoration(
+                      hintText: widget.notebookTitle != null
+                          ? 'Describe the ${_generationKind.name} you want to create from this notebook...'
+                          : 'Describe the ${_generationKind.name} you want to generate...',
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                      filled: true,
+                      fillColor:
+                          scheme.surfaceContainerHighest.withValues(alpha: 0.3),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Generate Button
+                  FilledButton.icon(
+                    onPressed: _isGenerating ? null : _generateImage,
+                    icon: _isGenerating
+                        ? SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: scheme.onPrimary))
+                        : const Icon(LucideIcons.wand2),
+                    label: Text(_isGenerating
+                        ? (_generationKind == _GenerationKind.video
+                            ? 'Rendering video…'
+                            : 'Generating image…')
+                        : 'Generate ${_generationKind == _GenerationKind.video ? 'Video' : 'Image'}'),
+                  ),
+
+                  const SizedBox(height: 32),
+
+                  // Result Area
+                  Expanded(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: scheme.surfaceContainerHighest
+                            .withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: scheme.outlineVariant),
+                      ),
+                      alignment: Alignment.center,
+                      child: _buildContent(scheme, text),
+                    ),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 16),
-
-            // Generate Button
-            FilledButton.icon(
-              onPressed: _isGenerating ? null : _generateImage,
-              icon: _isGenerating
-                  ? SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2, color: scheme.onPrimary))
-                  : const Icon(LucideIcons.wand2),
-              label: Text(_isGenerating ? 'Dreaming...' : 'Generate Image'),
-            ),
-
-            const SizedBox(height: 32),
-
-            // Result Area
-            Expanded(
-              child: Container(
-                decoration: BoxDecoration(
-                  color: scheme.surfaceContainerHighest.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: scheme.outlineVariant),
-                ),
-                alignment: Alignment.center,
-                child: _buildContent(scheme, text),
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -536,10 +746,39 @@ Art direction:
       ).animate().fadeIn();
     }
 
+    if (_generatedVideoBytes != null) {
+      return Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(LucideIcons.video, size: 72, color: scheme.primary),
+          const SizedBox(height: 16),
+          Text('Your video is ready', style: text.titleLarge),
+          const SizedBox(height: 8),
+          Text(
+            '${(_generatedVideoBytes!.length / (1024 * 1024)).toStringAsFixed(1)} MB · ${_modelLabel ?? 'Alibaba model'}',
+            style: text.bodyMedium,
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 20),
+          FilledButton.icon(
+            onPressed: _saveAndShareVideo,
+            icon: const Icon(Icons.download),
+            label: const Text('Download or share video'),
+          ),
+        ],
+      ).animate().fadeIn();
+    }
+
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Icon(LucideIcons.image, size: 64, color: scheme.outline),
+        Icon(
+          _generationKind == _GenerationKind.video
+              ? LucideIcons.video
+              : LucideIcons.image,
+          size: 64,
+          color: scheme.outline,
+        ),
         const SizedBox(height: 16),
         Text(
           'Your imagination awaits',
@@ -631,6 +870,8 @@ Art direction:
     );
   }
 
+  // Kept for compatibility with notebook visual-routing diagnostics.
+  // ignore: unused_element
   Future<_VisualStudioImageRoute> _resolveImageRoute({
     String? providerOverride,
     String? modelOverride,

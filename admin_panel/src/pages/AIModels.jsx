@@ -19,10 +19,11 @@ export default function AIModels() {
         cost_output: 0,
         context_window: 0,
         is_active: true,
-        is_premium: false
+        is_premium: false,
+        capabilities: ['text']
     });
 
-    const providers = ['gemini', 'openrouter', 'openai', 'anthropic', 'alibaba_token_plan'];
+    const providers = ['gemini', 'openrouter', 'openai', 'anthropic', 'alibaba_token_plan', 'alibaba_model_studio'];
 
     useEffect(() => {
         fetchModels();
@@ -52,7 +53,8 @@ export default function AIModels() {
                 cost_output: parseFloat(model.cost_output) || 0,
                 context_window: parseInt(model.context_window) || 0,
                 is_active: model.is_active,
-                is_premium: model.is_premium
+                is_premium: model.is_premium,
+                capabilities: Array.isArray(model.capabilities) ? model.capabilities : ['text']
             });
         } else {
             setEditingModel(null);
@@ -65,7 +67,8 @@ export default function AIModels() {
                 cost_output: 0,
                 context_window: 0,
                 is_active: true,
-                is_premium: false
+                is_premium: false,
+                capabilities: ['text']
             });
         }
         setIsModalOpen(true);
@@ -329,6 +332,27 @@ export default function AIModels() {
                                             onChange={e => setFormData({ ...formData, cost_output: e.target.value })}
                                             className="block w-full rounded-md border border-border p-2"
                                         />
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium mb-2">Capabilities</label>
+                                    <div className="flex flex-wrap gap-4">
+                                        {['text', 'image', 'video', 'audio'].map(capability => (
+                                            <label key={capability} className="flex items-center gap-2 text-sm capitalize">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={formData.capabilities.includes(capability)}
+                                                    onChange={e => setFormData({
+                                                        ...formData,
+                                                        capabilities: e.target.checked
+                                                            ? [...new Set([...formData.capabilities, capability])]
+                                                            : formData.capabilities.filter(item => item !== capability)
+                                                    })}
+                                                />
+                                                {capability}
+                                            </label>
+                                        ))}
                                     </div>
                                 </div>
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+var __noteclawImportMetaUrl = require("node:url").pathToFileURL(__filename).href;
 "use strict";
 var __create = Object.create;
 var __defProp = Object.defineProperty;
@@ -43252,6 +43253,15 @@ var {
 } = axios_default;
 
 // src/serverFactory.ts
+var import_promises = require("node:fs/promises");
+var agentGuidePromise = null;
+var loadAgentGuide = () => {
+  agentGuidePromise ??= (0, import_promises.readFile)(
+    new URL("../AGENTS.md", __noteclawImportMetaUrl),
+    "utf8"
+  );
+  return agentGuidePromise;
+};
 var memoryTarget = {
   agentSessionId: external_exports.string().min(1).optional(),
   agentIdentifier: external_exports.string().min(1).optional()
@@ -43278,6 +43288,96 @@ var MemoryTopicsListSchema = external_exports.object({
 var MemoryTopicGetSchema = external_exports.object({
   notebookId: external_exports.string().min(1),
   agentSessionId: external_exports.string().min(1).optional()
+});
+var MemoryChatSchema = external_exports.object({
+  notebookId: external_exports.string().min(1),
+  message: external_exports.string().min(1).max(16e3),
+  history: external_exports.array(
+    external_exports.object({
+      role: external_exports.enum(["user", "assistant"]),
+      content: external_exports.string().min(1).max(8e3)
+    })
+  ).max(12).optional().default([]),
+  provider: external_exports.enum(["gemini", "openrouter"]).optional().default("gemini"),
+  model: external_exports.string().min(1).optional()
+});
+var AgentChatMessagesListSchema = external_exports.object({
+  agentSessionId: external_exports.string().min(1).optional()
+});
+var AgentChatRespondSchema = external_exports.object({
+  messageId: external_exports.string().min(1),
+  response: external_exports.string().min(1).max(32e3),
+  codeUpdate: external_exports.object({
+    code: external_exports.string().min(1),
+    description: external_exports.string().max(4e3).optional()
+  }).optional()
+});
+var PlanningPlansListSchema = external_exports.object({
+  status: external_exports.enum(["draft", "active", "completed", "archived"]).optional(),
+  includeArchived: external_exports.boolean().optional().default(false),
+  limit: external_exports.number().int().min(1).max(100).optional().default(50),
+  offset: external_exports.number().int().min(0).optional().default(0)
+});
+var PlanningPlanGetSchema = external_exports.object({
+  planId: external_exports.string().min(1)
+});
+var PlanningPlanCreateSchema = external_exports.object({
+  title: external_exports.string().min(1).max(255),
+  description: external_exports.string().max(16e3).optional(),
+  isPrivate: external_exports.boolean().optional().default(true)
+});
+var PlanningRequirementCreateSchema = external_exports.object({
+  planId: external_exports.string().min(1),
+  title: external_exports.string().min(1).max(255),
+  description: external_exports.string().max(16e3).optional(),
+  earsPattern: external_exports.enum(["ubiquitous", "event", "state", "unwanted", "optional", "complex"]).optional(),
+  acceptanceCriteria: external_exports.array(external_exports.string().min(1)).max(100).optional().default([])
+});
+var PlanningDesignNoteCreateSchema = external_exports.object({
+  planId: external_exports.string().min(1),
+  content: external_exports.string().min(1).max(64e3),
+  requirementIds: external_exports.array(external_exports.string().min(1)).max(100).optional().default([])
+});
+var taskPriorities = ["low", "medium", "high", "critical"];
+var taskStatuses = [
+  "not_started",
+  "in_progress",
+  "paused",
+  "blocked",
+  "completed"
+];
+var PlanningTaskCreateSchema = external_exports.object({
+  planId: external_exports.string().min(1),
+  title: external_exports.string().min(1).max(255),
+  description: external_exports.string().max(16e3).optional(),
+  parentTaskId: external_exports.string().min(1).optional(),
+  requirementIds: external_exports.array(external_exports.string().min(1)).max(100).optional().default([]),
+  priority: external_exports.enum(taskPriorities).optional().default("medium")
+});
+var PlanningTaskUpdateSchema = external_exports.object({
+  planId: external_exports.string().min(1),
+  taskId: external_exports.string().min(1),
+  title: external_exports.string().min(1).max(255).optional(),
+  description: external_exports.string().max(16e3).optional(),
+  requirementIds: external_exports.array(external_exports.string().min(1)).max(100).optional(),
+  priority: external_exports.enum(taskPriorities).optional(),
+  assignedAgentId: external_exports.string().min(1).optional(),
+  timeSpentMinutes: external_exports.number().int().min(0).optional()
+});
+var PlanningTaskStatusUpdateSchema = external_exports.object({
+  planId: external_exports.string().min(1),
+  taskId: external_exports.string().min(1),
+  status: external_exports.enum(taskStatuses),
+  reason: external_exports.string().min(1).max(4e3).optional()
+});
+var PlanningTaskOutputAddSchema = external_exports.object({
+  planId: external_exports.string().min(1),
+  taskId: external_exports.string().min(1),
+  type: external_exports.enum(["comment", "code", "file", "completion"]),
+  content: external_exports.string().min(1).max(64e3),
+  agentSessionId: external_exports.string().min(1).optional(),
+  agentName: external_exports.string().min(1).max(255).optional(),
+  metadata: external_exports.record(external_exports.string(), external_exports.any()).optional()
 });
 var MemoryPutSchema = requireMemoryTarget({
   namespace: external_exports.string().min(1).optional().default("default"),
@@ -43345,6 +43445,16 @@ var GitHubFileSaveSchema = external_exports.object({
   path: external_exports.string().min(1),
   branch: external_exports.string().min(1).optional()
 });
+var NotebookCreateSchema = external_exports.object({
+  title: external_exports.string().min(1).max(200),
+  description: external_exports.string().max(2e3).optional().default("")
+});
+var SourceCreateSchema = external_exports.object({
+  notebookId: external_exports.string().min(1),
+  title: external_exports.string().min(1).max(200),
+  type: external_exports.enum(["text", "url", "code", "note"]).optional().default("text"),
+  content: external_exports.string().min(1)
+});
 var researchDepths = ["quick", "standard", "deep"];
 var researchTemplates = [
   "general",
@@ -43360,7 +43470,7 @@ var DeepResearchStartSchema = external_exports.object({
   template: external_exports.enum(researchTemplates).optional().default("general"),
   notebookId: external_exports.string().min(1).optional(),
   useNotebookContext: external_exports.boolean().optional().default(false),
-  provider: external_exports.enum(["gemini", "openrouter"]).optional().default("gemini"),
+  provider: external_exports.enum(["gemini", "openrouter", "alibaba_token_plan"]).optional().default("gemini"),
   model: external_exports.string().min(1).optional()
 });
 var DeepResearchStatusSchema = external_exports.object({
@@ -43377,7 +43487,31 @@ var ResearchSaveToNotebookSchema = external_exports.object({
   notebookId: external_exports.string().min(1).optional(),
   title: external_exports.string().min(1).max(180).optional()
 });
+var ImageGenerateSchema = external_exports.object({
+  prompt: external_exports.string().min(1).max(5e3),
+  model: external_exports.string().min(1).max(200).optional(),
+  provider: external_exports.enum(["alibaba_token_plan", "alibaba_model_studio"]).optional(),
+  size: external_exports.string().regex(/^\d{2,5}[x*]\d{2,5}$/).optional().default("1024*1024")
+});
+var VideoGenerateSchema = external_exports.object({
+  prompt: external_exports.string().min(1).max(5e3),
+  model: external_exports.string().min(1).max(200).optional(),
+  provider: external_exports.enum(["alibaba_token_plan", "alibaba_model_studio"]).optional(),
+  size: external_exports.string().regex(/^\d{2,5}[x*]\d{2,5}$/).optional().default("1280*720"),
+  duration: external_exports.number().int().min(2).max(15).optional().default(5)
+});
+var MediaGenerationGetSchema = external_exports.object({
+  generationId: external_exports.string().uuid()
+});
 var tools = [
+  {
+    name: "noteclaw_instructions_get",
+    description: "Read the canonical AGENTS.md guide for using NoteClaw memory, live chat, planning mode, and safe multi-agent collaboration. Call this when a client cannot read MCP resources directly.",
+    inputSchema: {
+      type: "object",
+      properties: {}
+    }
+  },
   {
     name: "memory_session_open",
     description: "Create or resume a durable memory session for one agent or a shared project. Call this once before reading memory or connecting over WebSocket. The same account and agentIdentifier return the existing session and its user-facing memory notebook.",
@@ -43410,6 +43544,50 @@ var tools = [
     }
   },
   {
+    name: "notebook_create",
+    description: "Create a new NoteClaw memory notebook topic for a user on any subject. Agents can use this during chat to dynamically create topic notebooks.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        title: {
+          type: "string",
+          description: 'Title for the new notebook topic (e.g. "Quantum Computing Notes").'
+        },
+        description: {
+          type: "string",
+          description: "Optional description of the notebook purpose."
+        }
+      },
+      required: ["title"]
+    }
+  },
+  {
+    name: "source_create",
+    description: "Save a new text note, code snippet, or source entry into a NoteClaw memory notebook.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        notebookId: {
+          type: "string",
+          description: "Target NoteClaw notebook ID."
+        },
+        title: {
+          type: "string",
+          description: "Title for the new source entry."
+        },
+        type: {
+          type: "string",
+          description: "Source type: text, note, code, or url."
+        },
+        content: {
+          type: "string",
+          description: "Text content to save into the source."
+        }
+      },
+      required: ["notebookId", "title", "content"]
+    }
+  },
+  {
     name: "memory_topics_list",
     description: "List the topic notebooks the account owner has allowed this agent to use. Only active grants for this token-bound agent session are returned.",
     inputSchema: {
@@ -43438,6 +43616,261 @@ var tools = [
         }
       },
       required: ["notebookId"]
+    }
+  },
+  {
+    name: "memory_chat",
+    description: "Ask a question grounded in one notebook topic and its durable agent memories. The topic must be granted to this token-bound agent. The response includes the answer, source count, and credit usage.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        notebookId: {
+          type: "string",
+          description: "Topic notebook ID returned by memory_topics_list."
+        },
+        message: {
+          type: "string",
+          description: "Question to answer from the granted topic memory."
+        },
+        history: {
+          type: "array",
+          description: "Optional recent conversation turns.",
+          maxItems: 12,
+          items: {
+            type: "object",
+            properties: {
+              role: {
+                type: "string",
+                enum: ["user", "assistant"]
+              },
+              content: { type: "string" }
+            },
+            required: ["role", "content"]
+          }
+        },
+        provider: {
+          type: "string",
+          enum: ["gemini", "openrouter"],
+          default: "gemini"
+        },
+        model: {
+          type: "string",
+          description: "Optional active model ID configured for the NoteClaw account."
+        }
+      },
+      required: ["notebookId", "message"]
+    }
+  },
+  {
+    name: "agent_chat_messages_list",
+    description: "Read pending user messages sent to this live coding agent. The token-bound agent session is used automatically. Each message includes its notebook ID, granted notebook sources and memories, conversation history, and the messageId needed to answer. Use this as a polling fallback when WebSocket is unavailable.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        agentSessionId: {
+          type: "string",
+          description: "Optional bound session ID. The current token session is used by default."
+        }
+      }
+    }
+  },
+  {
+    name: "agent_chat_respond",
+    description: "Reply to a NoteClaw user chat message. The answer is saved to the source conversation and pushed to the Flutter or web chat immediately over WebSocket.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        messageId: {
+          type: "string",
+          description: "Message ID from agent_chat_messages_list or a followup_message WebSocket event."
+        },
+        response: {
+          type: "string",
+          description: "The coding agent answer shown to the user."
+        },
+        codeUpdate: {
+          type: "object",
+          description: "Optional replacement code for chats attached to a real code source.",
+          properties: {
+            code: { type: "string" },
+            description: { type: "string" }
+          },
+          required: ["code"]
+        }
+      },
+      required: ["messageId", "response"]
+    }
+  },
+  {
+    name: "planning_plans_list",
+    description: "List the account project plans before selecting or updating planning work.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        status: {
+          type: "string",
+          enum: ["draft", "active", "completed", "archived"]
+        },
+        includeArchived: { type: "boolean", default: false },
+        limit: { type: "integer", minimum: 1, maximum: 100, default: 50 },
+        offset: { type: "integer", minimum: 0, default: 0 }
+      }
+    }
+  },
+  {
+    name: "planning_plan_get",
+    description: "Read a complete project plan, including requirements, design notes, tasks, and progress.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        planId: { type: "string" }
+      },
+      required: ["planId"]
+    }
+  },
+  {
+    name: "planning_plan_create",
+    description: "Create a project plan that can be organized into requirements, design notes, and tasks.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        title: { type: "string", maxLength: 255 },
+        description: { type: "string" },
+        isPrivate: { type: "boolean", default: true }
+      },
+      required: ["title"]
+    }
+  },
+  {
+    name: "planning_requirement_create",
+    description: "Add a structured requirement and acceptance criteria to a project plan.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        planId: { type: "string" },
+        title: { type: "string", maxLength: 255 },
+        description: { type: "string" },
+        earsPattern: {
+          type: "string",
+          enum: [
+            "ubiquitous",
+            "event",
+            "state",
+            "unwanted",
+            "optional",
+            "complex"
+          ]
+        },
+        acceptanceCriteria: {
+          type: "array",
+          items: { type: "string" },
+          maxItems: 100,
+          default: []
+        }
+      },
+      required: ["planId", "title"]
+    }
+  },
+  {
+    name: "planning_design_note_create",
+    description: "Record an implementation or design decision in a project plan and optionally link requirements.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        planId: { type: "string" },
+        content: { type: "string" },
+        requirementIds: {
+          type: "array",
+          items: { type: "string" },
+          maxItems: 100,
+          default: []
+        }
+      },
+      required: ["planId", "content"]
+    }
+  },
+  {
+    name: "planning_task_create",
+    description: "Create an actionable project task, optionally linked to requirements or a parent task.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        planId: { type: "string" },
+        title: { type: "string", maxLength: 255 },
+        description: { type: "string" },
+        parentTaskId: { type: "string" },
+        requirementIds: {
+          type: "array",
+          items: { type: "string" },
+          maxItems: 100,
+          default: []
+        },
+        priority: {
+          type: "string",
+          enum: taskPriorities,
+          default: "medium"
+        }
+      },
+      required: ["planId", "title"]
+    }
+  },
+  {
+    name: "planning_task_update",
+    description: "Update project task details without changing its execution status.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        planId: { type: "string" },
+        taskId: { type: "string" },
+        title: { type: "string", maxLength: 255 },
+        description: { type: "string" },
+        requirementIds: {
+          type: "array",
+          items: { type: "string" },
+          maxItems: 100
+        },
+        priority: { type: "string", enum: taskPriorities },
+        assignedAgentId: { type: "string" },
+        timeSpentMinutes: { type: "integer", minimum: 0 }
+      },
+      required: ["planId", "taskId"]
+    }
+  },
+  {
+    name: "planning_task_status_update",
+    description: "Record a task state transition. A blocked task must include a clear reason.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        planId: { type: "string" },
+        taskId: { type: "string" },
+        status: { type: "string", enum: taskStatuses },
+        reason: { type: "string" }
+      },
+      required: ["planId", "taskId", "status"]
+    }
+  },
+  {
+    name: "planning_task_output_add",
+    description: "Attach agent evidence such as a comment, code, file reference, or completion result to a task.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        planId: { type: "string" },
+        taskId: { type: "string" },
+        type: {
+          type: "string",
+          enum: ["comment", "code", "file", "completion"]
+        },
+        content: { type: "string" },
+        agentSessionId: { type: "string" },
+        agentName: { type: "string", maxLength: 255 },
+        metadata: {
+          type: "object",
+          additionalProperties: true
+        }
+      },
+      required: ["planId", "taskId", "type", "content"]
     }
   },
   {
@@ -43569,7 +44002,7 @@ var tools = [
   },
   {
     name: "web_search",
-    description: "Search the live web and return compact, citable results. Costs 1 NoteClaw credit; failed searches are refunded. This paid tool supports allowlists and blocklists for domain control. Cite factual claims with the returned URLs and verify important claims on the source page.",
+    description: "Search the live web and return compact, citable results. Uses the administrator-configured web-search tariff; failed searches are refunded. This paid tool supports allowlists and blocklists for domain control. Cite factual claims with the returned URLs and verify important claims on the source page.",
     inputSchema: {
       type: "object",
       properties: {
@@ -43694,7 +44127,7 @@ var tools = [
   },
   {
     name: "deep_research_start",
-    description: "Start an asynchronous multi-step web research job. It generates research angles, collects sources, ranks credibility, and synthesizes a cited report. Standard and quick depth cost 5 NoteClaw credits; deep depth costs 10. Failed jobs are refunded. Use notebookId with useNotebookContext to align research with saved memories.",
+    description: "Start an asynchronous multi-step web research job. It generates research angles, collects sources, ranks credibility, and synthesizes a cited report. The administrator configures standard and extended-research tariffs. Failed jobs are refunded. Use notebookId with useNotebookContext to align research with saved memories.",
     inputSchema: {
       type: "object",
       properties: {
@@ -43772,6 +44205,61 @@ var tools = [
       },
       required: ["sessionId"]
     }
+  },
+  {
+    name: "image_generate",
+    description: "Generate an image with Alibaba Token Plan or standard Model Studio models configured by the NoteClaw administrator. The configured image-generation credit tariff is charged only when the request starts and is refunded on failure.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        prompt: { type: "string", maxLength: 5e3 },
+        model: { type: "string", description: "Optional Alibaba image model ID." },
+        provider: {
+          type: "string",
+          enum: ["alibaba_token_plan", "alibaba_model_studio"],
+          description: "Optional provider channel; the model catalog provider is used when omitted."
+        },
+        size: { type: "string", default: "1024*1024", description: "Width*height." }
+      },
+      required: ["prompt"]
+    }
+  },
+  {
+    name: "video_generate",
+    description: "Start an asynchronous Alibaba video generation. Use media_generation_status until it completes, then media_generation_download for the downloadable URL. The configured video-generation credit tariff is refunded if the task fails.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        prompt: { type: "string", maxLength: 5e3 },
+        model: { type: "string", description: "Optional Alibaba video model ID." },
+        provider: {
+          type: "string",
+          enum: ["alibaba_token_plan", "alibaba_model_studio"],
+          description: "Optional provider channel; the model catalog provider is used when omitted."
+        },
+        size: { type: "string", default: "1280*720", description: "Width*height." },
+        duration: { type: "integer", minimum: 2, maximum: 15, default: 5 }
+      },
+      required: ["prompt"]
+    }
+  },
+  {
+    name: "media_generation_status",
+    description: "Get current status and download metadata for an image or video generation.",
+    inputSchema: {
+      type: "object",
+      properties: { generationId: { type: "string", format: "uuid" } },
+      required: ["generationId"]
+    }
+  },
+  {
+    name: "media_generation_download",
+    description: "Return the durable download URL for a completed generation. The URL is public when CDN storage is configured; otherwise it uses the same NoteClaw bearer token.",
+    inputSchema: {
+      type: "object",
+      properties: { generationId: { type: "string", format: "uuid" } },
+      required: ["generationId"]
+    }
   }
 ];
 function createNoteClawMcpServer(options) {
@@ -43795,14 +44283,14 @@ function createNoteClawMcpServer(options) {
   const server = new Server(
     {
       name: "noteclaw-memory",
-      version: "2.2.0"
+      version: "2.5.1"
     },
     {
       capabilities: {
         tools: {},
         resources: {}
       },
-      instructions: "A token-scoped memory session is created automatically on connection. Call memory_session_open to give it a stable project identity before writing memory. Use stable agent and client identifiers so project context survives updates."
+      instructions: "Read the noteclaw://instructions/AGENTS.md resource or call noteclaw_instructions_get before using NoteClaw. A token-scoped memory session is created automatically on connection. Call memory_session_open to give it a stable project identity before writing memory. Use stable agent and client identifiers so project context survives updates. Use planning tools for requirements, design decisions, tasks, and outputs."
     }
   );
   let bootstrapPromise = null;
@@ -43826,18 +44314,38 @@ function createNoteClawMcpServer(options) {
     const response = await api.get("/memory/topics");
     const topics = Array.isArray(response.data?.topics) ? response.data.topics : [];
     return {
-      resources: topics.map((topic) => ({
-        uri: `noteclaw://notebooks/${encodeURIComponent(String(topic.notebookId))}`,
-        name: String(topic.title || "NoteClaw memory notebook"),
-        title: String(topic.title || "NoteClaw memory notebook"),
-        description: typeof topic.description === "string" ? topic.description : "Topic-driven NoteClaw memory and sources",
-        mimeType: "application/json"
-      }))
+      resources: [
+        {
+          uri: "noteclaw://instructions/AGENTS.md",
+          name: "AGENTS.md",
+          title: "NoteClaw agent instructions",
+          description: "Canonical guide for memory, live chat, planning, and multi-agent collaboration.",
+          mimeType: "text/markdown"
+        },
+        ...topics.map((topic) => ({
+          uri: `noteclaw://notebooks/${encodeURIComponent(String(topic.notebookId))}`,
+          name: String(topic.title || "NoteClaw memory notebook"),
+          title: String(topic.title || "NoteClaw memory notebook"),
+          description: typeof topic.description === "string" ? topic.description : "Topic-driven NoteClaw memory and sources",
+          mimeType: "application/json"
+        }))
+      ]
     };
   });
   server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
     await ensureBootstrap();
     const uri = new URL(request.params.uri);
+    if (uri.protocol === "noteclaw:" && uri.hostname === "instructions" && decodeURIComponent(uri.pathname.replace(/^\/+/, "")) === "AGENTS.md") {
+      return {
+        contents: [
+          {
+            uri: request.params.uri,
+            mimeType: "text/markdown",
+            text: await loadAgentGuide()
+          }
+        ]
+      };
+    }
     if (uri.protocol !== "noteclaw:" || uri.hostname !== "notebooks") {
       throw new Error("Unsupported NoteClaw resource URI");
     }
@@ -43863,6 +44371,13 @@ function createNoteClawMcpServer(options) {
     try {
       await ensureBootstrap();
       switch (name) {
+        case "noteclaw_instructions_get": {
+          return textResult({
+            filename: "AGENTS.md",
+            mimeType: "text/markdown",
+            content: await loadAgentGuide()
+          });
+        }
         case "memory_session_open": {
           const input = MemorySessionOpenSchema.parse(args);
           const response = await api.post("/memory/sessions", input);
@@ -43870,6 +44385,16 @@ function createNoteClawMcpServer(options) {
         }
         case "memory_sessions_list": {
           const response = await api.get("/memory/sessions");
+          return textResult(response.data);
+        }
+        case "notebook_create": {
+          const input = NotebookCreateSchema.parse(args);
+          const response = await api.post("/notebooks", input);
+          return textResult(response.data);
+        }
+        case "source_create": {
+          const input = SourceCreateSchema.parse(args);
+          const response = await api.post("/sources", input);
           return textResult(response.data);
         }
         case "memory_topics_list": {
@@ -43891,6 +44416,144 @@ function createNoteClawMcpServer(options) {
           const suffix = query.size > 0 ? `?${query.toString()}` : "";
           const response = await api.get(
             `/memory/topics/${encodeURIComponent(input.notebookId)}/context${suffix}`
+          );
+          return textResult(response.data);
+        }
+        case "memory_chat": {
+          const input = MemoryChatSchema.parse(args);
+          const response = await api.post(
+            `/memory/notebooks/${encodeURIComponent(input.notebookId)}/chat`,
+            {
+              message: input.message,
+              history: input.history,
+              provider: input.provider,
+              model: input.model
+            },
+            { timeout: 12e4 }
+          );
+          return textResult(response.data);
+        }
+        case "agent_chat_messages_list": {
+          const input = AgentChatMessagesListSchema.parse(args);
+          const query = new URLSearchParams();
+          if (input.agentSessionId) {
+            query.set("agentSessionId", input.agentSessionId);
+          }
+          const suffix = query.size > 0 ? `?${query.toString()}` : "";
+          const response = await api.get(`/followups${suffix}`);
+          return textResult(response.data);
+        }
+        case "agent_chat_respond": {
+          const input = AgentChatRespondSchema.parse(args);
+          const response = await api.post(
+            `/followups/${encodeURIComponent(input.messageId)}/respond`,
+            {
+              response: input.response,
+              codeUpdate: input.codeUpdate
+            }
+          );
+          return textResult(response.data);
+        }
+        case "planning_plans_list": {
+          const input = PlanningPlansListSchema.parse(args);
+          const query = new URLSearchParams({
+            includeArchived: String(input.includeArchived),
+            limit: String(input.limit),
+            offset: String(input.offset)
+          });
+          if (input.status) query.set("status", input.status);
+          const response = await accountApi.get(
+            `/planning?${query.toString()}`
+          );
+          return textResult(response.data);
+        }
+        case "planning_plan_get": {
+          const input = PlanningPlanGetSchema.parse(args);
+          const response = await accountApi.get(
+            `/planning/${encodeURIComponent(input.planId)}`
+          );
+          return textResult(response.data);
+        }
+        case "planning_plan_create": {
+          const input = PlanningPlanCreateSchema.parse(args);
+          const response = await accountApi.post("/planning", input);
+          return textResult(response.data);
+        }
+        case "planning_requirement_create": {
+          const input = PlanningRequirementCreateSchema.parse(args);
+          const response = await accountApi.post(
+            `/planning/${encodeURIComponent(input.planId)}/requirements`,
+            {
+              title: input.title,
+              description: input.description,
+              earsPattern: input.earsPattern,
+              acceptanceCriteria: input.acceptanceCriteria
+            }
+          );
+          return textResult(response.data);
+        }
+        case "planning_design_note_create": {
+          const input = PlanningDesignNoteCreateSchema.parse(args);
+          const response = await accountApi.post(
+            `/planning/${encodeURIComponent(input.planId)}/design-notes`,
+            {
+              content: input.content,
+              requirementIds: input.requirementIds
+            }
+          );
+          return textResult(response.data);
+        }
+        case "planning_task_create": {
+          const input = PlanningTaskCreateSchema.parse(args);
+          const response = await accountApi.post(
+            `/planning/${encodeURIComponent(input.planId)}/tasks`,
+            {
+              title: input.title,
+              description: input.description,
+              parentTaskId: input.parentTaskId,
+              requirementIds: input.requirementIds,
+              priority: input.priority
+            }
+          );
+          return textResult(response.data);
+        }
+        case "planning_task_update": {
+          const input = PlanningTaskUpdateSchema.parse(args);
+          const response = await accountApi.put(
+            `/planning/${encodeURIComponent(input.planId)}/tasks/${encodeURIComponent(input.taskId)}`,
+            {
+              title: input.title,
+              description: input.description,
+              requirementIds: input.requirementIds,
+              priority: input.priority,
+              assignedAgentId: input.assignedAgentId,
+              timeSpentMinutes: input.timeSpentMinutes
+            }
+          );
+          return textResult(response.data);
+        }
+        case "planning_task_status_update": {
+          const input = PlanningTaskStatusUpdateSchema.parse(args);
+          const response = await accountApi.post(
+            `/planning/${encodeURIComponent(input.planId)}/tasks/${encodeURIComponent(input.taskId)}/status`,
+            {
+              status: input.status,
+              reason: input.reason
+            }
+          );
+          return textResult(response.data);
+        }
+        case "planning_task_output_add": {
+          const input = PlanningTaskOutputAddSchema.parse(args);
+          const response = await accountApi.post(
+            `/planning/${encodeURIComponent(input.planId)}/tasks/${encodeURIComponent(input.taskId)}/output`,
+            {
+              type: input.type,
+              content: input.content,
+              agentSessionId: input.agentSessionId,
+              agentName: input.agentName,
+              metadata: input.metadata
+            }
           );
           return textResult(response.data);
         }
@@ -43923,12 +44586,12 @@ function createNoteClawMcpServer(options) {
           const response = await api.get("/websocket/info");
           const data = response.data;
           const socketUrl = data.websocket?.url;
-          const target = input.agentSessionId ? `sessionId=${encodeURIComponent(input.agentSessionId)}` : input.agentIdentifier ? `agentIdentifier=${encodeURIComponent(input.agentIdentifier)}` : "agentIdentifier=YOUR_AGENT_IDENTIFIER";
+          const target = input.agentSessionId ? `&sessionId=${encodeURIComponent(input.agentSessionId)}` : input.agentIdentifier ? `&agentIdentifier=${encodeURIComponent(input.agentIdentifier)}` : "";
           const client = input.clientIdentifier ? `&clientIdentifier=${encodeURIComponent(input.clientIdentifier)}` : "&clientIdentifier=YOUR_CLIENT_IDENTIFIER";
           return textResult({
             ...data,
-            connectionTemplate: socketUrl ? `${socketUrl}?token=YOUR_API_TOKEN&${target}${client}` : void 0,
-            note: "Use the same API token configured for this MCP server. Multiple clients can connect to the same session when each uses a stable clientIdentifier. The token is intentionally not echoed."
+            connectionTemplate: socketUrl ? `${socketUrl}?token=YOUR_API_TOKEN${target}${client}` : void 0,
+            note: "Use the same API token configured for this MCP server. A token bound by MCP resumes its session automatically. Multiple clients can connect to that session when each uses a stable clientIdentifier. The token is intentionally not echoed."
           });
         }
         case "review_code": {
@@ -44060,6 +44723,39 @@ ${evidence || "No sources found."}`;
             }
           );
           return textResult(response.data);
+        }
+        case "image_generate": {
+          const input = ImageGenerateSchema.parse(args);
+          const response = await accountApi.post("/generation/image", input, { timeout: 24e4 });
+          return textResult(response.data);
+        }
+        case "video_generate": {
+          const input = VideoGenerateSchema.parse(args);
+          const response = await accountApi.post("/generation/video", input, { timeout: 9e4 });
+          return textResult(response.data);
+        }
+        case "media_generation_status": {
+          const input = MediaGenerationGetSchema.parse(args);
+          const response = await accountApi.get(`/generation/${encodeURIComponent(input.generationId)}`);
+          return textResult(response.data);
+        }
+        case "media_generation_download": {
+          const input = MediaGenerationGetSchema.parse(args);
+          const response = await accountApi.get(`/generation/${encodeURIComponent(input.generationId)}`);
+          const generation = response.data?.generation;
+          if (generation?.status !== "completed") {
+            throw new Error(`Generation is ${generation?.status || "not found"} and is not ready to download.`);
+          }
+          const publicUrl = generation.publicUrl || null;
+          return textResult({
+            success: true,
+            generationId: input.generationId,
+            filename: generation.filename,
+            contentType: generation.contentType,
+            downloadUrl: publicUrl || `${backendUrl2}/api/generation/${encodeURIComponent(input.generationId)}/download`,
+            authenticationRequired: !publicUrl,
+            authentication: publicUrl ? "none" : "Send Authorization: Bearer <the NoteClaw API token configured for this MCP server>."
+          });
         }
         default:
           throw new Error(`Unknown tool: ${name}`);

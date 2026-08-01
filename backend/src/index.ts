@@ -18,6 +18,11 @@ import remoteMcpRoutes from './routes/remoteMcp.js';
 import subscriptionRoutes from './routes/subscriptions.js';
 import planningRoutes from './routes/planning.js';
 import playTesterRoutes from './routes/playTesters.js';
+import researchRoutes from './routes/research.js';
+import searchRoutes from './routes/search.js';
+import mediaRoutes from './routes/media.js';
+import generationRoutes from './routes/generation.js';
+import bunnyService from './services/bunnyService.js';
 
 import { agentWebSocketService } from './services/agentWebSocketService.js';
 import { planningWebSocketService } from './services/planningWebSocketService.js';
@@ -26,6 +31,7 @@ import { initializeDatabase } from './config/database.js';
 
 // Load environment variables
 dotenv.config();
+bunnyService.initialize();
 
 // Graceful shutdown
 process.on('SIGTERM', () => {
@@ -48,7 +54,14 @@ const requestedPort = (() => {
 const maxPortAttempts = 20;
 
 // Middleware
-app.use(compression());
+app.use(compression({
+    filter: (req, res) => {
+        if (req.path === '/api/research/stream' || req.path === '/api/research/deep') {
+            return false;
+        }
+        return compression.filter(req, res);
+    },
+}));
 app.use(cors({
     origin: true, // Allow all origins (reflects the request origin)
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
@@ -116,6 +129,10 @@ app.use('/api/mcp', mcpDownloadRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/planning', planningRoutes);
 app.use('/api/play-testers', playTesterRoutes);
+app.use('/api/research', researchRoutes);
+app.use('/api/search', searchRoutes);
+app.use('/api/media', mediaRoutes);
+app.use('/api/generation', generationRoutes);
 // 404 handler
 app.use((req, res) => {
     console.log(`[404] Route not found: ${req.method} ${req.path}`);

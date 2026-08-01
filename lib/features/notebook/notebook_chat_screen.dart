@@ -18,7 +18,6 @@ import 'notebook_provider.dart';
 import '../../core/api/api_service.dart';
 import '../../theme/app_theme.dart';
 import '../chat/context_usage_widget.dart';
-import '../subscription/services/credit_manager.dart';
 import '../chat/github_action_detector.dart';
 import '../github/github_issue_dialog.dart';
 import '../../core/audio/voice_service.dart';
@@ -247,26 +246,6 @@ class _NotebookChatScreenState extends ConsumerState<NotebookChatScreen> {
     final message = _messageController.text.trim();
     if (message.isEmpty || _isLoading) return;
 
-    if (_isDeepResearchEnabled) {
-      const creditCost = CreditCosts.deepResearch;
-      const featureName = 'deep_research';
-      final hasCredits = await ref.tryUseCredits(
-        context: context,
-        amount: creditCost,
-        feature: featureName,
-      );
-      if (!hasCredits) return;
-    } else if (_isWebBrowsingEnabled) {
-      const creditCost = CreditCosts.chatMessage * 3;
-      const featureName = 'web_browsing_chat';
-      final hasCredits = await ref.tryUseCredits(
-        context: context,
-        amount: creditCost,
-        feature: featureName,
-      );
-      if (!hasCredits) return;
-    }
-
     // Add user message immediately
     final userMessage = ChatMessage(
       text: message,
@@ -382,6 +361,10 @@ class _NotebookChatScreenState extends ConsumerState<NotebookChatScreen> {
           }
         });
         _scrollToBottom();
+
+        if (update.isComplete && update.error != null) {
+          throw Exception(update.error);
+        }
 
         if (update.isComplete && update.result != null) {
           // Save AI Message (non-blocking)

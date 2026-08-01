@@ -3,12 +3,17 @@ import { v4 as uuidv4 } from 'uuid';
 import pool from '../config/database.js';
 import { generateWithGemini, generateWithOpenRouter, type ChatMessage } from './aiService.js';
 import { decryptSecretAllowLegacy } from './secretEncryptionService.js';
+import {
+    ALIBABA_TOKEN_PLAN_PROVIDER,
+    generateWithAlibabaTokenPlan,
+} from './alibabaTokenPlanService.js';
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 // Research depth configuration
 export type ResearchDepth = 'quick' | 'standard' | 'deep';
 export type ResearchTemplate = 'general' | 'academic' | 'productComparison' | 'marketAnalysis' | 'howToGuide' | 'prosAndCons';
+export type ResearchProvider = 'gemini' | 'openrouter' | typeof ALIBABA_TOKEN_PLAN_PROVIDER;
 
 export interface ResearchConfig {
     depth: ResearchDepth;
@@ -16,7 +21,7 @@ export interface ResearchConfig {
     notebookId?: string;
     useNotebookContext?: boolean;
     useContextEngineering?: boolean;
-    provider?: 'gemini' | 'openrouter';
+    provider?: ResearchProvider;
     model?: string;
 }
 
@@ -25,13 +30,13 @@ interface ResearchRuntimeOptions {
 }
 
 interface ResolvedResearchAiConfig {
-    provider: 'gemini' | 'openrouter';
+    provider: ResearchProvider;
     model?: string;
     apiKey?: string;
 }
 
 interface PlatformResearchModel {
-    provider: 'gemini' | 'openrouter';
+    provider: ResearchProvider;
     model: string;
 }
 
@@ -90,10 +95,20 @@ function getDepthConfig(depth: ResearchDepth) {
 }
 
 export function normalizeResearchProvider(
-    provider?: 'gemini' | 'openrouter',
+    provider?: string,
     model?: string
-): 'gemini' | 'openrouter' {
+): ResearchProvider {
+    const normalizedProvider = (provider ?? '').trim().toLowerCase();
     const normalizedModel = (model ?? '').trim().toLowerCase();
+
+    // Catalog provider metadata is authoritative. Model-name heuristics are
+    // only for legacy clients that did not send provider_key.
+    if (normalizedProvider === ALIBABA_TOKEN_PLAN_PROVIDER) {
+        return ALIBABA_TOKEN_PLAN_PROVIDER;
+    }
+    if (normalizedProvider === 'openrouter' || normalizedProvider === 'gemini') {
+        return normalizedProvider;
+    }
 
     if (normalizedModel.startsWith('gemini')) {
         return 'gemini';
@@ -165,19 +180,17 @@ async function ensureUserAiModelsTable(): Promise<void> {
 }
 
 async function getPlatformResearchModel(
-    preferredProvider: 'gemini' | 'openrouter'
+    preferredProvider: ResearchProvider
 ): Promise<PlatformResearchModel | null> {
     const result = await pool.query(
         `SELECT model_id, provider
          FROM ai_models
          WHERE is_active = TRUE
+           AND capabilities ? 'text'
          ORDER BY
+           CASE WHEN provider = $1 THEN 0 ELSE 1 END,
            CASE WHEN is_default = TRUE THEN 0 ELSE 1 END,
-           CASE
-             WHEN provider = $1 THEN 0
-             WHEN provider = 'gemini' THEN 1
-             ELSE 2
-           END,
+           CASE WHEN provider = 'gemini' THEN 0 WHEN provider = 'openrouter' THEN 1 ELSE 2 END,
            created_at ASC
          LIMIT 1`,
         [preferredProvider]
@@ -188,10 +201,7 @@ async function getPlatformResearchModel(
     }
 
     const row = result.rows[0];
-    const provider = normalizeResearchProvider(
-        row.provider === 'openrouter' ? 'openrouter' : 'gemini',
-        row.model_id
-    );
+    const provider = normalizeResearchProvider(row.provider, row.model_id);
 
     return {
         provider,
@@ -221,10 +231,7 @@ async function resolveResearchAiConfig(
 
         if (personalModelResult.rows.length > 0) {
             const personalModel = personalModelResult.rows[0];
-            provider = normalizeResearchProvider(
-                personalModel.provider === 'openrouter' ? 'openrouter' : 'gemini',
-                model
-            );
+            provider = normalizeResearchProvider(personalModel.provider, model);
 
             if (!apiKey && personalModel.encrypted_api_key) {
                 apiKey = decryptSecretAllowLegacy(personalModel.encrypted_api_key);
@@ -239,10 +246,7 @@ async function resolveResearchAiConfig(
             );
 
             if (modelResult.rows.length > 0) {
-                provider = normalizeResearchProvider(
-                    modelResult.rows[0].provider === 'openrouter' ? 'openrouter' : 'gemini',
-                    model
-                );
+                provider = normalizeResearchProvider(modelResult.rows[0].provider, model);
             }
         }
     }
@@ -265,7 +269,7 @@ async function resolveResearchAiConfig(
 
 async function generateResearchText(
     messages: ChatMessage[],
-    provider: 'gemini' | 'openrouter',
+    provider: ResearchProvider,
     model?: string,
     apiKey?: string
 ): Promise<string> {
@@ -287,6 +291,10 @@ async function generateResearchText(
     if (effectiveProvider === 'openrouter') {
         const resolvedModel = resolveResearchModelForProvider('openrouter', effectiveModel);
         return generateWithOpenRouter(messages, resolvedModel, 4096, apiKey);
+    }
+
+    if (effectiveProvider === ALIBABA_TOKEN_PLAN_PROVIDER) {
+        return generateWithAlibabaTokenPlan(messages, effectiveModel, 4096, apiKey);
     }
 
     const resolvedModel = resolveResearchModelForProvider('gemini', effectiveModel);
@@ -314,8 +322,7 @@ function getTemplatePrompt(template: ResearchTemplate): string {
 export async function searchWeb(query: string, num: number = 5): Promise<any[]> {
     const apiKey = process.env.SERPER_API_KEY;
     if (!apiKey) {
-        console.warn('[Research] SERPER_API_KEY not configured; returning empty search results');
-        return [];
+        throw new Error('Web search is not configured. Add SERPER_API_KEY in the backend environment.');
     }
 
     let retries = 3;
@@ -341,11 +348,11 @@ export async function searchWeb(query: string, num: number = 5): Promise<any[]> 
                 continue;
             }
             console.error('Serper search error:', error.message);
-            return [];
+            throw new Error(`Web search failed: ${error.message || 'unknown error'}`);
         }
     }
     console.error('[Research] Serper search failed after retries due to rate limiting.');
-    return [];
+    throw new Error('Web search is temporarily rate limited. Please try again.');
 }
 
 export async function searchImages(query: string, num: number = 5): Promise<string[]> {
@@ -442,7 +449,7 @@ async function generateSubQueries(
     template: ResearchTemplate,
     count: number,
     notebookContext?: string,
-    provider?: 'gemini' | 'openrouter',
+    provider?: ResearchProvider,
     model?: string,
     apiKey?: string
 ): Promise<string[]> {
@@ -469,9 +476,10 @@ Return only queries, one per line, no bullets or numbers.`
         return response.split('\n').map(l => l.trim()).filter(l => l.length > 0).slice(0, count);
     } catch (error: any) {
         try {
-            const fallbackProvider = normalizeResearchProvider(provider, model) === 'openrouter'
-                ? 'gemini'
-                : 'openrouter';
+            const primaryProvider = normalizeResearchProvider(provider, model);
+            const fallbackProvider: ResearchProvider = primaryProvider === 'gemini'
+                ? 'openrouter'
+                : 'gemini';
             const response = await generateResearchText(
                 messages,
                 fallbackProvider,
@@ -491,13 +499,12 @@ async function synthesizeReport(
     videos: string[],
     template: ResearchTemplate,
     notebookContext?: string,
-    provider?: 'gemini' | 'openrouter',
+    provider?: ResearchProvider,
     model?: string,
     apiKey?: string
 ): Promise<string> {
     if (sources.length === 0) {
-        return `No sources were retrieved for "${query}".\n\n` +
-            `If you expected results, verify that web search is configured (SERPER_API_KEY) and try again.`;
+        throw new Error(`No usable web sources were found for "${query}".`);
     }
     // Limit sources and content to prevent memory issues
     const limitedSources = sources.slice(0, 8).map((s, i) => ({
@@ -547,11 +554,11 @@ Write the complete report:`
         return result;
     } catch (primaryError: any) {
         console.error('[Research] Primary provider failed:', primaryError.message);
+        const primaryProvider = normalizeResearchProvider(provider, model);
+        const fallbackProvider: ResearchProvider = primaryProvider === 'gemini'
+            ? 'openrouter'
+            : 'gemini';
         try {
-            const primaryProvider = normalizeResearchProvider(provider, model);
-            const fallbackProvider = primaryProvider === 'openrouter'
-                ? 'gemini'
-                : 'openrouter';
             console.log(`[Research] Falling back to ${fallbackProvider}...`);
             const result = await generateResearchText(
                 messages,
@@ -562,17 +569,9 @@ Write the complete report:`
             return result;
         } catch (secondaryError: any) {
             console.error('[Research] Secondary provider also failed:', secondaryError.message);
-            return `# Research Report: ${query}
-
-## Summary
-Research completed with ${sources.length} sources found. However, AI synthesis is temporarily unavailable.
-
-## Sources Found
-
-${limitedSources.map((s, i) => `${i + 1}. [${s.title}](${s.url}) - ${s.credibility} (${s.credibilityScore}% credibility)`).join('\n')}
-
-## Note
-Please try again later or contact support if this issue persists.`;
+            throw new Error(
+                `Research synthesis failed with both ${primaryProvider} and ${fallbackProvider}: ${secondaryError.message}`
+            );
         }
     }
 }
@@ -779,30 +778,36 @@ export async function performCloudResearch(
             aiConfig.apiKey
         );
 
-        // Save to database
-        await pool.query('BEGIN');
-
-        await pool.query(
-            `INSERT INTO research_sessions (id, user_id, notebook_id, query, report, depth, template, status)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, 'completed')`,
-            [sessionId, userId, config.notebookId || null, normalizedQuery, report, config.depth, config.template]
-        );
-
-        for (const source of sources) {
-            await pool.query(
-                `INSERT INTO research_sources (id, session_id, title, url, content, snippet, credibility, credibility_score)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-                [uuidv4(), sessionId, source.title, source.url, source.content, source.snippet, source.credibility, source.credibilityScore]
+        // Save the session and all sources on one checked-out connection so
+        // PostgreSQL can actually roll the whole write back together.
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+            await client.query(
+                `INSERT INTO research_sessions (id, user_id, notebook_id, query, report, depth, template, status)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, 'completed')`,
+                [sessionId, userId, config.notebookId || null, normalizedQuery, report, config.depth, config.template]
             );
-        }
 
-        await pool.query('COMMIT');
+            for (const source of sources) {
+                await client.query(
+                    `INSERT INTO research_sources (id, session_id, title, url, content, snippet, credibility, credibility_score)
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+                    [uuidv4(), sessionId, source.title, source.url, source.content, source.snippet, source.credibility, source.credibilityScore]
+                );
+            }
+            await client.query('COMMIT');
+        } catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+        } finally {
+            client.release();
+        }
 
         onProgress?.({ status: 'Research complete!', progress: 1.0, result: report, sources, images: uniqueImages, videos: uniqueVideos, isComplete: true });
 
         return { sessionId, report, sources };
     } catch (error: any) {
-        await pool.query('ROLLBACK').catch(() => { });
         console.error('Cloud research error:', error);
         throw error;
     }

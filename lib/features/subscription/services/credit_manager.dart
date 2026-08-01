@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/auth/custom_auth_service.dart';
 import '../providers/subscription_provider.dart';
 import 'subscription_service.dart';
+import '../../../core/api/api_service.dart';
 
 /// Credit costs for different AI features
 class CreditCosts {
@@ -79,6 +80,11 @@ class CreditCosts {
 /// Credit Manager Provider
 final creditManagerProvider = Provider<CreditManager>((ref) {
   return CreditManager(ref);
+});
+
+final featureCreditCostsProvider =
+    FutureProvider<Map<String, int>>((ref) async {
+  return ref.read(apiServiceProvider).getFeatureCreditCosts();
 });
 
 class CreditManager {
