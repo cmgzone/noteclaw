@@ -139,13 +139,19 @@ class SubscriptionModel {
       'web_search',
       'deep_research',
       'research_save_to_notebook',
+      'image_generation',
+      'video_generation',
     ];
     final fallback = !isFreePlan;
     final source = value is Map ? value : const {};
-    return {
+    final access = {
       for (final key in keys)
         key: source[key] is bool ? source[key] as bool : fallback,
     };
+    access['memory_bank'] = true;
+    access['notebook_chat'] = true;
+    access['websocket_collaboration'] = true;
+    return access;
   }
 
   bool canAccess(String feature) => featureAccess[feature] == true;

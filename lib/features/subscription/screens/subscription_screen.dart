@@ -1038,6 +1038,8 @@ class _CurrentPlanCard extends StatelessWidget {
       'web_search': 'Web search',
       'deep_research': 'Deep research',
       'research_save_to_notebook': 'Save research',
+      'image_generation': 'Image generation',
+      'video_generation': 'Video generation',
     };
     return labels[key] ?? key.replaceAll('_', ' ');
   }

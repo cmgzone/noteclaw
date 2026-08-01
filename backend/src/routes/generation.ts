@@ -7,6 +7,10 @@ import {
     listMediaGenerations,
     startMediaGeneration,
 } from '../services/mediaGenerationService.js';
+import {
+    userHasPlanFeature,
+    type PlanFeatureKey,
+} from '../services/planFeatureService.js';
 
 const router = express.Router();
 router.use(authenticateToken);
@@ -16,8 +20,33 @@ function handleError(error: any, res: Response) {
     res.status(error?.status || 500).json({ error: error?.message || 'Media generation failed' });
 }
 
+async function requireGenerationFeature(
+    req: AuthRequest,
+    res: Response,
+    feature: PlanFeatureKey,
+    label: string,
+): Promise<boolean> {
+    const access = await userHasPlanFeature(req.userId!, feature);
+    if (access.allowed) return true;
+
+    res.status(403).json({
+        error: `${label} is not included in your current subscription plan.`,
+        code: 'FEATURE_NOT_INCLUDED',
+        feature,
+        plan: access.context.planName,
+    });
+    return false;
+}
+
 router.post('/image', async (req: AuthRequest, res: Response) => {
     try {
+        if (!(await requireGenerationFeature(
+            req,
+            res,
+            'image_generation',
+            'Image generation',
+        ))) return;
+
         const generation = await startMediaGeneration(req.userId!, {
             kind: 'image',
             prompt: req.body?.prompt,
@@ -33,6 +62,13 @@ router.post('/image', async (req: AuthRequest, res: Response) => {
 
 router.post('/video', async (req: AuthRequest, res: Response) => {
     try {
+        if (!(await requireGenerationFeature(
+            req,
+            res,
+            'video_generation',
+            'Video generation',
+        ))) return;
+
         const generation = await startMediaGeneration(req.userId!, {
             kind: 'video',
             prompt: req.body?.prompt,

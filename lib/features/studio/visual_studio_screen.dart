@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:go_router/go_router.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:path_provider/path_provider.dart';
@@ -14,6 +15,7 @@ import '../../core/security/ai_api_key_resolver.dart';
 import '../../core/api/api_service.dart';
 import '../sources/source_provider.dart';
 import '../sources/source.dart';
+import '../subscription/providers/subscription_provider.dart';
 
 enum _GenerationKind { image, video }
 
@@ -512,6 +514,18 @@ Art direction:
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
+    final subscriptionAsync = ref.watch(userSubscriptionProvider);
+    final subscription = subscriptionAsync.valueOrNull;
+    final selectedFeature = _generationKind == _GenerationKind.image
+        ? 'image_generation'
+        : 'video_generation';
+    final featureLabel = _generationKind == _GenerationKind.image
+        ? 'Image generation'
+        : 'Video generation';
+    final featureAccessLoading = subscriptionAsync.isLoading;
+    final canGenerate = subscription != null &&
+        subscription.status.toLowerCase() == 'active' &&
+        subscription.canAccess(selectedFeature);
 
     return Scaffold(
       appBar: AppBar(
@@ -591,6 +605,42 @@ Art direction:
                             _loadMediaModels();
                           },
                   ),
+                  if (!featureAccessLoading && !canGenerate) ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: scheme.errorContainer.withValues(alpha: 0.55),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: scheme.error.withValues(alpha: 0.25),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            LucideIcons.lock,
+                            size: 19,
+                            color: scheme.onErrorContainer,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              '$featureLabel is not included in your current plan.',
+                              style: text.bodyMedium?.copyWith(
+                                color: scheme.onErrorContainer,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: () => context.push('/subscription'),
+                            child: const Text('View plans'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                   if (_mediaModels.isNotEmpty) ...[
                     const SizedBox(height: 12),
                     DropdownButtonFormField<String>(
@@ -649,19 +699,24 @@ Art direction:
 
                   // Generate Button
                   FilledButton.icon(
-                    onPressed: _isGenerating ? null : _generateImage,
-                    icon: _isGenerating
+                    onPressed:
+                        _isGenerating || featureAccessLoading || !canGenerate
+                            ? null
+                            : _generateImage,
+                    icon: _isGenerating || featureAccessLoading
                         ? SizedBox(
                             width: 20,
                             height: 20,
                             child: CircularProgressIndicator(
                                 strokeWidth: 2, color: scheme.onPrimary))
                         : const Icon(LucideIcons.wand2),
-                    label: Text(_isGenerating
-                        ? (_generationKind == _GenerationKind.video
-                            ? 'Rendering video…'
-                            : 'Generating image…')
-                        : 'Generate ${_generationKind == _GenerationKind.video ? 'Video' : 'Image'}'),
+                    label: Text(
+                      _isGenerating
+                          ? (_generationKind == _GenerationKind.video
+                              ? 'Rendering video...'
+                              : 'Generating image...')
+                          : 'Generate ${_generationKind == _GenerationKind.video ? 'Video' : 'Image'}',
+                    ),
                   ),
 
                   const SizedBox(height: 32),

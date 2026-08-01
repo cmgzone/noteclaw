@@ -8,6 +8,8 @@ export const PLAN_FEATURE_KEYS = [
   'web_search',
   'deep_research',
   'research_save_to_notebook',
+  'image_generation',
+  'video_generation',
 ] as const;
 
 export type PlanFeatureKey = (typeof PLAN_FEATURE_KEYS)[number];
@@ -21,6 +23,8 @@ export const PLAN_FEATURE_LABELS: Record<PlanFeatureKey, string> = {
   web_search: 'Live web search',
   deep_research: 'Deep research agent',
   research_save_to_notebook: 'Save research to notebooks',
+  image_generation: 'AI image generation',
+  video_generation: 'AI video generation',
 };
 
 let featureSchemaPromise: Promise<void> | null = null;
@@ -35,6 +39,8 @@ export function defaultPlanFeatureAccess(isFreePlan: boolean): PlanFeatureAccess
     web_search: enabled,
     deep_research: enabled,
     research_save_to_notebook: enabled,
+    image_generation: enabled,
+    video_generation: enabled,
   };
 }
 
@@ -82,12 +88,20 @@ export async function ensurePlanFeatureAccessReady(): Promise<void> {
           plan.feature_access && typeof plan.feature_access === 'object'
             ? plan.feature_access
             : {};
-        const hasKnownKey = PLAN_FEATURE_KEYS.some(
+        const hasEveryKnownKey = PLAN_FEATURE_KEYS.every(
           (key) => typeof current[key] === 'boolean',
         );
-        if (hasKnownKey && current.memory_bank === true) continue;
+        if (
+          hasEveryKnownKey
+          && current.memory_bank === true
+          && current.notebook_chat === true
+          && current.websocket_collaboration === true
+        ) continue;
 
-        const updatedAccess = defaultPlanFeatureAccess(plan.is_free_plan === true);
+        const updatedAccess = normalizePlanFeatureAccess(
+          current,
+          plan.is_free_plan === true,
+        );
         await pool.query(
           `UPDATE subscription_plans
            SET feature_access = $1::jsonb, updated_at = NOW()

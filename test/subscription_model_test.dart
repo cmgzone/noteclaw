@@ -39,6 +39,8 @@ void main() {
       expect(subscription.mcpEnabled, isTrue);
       expect(subscription.canAccess('memory_bank'), isTrue);
       expect(subscription.canAccess('web_search'), isFalse);
+      expect(subscription.canAccess('image_generation'), isTrue);
+      expect(subscription.canAccess('video_generation'), isTrue);
     });
 
     test('keeps compatibility when an older backend omits quota fields', () {
@@ -61,6 +63,9 @@ void main() {
       expect(subscription.mcpTokensLimit, isNull);
       expect(subscription.mcpApiCallsPerDay, isNull);
       expect(subscription.mcpEnabled, isTrue);
+      expect(subscription.canAccess('memory_bank'), isTrue);
+      expect(subscription.canAccess('image_generation'), isFalse);
+      expect(subscription.canAccess('video_generation'), isFalse);
     });
   });
 }

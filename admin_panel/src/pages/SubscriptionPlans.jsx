@@ -10,6 +10,8 @@ const PLAN_FEATURES = [
     { key: 'web_search', label: 'Web search', description: 'Current web results with citations' },
     { key: 'deep_research', label: 'Deep research', description: 'Background multi-step research reports' },
     { key: 'research_save_to_notebook', label: 'Save research', description: 'Store research reports in notebooks' },
+    { key: 'image_generation', label: 'Image generation', description: 'Create and download AI-generated images' },
+    { key: 'video_generation', label: 'Video generation', description: 'Create and download AI-generated videos' },
 ];
 
 const defaultFeatureAccess = (isFreePlan = false) =>

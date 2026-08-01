@@ -410,6 +410,8 @@ export async function initializeDatabase() {
             web_search: false,
             deep_research: false,
             research_save_to_notebook: false,
+            image_generation: false,
+            video_generation: false,
         });
         const paidPlanFeatures = JSON.stringify({
             memory_bank: true,
@@ -419,6 +421,8 @@ export async function initializeDatabase() {
             web_search: true,
             deep_research: true,
             research_save_to_notebook: true,
+            image_generation: true,
+            video_generation: true,
         });
         const planCount = await client.query(
             'SELECT COUNT(*)::int AS count FROM subscription_plans',
