@@ -144,6 +144,33 @@ export async function getAppSettingValue(settingKey: string): Promise<string | n
     return typeof content === 'string' ? content : null;
 }
 
+const APP_SETTING_ENVIRONMENT_FALLBACKS: Record<string, readonly string[]> = {
+    resend_from_email: ['SMTP_FROM_EMAIL', 'RESEND_FROM_EMAIL'],
+    resend_from_name: ['SMTP_FROM_NAME', 'RESEND_FROM_NAME'],
+    resend_reply_to_email: ['SMTP_REPLY_TO_EMAIL', 'RESEND_REPLY_TO_EMAIL'],
+    public_app_url: ['PUBLIC_APP_URL', 'WEB_APP_URL'],
+    require_email_verification: ['REQUIRE_EMAIL_VERIFICATION'],
+};
+
+export async function getAppSettingValueWithEnvironmentFallback(
+    settingKey: string,
+): Promise<string | null> {
+    const storedValue = (await getAppSettingValue(settingKey))?.trim();
+    if (storedValue) {
+        return storedValue;
+    }
+
+    const environmentKeys = APP_SETTING_ENVIRONMENT_FALLBACKS[settingKey] ?? [];
+    for (const environmentKey of environmentKeys) {
+        const value = process.env[environmentKey]?.trim();
+        if (value) {
+            return value;
+        }
+    }
+
+    return null;
+}
+
 export async function getBooleanAppSetting(
     settingKey: string,
     fallback = false,

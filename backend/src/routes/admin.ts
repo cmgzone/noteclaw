@@ -15,6 +15,7 @@ import { encryptSecret } from '../services/secretEncryptionService.js';
 import {
     getAllAppSettings,
     getAppSettingValue,
+    getAppSettingValueWithEnvironmentFallback,
     getPrivacyPolicyContent,
     getTermsOfServiceContent,
     setAppSettingValue,
@@ -507,7 +508,10 @@ router.get('/settings', async (req: AuthRequest, res: Response) => {
                 .filter(Boolean);
 
             const pairs = await Promise.all(
-                keys.map(async (key) => [key, (await getAppSettingValue(key)) ?? ''] as const),
+                keys.map(async (key) => [
+                    key,
+                    (await getAppSettingValueWithEnvironmentFallback(key)) ?? '',
+                ] as const),
             );
 
             return res.json({
