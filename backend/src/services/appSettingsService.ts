@@ -150,6 +150,9 @@ const APP_SETTING_ENVIRONMENT_FALLBACKS: Record<string, readonly string[]> = {
     resend_reply_to_email: ['SMTP_REPLY_TO_EMAIL', 'RESEND_REPLY_TO_EMAIL'],
     public_app_url: ['PUBLIC_APP_URL', 'WEB_APP_URL'],
     require_email_verification: ['REQUIRE_EMAIL_VERIFICATION'],
+    play_test_opt_in_url: ['PLAY_TEST_OPT_IN_URL'],
+    play_test_group_url: ['PLAY_TEST_GROUP_URL'],
+    play_test_feedback_email: ['PLAY_TEST_FEEDBACK_EMAIL', 'SMTP_REPLY_TO_EMAIL'],
 };
 
 export async function getAppSettingValueWithEnvironmentFallback(

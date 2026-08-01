@@ -15,6 +15,7 @@ import StorageManager from './pages/StorageManager';
 import McpSettings from './pages/McpSettings';
 import NotificationManager from './pages/NotificationManager';
 import DataManager from './pages/DataManager';
+import PlayTesters from './pages/PlayTesters';
 
 function ProtectedRoute() {
   const { user, loading } = useAuth();
@@ -50,6 +51,7 @@ function Router() {
               <Route path="/privacy" element={<PrivacyPolicyEditor />} />
               <Route path="/ai-models" element={<AIModels />} />
               <Route path="/mcp-settings" element={<McpSettings />} />
+              <Route path="/play-testers" element={<PlayTesters />} />
             </Route>
           </Route>
         </Routes>

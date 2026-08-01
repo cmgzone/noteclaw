@@ -29,7 +29,18 @@ import {
     ensurePlanFeatureAccessReady,
     normalizePlanFeatureAccess,
 } from '../services/planFeatureService.js';
-import { getEmailDeliveryStatus } from '../services/emailService.js';
+import {
+    getEmailDeliveryStatus,
+    sendPlayTestingInviteEmail,
+} from '../services/emailService.js';
+import {
+    getPlayTesterById,
+    getPlayTestingSettings,
+    isPlayTesterStatus,
+    listPlayTesters,
+    markPlayTesterInviteSent,
+    updatePlayTester,
+} from '../services/playTesterService.js';
 
 const router = express.Router();
 const SUPPORTED_ADMIN_NOTIFICATION_TYPES = new Set<NotificationType>(['system']);
@@ -494,6 +505,74 @@ router.get('/email-status', async (_req: AuthRequest, res: Response) => {
     } catch (error) {
         console.error('Error fetching email delivery status:', error);
         res.status(500).json({ error: 'Failed to fetch email delivery status' });
+    }
+});
+
+router.get('/play-testers', async (req: AuthRequest, res: Response) => {
+    try {
+        const search = typeof req.query.search === 'string' ? req.query.search : '';
+        const rawStatus = typeof req.query.status === 'string' ? req.query.status : '';
+        const status = rawStatus && isPlayTesterStatus(rawStatus) ? rawStatus : null;
+        const limit = Number.parseInt(String(req.query.limit || '100'), 10);
+        const offset = Number.parseInt(String(req.query.offset || '0'), 10);
+        const result = await listPlayTesters({ search, status, limit, offset });
+        res.json({ success: true, ...result });
+    } catch (error) {
+        console.error('Error fetching Play testers:', error);
+        res.status(500).json({ error: 'Failed to fetch Play testers' });
+    }
+});
+
+router.put('/play-testers/:id', async (req: AuthRequest, res: Response) => {
+    try {
+        const { status, notes } = req.body || {};
+        if (!isPlayTesterStatus(status)) {
+            return res.status(400).json({ error: 'Invalid tester status' });
+        }
+        if (notes !== undefined && notes !== null && typeof notes !== 'string') {
+            return res.status(400).json({ error: 'Notes must be text' });
+        }
+
+        const tester = await updatePlayTester({
+            id: req.params.id,
+            status,
+            notes: typeof notes === 'string' ? notes.slice(0, 1000) : undefined,
+        });
+        if (!tester) {
+            return res.status(404).json({ error: 'Tester not found' });
+        }
+        res.json({ success: true, tester });
+    } catch (error) {
+        console.error('Error updating Play tester:', error);
+        res.status(500).json({ error: 'Failed to update Play tester' });
+    }
+});
+
+router.post('/play-testers/:id/resend-invite', async (req: AuthRequest, res: Response) => {
+    try {
+        const [tester, settings] = await Promise.all([
+            getPlayTesterById(req.params.id),
+            getPlayTestingSettings(),
+        ]);
+        if (!tester) {
+            return res.status(404).json({ error: 'Tester not found' });
+        }
+
+        const emailSent = await sendPlayTestingInviteEmail({
+            to: tester.email,
+            displayName: tester.displayName,
+            optInUrl: settings.optInUrl,
+            groupUrl: settings.groupUrl,
+            feedbackEmail: settings.feedbackEmail,
+        });
+        await markPlayTesterInviteSent(tester.id, emailSent);
+        if (!emailSent) {
+            return res.status(502).json({ error: 'The testing invite email could not be delivered' });
+        }
+        res.json({ success: true, message: 'Testing invite resent' });
+    } catch (error) {
+        console.error('Error resending Play tester invite:', error);
+        res.status(500).json({ error: 'Failed to resend the testing invite' });
     }
 });
 

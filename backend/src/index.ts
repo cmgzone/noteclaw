@@ -17,6 +17,7 @@ import mcpDownloadRoutes from './routes/mcpDownload.js';
 import remoteMcpRoutes from './routes/remoteMcp.js';
 import subscriptionRoutes from './routes/subscriptions.js';
 import planningRoutes from './routes/planning.js';
+import playTesterRoutes from './routes/playTesters.js';
 
 import { agentWebSocketService } from './services/agentWebSocketService.js';
 import { planningWebSocketService } from './services/planningWebSocketService.js';
@@ -114,6 +115,7 @@ app.use('/api/github', githubRoutes);
 app.use('/api/mcp', mcpDownloadRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/planning', planningRoutes);
+app.use('/api/play-testers', playTesterRoutes);
 // 404 handler
 app.use((req, res) => {
     console.log(`[404] Route not found: ${req.method} ${req.path}`);

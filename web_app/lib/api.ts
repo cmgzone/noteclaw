@@ -62,6 +62,14 @@ export interface SignupResponse {
     message?: string;
 }
 
+export interface PlayTestingJoinResponse {
+    success: boolean;
+    emailSent: boolean;
+    optInUrl: string;
+    groupUrl?: string | null;
+    message: string;
+}
+
 export interface PlanFeatureAccess {
     memory_bank: boolean;
     notebook_chat: boolean;
@@ -466,6 +474,18 @@ class ApiService {
         return this.fetch('/auth/resend-verification', {
             method: 'POST',
             body: JSON.stringify({ email }),
+        });
+    }
+
+    async joinPlayTesting(params: {
+        email: string;
+        displayName?: string;
+        consent: boolean;
+        website?: string;
+    }): Promise<PlayTestingJoinResponse> {
+        return this.fetch('/play-testers/join', {
+            method: 'POST',
+            body: JSON.stringify(params),
         });
     }
 

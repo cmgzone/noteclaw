@@ -19,6 +19,7 @@ import {
   Check,
   Terminal,
   ShieldCheck,
+  Smartphone,
   Plus,
 } from "lucide-react";
 import {
@@ -175,6 +176,9 @@ function Navbar() {
           </Link>
           <Link href="/plans" className="hidden px-3 py-2 text-sm text-mut transition-colors hover:text-fg md:block">
             Plans
+          </Link>
+          <Link href="/android-testing" className="hidden px-3 py-2 text-sm text-teal transition-colors hover:text-fg lg:block">
+            Android test
           </Link>
           <Link href="/login" className="px-3 py-2 text-sm text-mut transition-colors hover:text-fg">
             Sign in
@@ -380,6 +384,13 @@ function Hero() {
               >
                 <BookOpen size={16} aria-hidden="true" />
                 Read the MCP docs
+              </Link>
+              <Link
+                href="/android-testing"
+                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full border border-teal/30 bg-teal/[0.07] px-7 py-3 text-sm font-medium text-teal transition hover:bg-teal/[0.12]"
+              >
+                <Smartphone size={16} aria-hidden="true" />
+                Join Android test
               </Link>
             </div>
           </Reveal>
@@ -931,6 +942,9 @@ function Footer() {
           </Link>
           <Link href="/plans" className="transition-colors hover:text-fg">
             Plans
+          </Link>
+          <Link href="/android-testing" className="transition-colors hover:text-fg">
+            Android testing
           </Link>
           <Link href="/login" className="transition-colors hover:text-fg">
             Sign in

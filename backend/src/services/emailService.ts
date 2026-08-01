@@ -333,6 +333,8 @@ function buildEmailShell({
     body,
     ctaLabel,
     ctaUrl,
+    secondaryCtaLabel,
+    secondaryCtaUrl,
     footnote,
 }: {
     preview: string;
@@ -340,11 +342,16 @@ function buildEmailShell({
     body: string[];
     ctaLabel: string;
     ctaUrl: string;
+    secondaryCtaLabel?: string;
+    secondaryCtaUrl?: string;
     footnote: string;
 }): { html: string; text: string } {
     const safeHeading = escapeHtml(heading);
     const safePreview = escapeHtml(preview);
     const safeCtaLabel = escapeHtml(ctaLabel);
+    const safeCtaUrl = escapeHtml(ctaUrl);
+    const safeSecondaryCtaLabel = secondaryCtaLabel ? escapeHtml(secondaryCtaLabel) : '';
+    const safeSecondaryCtaUrl = secondaryCtaUrl ? escapeHtml(secondaryCtaUrl) : '';
     const safeFootnote = escapeHtml(footnote);
     const htmlParagraphs = body
         .map((paragraph) => `<p style="margin:0 0 16px;color:#1f2937;line-height:1.6;">${escapeHtml(paragraph)}</p>`)
@@ -360,10 +367,13 @@ function buildEmailShell({
       <h1 style="margin:0 0 20px;font-size:28px;line-height:1.2;color:#111827;">${safeHeading}</h1>
       ${htmlParagraphs}
       <div style="margin:28px 0;">
-        <a href="${ctaUrl}" style="display:inline-block;background:#111827;color:#ffffff;text-decoration:none;padding:14px 20px;border-radius:12px;font-weight:700;">${safeCtaLabel}</a>
+        <a href="${safeCtaUrl}" style="display:inline-block;background:#111827;color:#ffffff;text-decoration:none;padding:14px 20px;border-radius:12px;font-weight:700;">${safeCtaLabel}</a>
+        ${safeSecondaryCtaUrl && safeSecondaryCtaLabel
+            ? `<a href="${safeSecondaryCtaUrl}" style="display:inline-block;margin-left:8px;background:#e5e7eb;color:#111827;text-decoration:none;padding:14px 20px;border-radius:12px;font-weight:700;">${safeSecondaryCtaLabel}</a>`
+            : ''}
       </div>
       <p style="margin:0 0 12px;color:#4b5563;line-height:1.6;">If the button does not work, copy and paste this link into your browser:</p>
-      <p style="margin:0 0 20px;word-break:break-all;"><a href="${ctaUrl}" style="color:#2563eb;">${ctaUrl}</a></p>
+      <p style="margin:0 0 20px;word-break:break-all;"><a href="${safeCtaUrl}" style="color:#2563eb;">${safeCtaUrl}</a></p>
       <p style="margin:0;font-size:12px;color:#6b7280;line-height:1.6;">${safeFootnote}</p>
     </div>
   </body>
@@ -375,6 +385,9 @@ function buildEmailShell({
         ...body,
         '',
         `${ctaLabel}: ${ctaUrl}`,
+        ...(secondaryCtaLabel && secondaryCtaUrl
+            ? [`${secondaryCtaLabel}: ${secondaryCtaUrl}`]
+            : []),
         '',
         footnote,
     ].join('\n');
@@ -445,6 +458,45 @@ export async function sendPasswordResetEmail(params: {
     return sendWithConfiguredProvider({
         to: params.to,
         subject: 'Reset your NoteClaw password',
+        html: body.html,
+        text: body.text,
+    });
+}
+
+export async function sendPlayTestingInviteEmail(params: {
+    to: string;
+    displayName?: string | null;
+    optInUrl: string;
+    groupUrl?: string | null;
+    feedbackEmail?: string | null;
+}): Promise<boolean> {
+    const greetingName = normalizeOptionalValue(params.displayName) || 'there';
+    const groupInstruction = params.groupUrl
+        ? 'Because this is a closed test, join the tester group using the second button before opening the Google Play invite.'
+        : 'Use the same Google Account that you entered on the NoteClaw website when Google Play asks you to opt in.';
+    const feedbackInstruction = params.feedbackEmail
+        ? `Send testing feedback to ${params.feedbackEmail}.`
+        : 'You can send feedback through the private feedback option on Google Play.';
+    const body = buildEmailShell({
+        preview: 'Your NoteClaw Android testing invite is ready.',
+        heading: 'Join the NoteClaw Android test',
+        body: [
+            `Hi ${greetingName},`,
+            'Thanks for joining the NoteClaw Android testing program.',
+            groupInstruction,
+            'Open the Google Play invite, choose Become a tester, then use the download link shown by Google Play.',
+            feedbackInstruction,
+        ],
+        ctaLabel: 'Open Google Play invite',
+        ctaUrl: params.optInUrl,
+        secondaryCtaLabel: params.groupUrl ? 'Join tester group first' : undefined,
+        secondaryCtaUrl: params.groupUrl || undefined,
+        footnote: 'Google Play requires a Gmail or Google Workspace account. For closed-test production eligibility, remain opted in continuously for at least 14 days.',
+    });
+
+    return sendWithConfiguredProvider({
+        to: params.to,
+        subject: 'Your NoteClaw Android testing invite',
         html: body.html,
         text: body.text,
     });

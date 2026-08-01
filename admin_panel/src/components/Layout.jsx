@@ -26,6 +26,7 @@ export default function Layout() {
     const navigation = [
         { name: 'Dashboard', href: '/', icon: LayoutDashboard },
         { name: 'Users', href: '/users', icon: Users },
+        { name: 'Play Testers', href: '/play-testers', icon: Smartphone },
         { name: 'Content & Data', href: '/content', icon: Database },
         { name: 'Notifications', href: '/notifications', icon: Bell },
         { name: 'Subscription Plans', href: '/subscription-plans', icon: CreditCard },

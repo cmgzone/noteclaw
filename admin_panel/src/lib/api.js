@@ -317,6 +317,25 @@ class ApiService {
         return this.get('/admin/email-status');
     }
 
+    // ============ ADMIN - PLAY TESTERS ============
+    async getPlayTesters({ search = '', status = '', limit = 500, offset = 0 } = {}) {
+        const params = new URLSearchParams({
+            limit: String(limit),
+            offset: String(offset),
+        });
+        if (search.trim()) params.set('search', search.trim());
+        if (status) params.set('status', status);
+        return this.get(`/admin/play-testers?${params.toString()}`);
+    }
+
+    async updatePlayTester(id, status, notes) {
+        return this.put(`/admin/play-testers/${id}`, { status, notes });
+    }
+
+    async resendPlayTesterInvite(id) {
+        return this.post(`/admin/play-testers/${id}/resend-invite`, {});
+    }
+
     // ============ ADMIN - ONBOARDING ============
     async getOnboardingScreens() {
         return this.get('/admin/onboarding');
