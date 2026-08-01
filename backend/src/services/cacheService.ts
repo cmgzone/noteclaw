@@ -176,7 +176,7 @@ export const CacheKeys = {
     sourceChunks: (sourceId: string) => `source:${sourceId}:chunks`,
     
     // AI model caches
-    aiModels: () => `ai:models`,
+    aiModels: () => `ai:models:v2`,
     aiModel: (modelId: string) => `ai:model:${modelId}`,
     
     // Session caches

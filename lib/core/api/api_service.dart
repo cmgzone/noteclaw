@@ -1067,8 +1067,13 @@ class ApiService {
       final normalizedModel = (model ?? '').trim().toLowerCase();
       final normalizedProvider = provider.trim().toLowerCase();
 
-      // Alibaba's shared Token Plan key is kept on the NoteClaw backend.
-      if (normalizedProvider == 'alibaba_token_plan') return null;
+      // Backend-managed providers must never receive an unrelated local key.
+      if (normalizedProvider != 'gemini' &&
+          normalizedProvider != 'openrouter' &&
+          normalizedProvider != 'openai' &&
+          normalizedProvider != 'anthropic') {
+        return null;
+      }
 
       final service = (() {
         if (normalizedModel.startsWith('gemini')) return 'gemini';

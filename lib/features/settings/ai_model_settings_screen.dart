@@ -461,6 +461,42 @@ class _AIModelSettingsScreenState extends ConsumerState<AIModelSettingsScreen> {
                 icon: Icons.cloud_outlined,
                 color: Colors.orange,
               ),
+              Consumer(
+                builder: (context, ref, _) {
+                  final models = ref.watch(availableModelsProvider).valueOrNull;
+                  if (models == null) return const SizedBox.shrink();
+                  final additionalProviders = models.entries
+                      .where((entry) =>
+                          entry.value.isNotEmpty &&
+                          entry.key != 'gemini' &&
+                          entry.key != 'openrouter' &&
+                          entry.key != 'alibaba_token_plan')
+                      .toList();
+                  if (additionalProviders.isEmpty) {
+                    return const SizedBox.shrink();
+                  }
+                  return Column(
+                    children: [
+                      for (final entry in additionalProviders) ...[
+                        const SizedBox(height: 12),
+                        _SelectionCard(
+                          title: formatAIProviderName(entry.key),
+                          subtitle:
+                              '${entry.value.length} backend-managed models',
+                          isSelected: _aiProvider == entry.key,
+                          onTap: () {
+                            setState(() => _aiProvider = entry.key);
+                            ref.read(selectedAIModelProvider.notifier).state =
+                                entry.value.first.id;
+                          },
+                          icon: Icons.hub_outlined,
+                          color: Colors.teal,
+                        ),
+                      ],
+                    ],
+                  );
+                },
+              ),
               if (_aiProvider == 'openrouter') ...[
                 const SizedBox(height: 16),
                 Consumer(
@@ -654,6 +690,49 @@ class _AIModelSettingsScreenState extends ConsumerState<AIModelSettingsScreen> {
                           child: LinearProgressIndicator(minHeight: 2)),
                       error: (_, __) =>
                           const Text('Failed to load Alibaba models'),
+                    );
+                  },
+                ),
+              ],
+              if (_aiProvider != 'gemini' &&
+                  _aiProvider != 'openrouter' &&
+                  _aiProvider != 'alibaba_token_plan') ...[
+                const SizedBox(height: 16),
+                Consumer(
+                  builder: (context, ref, _) {
+                    final modelsAsync = ref.watch(availableModelsProvider);
+                    return modelsAsync.when(
+                      data: (models) {
+                        final providerModels = models[_aiProvider] ?? [];
+                        final current = selectedAIModel;
+                        return _DropdownConfiguration(
+                          label: 'Selected Model',
+                          value: providerModels.any((m) => m.id == current)
+                              ? current
+                              : null,
+                          items: providerModels
+                              .map(
+                                (model) => DropdownMenuItem(
+                                  value: model.canAccess ? model.id : null,
+                                  enabled: model.canAccess,
+                                  child: Text(
+                                    model.name,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: (modelId) async {
+                            if (modelId == null) return;
+                            ref.read(selectedAIModelProvider.notifier).state =
+                                modelId;
+                            await _saveSettings();
+                          },
+                        );
+                      },
+                      loading: () => const Center(
+                          child: LinearProgressIndicator(minHeight: 2)),
+                      error: (_, __) => const Text('Failed to load models'),
                     );
                   },
                 ),

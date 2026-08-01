@@ -26,6 +26,28 @@ import { encryptSecret, decryptSecretAllowLegacy } from '../services/secretEncry
 
 const router = express.Router();
 
+const LEGACY_MOBILE_PROVIDERS = new Set([
+    'gemini',
+    'openrouter',
+    'openai',
+    'anthropic',
+]);
+
+function serializeAIModelForClient(model: Record<string, any>) {
+    const providerKey = String(model.provider || '').trim().toLowerCase();
+    return {
+        ...model,
+        // Older mobile releases only render these provider buckets. The
+        // backend remains authoritative for routing based on model_id.
+        provider: LEGACY_MOBILE_PROVIDERS.has(providerKey)
+            ? providerKey
+            : 'openrouter',
+        provider_key: providerKey,
+        catalog_provider: providerKey,
+        context_window: Number(model.context_window || 0),
+    };
+}
+
 function resolveCreditCostFromFeature(
     feature: string | undefined,
     options: { useDeepSearch?: boolean; hasImage?: boolean } = {},
@@ -130,14 +152,14 @@ router.get('/models', authenticateToken, async (req: AuthRequest, res: Response)
             );
             
             // Add can_access field based on user's subscription
-            const modelsWithAccess = cached.map(model => ({
+            const modelsWithAccess = cached.map(model => serializeAIModelForClient({
                 ...model,
                 can_access: !model.is_premium || hasPremiumAccess,
                 is_user_model: false,
                 has_personal_api_key: false
             }));
 
-            const userModels = userModelsResult.rows.map(model => ({
+            const userModels = userModelsResult.rows.map(model => serializeAIModelForClient({
                 ...model,
                 is_premium: false,
                 is_default: false,
@@ -173,14 +195,14 @@ router.get('/models', authenticateToken, async (req: AuthRequest, res: Response)
         await setCache(cacheKey, result.rows, CacheTTL.HOUR);
 
         // Add can_access field to each model based on user's subscription
-        const modelsWithAccess = result.rows.map(model => ({
+        const modelsWithAccess = result.rows.map(model => serializeAIModelForClient({
             ...model,
             can_access: !model.is_premium || hasPremiumAccess,
             is_user_model: false,
             has_personal_api_key: false
         }));
 
-        const userModels = userModelsResult.rows.map(model => ({
+        const userModels = userModelsResult.rows.map(model => serializeAIModelForClient({
             ...model,
             is_premium: false,
             is_default: false,
@@ -218,10 +240,18 @@ router.get('/models/default', authenticateToken, async (req: AuthRequest, res: R
                    created_at ASC 
                  LIMIT 1`
             );
-            return res.json({ success: true, model: fallback.rows[0] || null });
+            return res.json({
+                success: true,
+                model: fallback.rows[0]
+                    ? serializeAIModelForClient(fallback.rows[0])
+                    : null,
+            });
         }
         
-        res.json({ success: true, model: result.rows[0] });
+        res.json({
+            success: true,
+            model: serializeAIModelForClient(result.rows[0]),
+        });
     } catch (error) {
         console.error('Error getting default model:', error);
         res.status(500).json({ error: 'Failed to get default model' });
@@ -246,7 +276,7 @@ router.get('/models/personal', authenticateToken, async (req: AuthRequest, res: 
 
         return res.json({
             success: true,
-            models: result.rows.map((row) => ({
+            models: result.rows.map((row) => serializeAIModelForClient({
                 ...row,
                 is_user_model: true,
                 can_access: true,
@@ -539,7 +569,9 @@ router.post('/chat', async (req: AuthRequest, res: Response) => {
             }
         }
 
-        const effectiveApiKey = userApiKey || personalApiKey || undefined;
+        const effectiveApiKey = provider === ALIBABA_TOKEN_PLAN_PROVIDER
+            ? personalApiKey
+            : userApiKey || personalApiKey || undefined;
         const isByok = !!effectiveApiKey;
 
         billingFeature =
@@ -654,7 +686,19 @@ router.post('/chat/stream', async (req: AuthRequest, res: Response) => {
             }
         }
 
-        const effectiveApiKey = userApiKey || personalApiKey || '';
+        if (model && !isUserModel) {
+            const catalogProviderResult = await pool.query(
+                'SELECT provider FROM ai_models WHERE model_id = $1 AND is_active = true LIMIT 1',
+                [model],
+            );
+            if (catalogProviderResult.rows[0]?.provider) {
+                provider = catalogProviderResult.rows[0].provider;
+            }
+        }
+
+        const effectiveApiKey = provider === ALIBABA_TOKEN_PLAN_PROVIDER
+            ? personalApiKey || ''
+            : userApiKey || personalApiKey || '';
         const isByok = effectiveApiKey.length > 0;
 
         console.log(`[AI Stream] Received request - provider: ${provider}, model: ${model}, userId: ${userId}`);

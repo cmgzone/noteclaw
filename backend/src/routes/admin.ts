@@ -303,6 +303,10 @@ async function deletePlanForAdmin(
 
 // ==================== AI MODELS ====================
 
+async function clearAIModelCatalogCache(): Promise<void> {
+    await deleteCache(CacheKeys.aiModels());
+}
+
 router.get('/models', async (req: AuthRequest, res: Response) => {
     try {
         const result = await pool.query(
@@ -337,6 +341,7 @@ router.post('/models', async (req: AuthRequest, res: Response) => {
             RETURNING *
         `, [name, modelId, provider, description, costInput, costOutput, contextWindow, isActive, isPremium]);
 
+        await clearAIModelCatalogCache();
         res.json({ model: result.rows[0] });
     } catch (error) {
         console.error('Error adding model:', error);
@@ -371,6 +376,7 @@ router.put('/models/:id', async (req: AuthRequest, res: Response) => {
             return res.status(404).json({ error: 'Model not found' });
         }
 
+        await clearAIModelCatalogCache();
         res.json({ model: result.rows[0] });
     } catch (error) {
         console.error('Error updating model:', error);
@@ -389,6 +395,7 @@ router.delete('/models/:id', async (req: AuthRequest, res: Response) => {
             return res.status(404).json({ error: 'Model not found' });
         }
 
+        await clearAIModelCatalogCache();
         res.json({ message: 'Model deleted' });
     } catch (error) {
         console.error('Error deleting model:', error);
@@ -418,6 +425,7 @@ router.put('/models/:id/set-default', async (req: AuthRequest, res: Response) =>
         }
         
         await pool.query('COMMIT');
+        await clearAIModelCatalogCache();
         
         res.json({ 
             success: true,
@@ -484,6 +492,7 @@ router.post('/api-keys', async (req: AuthRequest, res: Response) => {
         if (normalizedService === ALIBABA_TOKEN_PLAN_PROVIDER) {
             const modelIds = await fetchAlibabaTokenPlanModels(normalizedApiKey);
             modelSync = await syncAlibabaTokenPlanModels(modelIds);
+            await clearAIModelCatalogCache();
         }
 
         const encryptedValue = encryptSecret(normalizedApiKey);
@@ -515,6 +524,7 @@ router.post('/providers/alibaba-token-plan/sync', async (_req: AuthRequest, res:
         const apiKey = await getAlibabaTokenPlanApiKey();
         const modelIds = await fetchAlibabaTokenPlanModels(apiKey);
         const result = await syncAlibabaTokenPlanModels(modelIds);
+        await clearAIModelCatalogCache();
         res.json({
             success: true,
             modelCount: result.synced,
@@ -539,6 +549,7 @@ router.delete('/api-keys/:service', async (req: AuthRequest, res: Response) => {
                  WHERE provider = $1`,
                 [ALIBABA_TOKEN_PLAN_PROVIDER],
             );
+            await clearAIModelCatalogCache();
         }
         res.json({ message: 'API key deleted' });
     } catch (error) {

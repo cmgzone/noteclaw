@@ -2,6 +2,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/api_service.dart';
 
+double _modelDouble(dynamic value) {
+  if (value is num) return value.toDouble();
+  return double.tryParse(value?.toString() ?? '') ?? 0;
+}
+
+int _modelInt(dynamic value) {
+  if (value is num) return value.toInt();
+  return int.tryParse(value?.toString() ?? '') ?? 0;
+}
+
 final aiModelServiceProvider = Provider<AIModelService>((ref) {
   return AIModelService(ref);
 });
@@ -42,14 +52,14 @@ class AIModel {
       id: map['id']?.toString() ?? '',
       name: map['name'] ?? '',
       modelId: map['model_id'] ?? map['modelId'] ?? '',
-      provider: map['provider'] ?? '',
+      provider: map['provider_key'] ??
+          map['catalog_provider'] ??
+          map['provider'] ??
+          '',
       description: map['description'],
-      costInput:
-          (map['cost_input'] ?? map['costInput'] as num?)?.toDouble() ?? 0.0,
-      costOutput:
-          (map['cost_output'] ?? map['costOutput'] as num?)?.toDouble() ?? 0.0,
-      contextWindow:
-          (map['context_window'] ?? map['contextWindow'] as num?)?.toInt() ?? 0,
+      costInput: _modelDouble(map['cost_input'] ?? map['costInput']),
+      costOutput: _modelDouble(map['cost_output'] ?? map['costOutput']),
+      contextWindow: _modelInt(map['context_window'] ?? map['contextWindow']),
       isActive: map['is_active'] ?? map['isActive'] ?? true,
       isPremium: map['is_premium'] ?? map['isPremium'] ?? false,
       canAccess: map['can_access'] ?? map['canAccess'] ?? true,

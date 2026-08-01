@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -5,9 +7,12 @@ import 'ai_model_service.dart';
 
 final availableModelsProvider =
     FutureProvider<Map<String, List<AIModelOption>>>((ref) async {
-  final List<AIModelOption> geminiModels = [];
-  final List<AIModelOption> openRouterModels = [];
-  final List<AIModelOption> alibabaTokenPlanModels = [];
+  // Refresh models periodically so admin catalog changes appear without an
+  // application rebuild or process restart.
+  final refreshTimer = Timer(const Duration(seconds: 30), ref.invalidateSelf);
+  ref.onDispose(refreshTimer.cancel);
+
+  final groupedModels = <String, List<AIModelOption>>{};
 
   // Get dynamic models from DB
   try {
@@ -16,11 +21,13 @@ final availableModelsProvider =
 
     for (final m in dbModels) {
       if (!m.isActive) continue;
+      final provider = m.provider.trim().toLowerCase();
+      if (provider.isEmpty) continue;
 
       final option = AIModelOption(
         id: m.modelId,
         name: m.name,
-        provider: m.provider,
+        provider: provider,
         isPremium: m.isPremium,
         canAccess: m.canAccess,
         contextWindow: m.contextWindow > 0
@@ -28,26 +35,32 @@ final availableModelsProvider =
             : _getDefaultContextWindow(m.modelId),
       );
 
-      if (m.provider == 'gemini') {
-        geminiModels.add(option);
-      } else if (m.provider == 'alibaba_token_plan') {
-        alibabaTokenPlanModels.add(option);
-      } else if (m.provider == 'openrouter' ||
-          m.provider == 'openai' ||
-          m.provider == 'anthropic') {
-        openRouterModels.add(option);
-      }
+      groupedModels.putIfAbsent(provider, () => []).add(option);
     }
   } catch (e) {
     debugPrint('Failed to load dynamic AI models: $e');
   }
 
-  return {
-    'gemini': geminiModels,
-    'openrouter': openRouterModels,
-    'alibaba_token_plan': alibabaTokenPlanModels,
-  };
+  return groupedModels;
 });
+
+String formatAIProviderName(String provider) {
+  final normalized = provider.trim().toLowerCase();
+  const knownNames = {
+    'gemini': 'Google Gemini',
+    'openrouter': 'OpenRouter',
+    'openai': 'OpenAI',
+    'anthropic': 'Anthropic',
+    'alibaba_token_plan': 'Alibaba Token Plan',
+  };
+  if (knownNames.containsKey(normalized)) return knownNames[normalized]!;
+
+  return normalized
+      .split(RegExp(r'[_\-\s]+'))
+      .where((part) => part.isNotEmpty)
+      .map((part) => '${part[0].toUpperCase()}${part.substring(1)}')
+      .join(' ');
+}
 
 final selectedAIModelProvider = StateProvider<String>((ref) => '');
 
