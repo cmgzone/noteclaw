@@ -14,6 +14,7 @@ import {
   Smartphone,
 } from "lucide-react";
 import { api, type PlayTestingJoinResponse } from "@/lib/api";
+import { GooglePlayBadge } from "@/components/google-play-badge";
 
 export default function AndroidTestingPage() {
   const [displayName, setDisplayName] = useState("");
@@ -121,15 +122,12 @@ export default function AndroidTestingPage() {
                     <ExternalLink className="h-4 w-4" />
                   </a>
                 )}
-                <a
+                <GooglePlayBadge
                   href={result.optInUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="mt-3 inline-flex items-center justify-center gap-2 rounded-xl bg-cyan-300 px-5 py-3 font-bold text-slate-950 transition hover:bg-cyan-200"
-                >
-                  Open Google Play invite
-                  <ExternalLink className="h-4 w-4" />
-                </a>
+                  label="Open the NoteClaw Google Play testing invite"
+                  external
+                  className="mt-3 self-center sm:self-start"
+                />
                 <button
                   type="button"
                   onClick={() => {

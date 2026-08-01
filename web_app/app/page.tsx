@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { GooglePlayBadge } from "@/components/google-play-badge";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowRight,
@@ -139,6 +140,7 @@ export default function LandingPage() {
 
       <div className="relative z-10">
         <Hero />
+        <PlayStoreBanner />
         <AgentMarquee />
         <ProductShowcase />
         <MemoryBento />
@@ -194,6 +196,36 @@ function Navbar() {
         </div>
       </nav>
     </header>
+  );
+}
+
+function PlayStoreBanner() {
+  return (
+    <section className="px-4 pb-8 sm:px-6 lg:px-8" aria-labelledby="play-testing-title">
+      <Reveal>
+        <div className="mx-auto flex max-w-7xl flex-col items-start justify-between gap-6 overflow-hidden rounded-[1.75rem] border border-teal/25 bg-[linear-gradient(120deg,rgba(95,212,196,0.12),rgba(13,20,35,0.92)_45%,rgba(88,101,242,0.13))] px-6 py-7 shadow-[0_24px_80px_-48px_rgba(95,212,196,0.7)] sm:flex-row sm:items-center sm:px-8">
+          <div className="flex items-start gap-4">
+            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-teal/25 bg-teal/10 text-teal">
+              <Smartphone size={24} aria-hidden="true" />
+            </span>
+            <div>
+              <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-teal">Android closed test</p>
+              <h2 id="play-testing-title" className="mt-1 font-display text-xl font-semibold text-fg sm:text-2xl">
+                Join the NoteClaw testing group
+              </h2>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-mut">
+                Register your Google Account, receive the official Play invite by email, and install securely through Google Play.
+              </p>
+            </div>
+          </div>
+          <GooglePlayBadge
+            href="/android-testing"
+            label="Join the NoteClaw Android test on Google Play"
+            className="shrink-0 self-center"
+          />
+        </div>
+      </Reveal>
+    </section>
   );
 }
 
