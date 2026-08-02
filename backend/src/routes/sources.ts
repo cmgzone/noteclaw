@@ -44,8 +44,8 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
         const { id } = req.params;
         const result = await pool.query(
             `SELECT s.* FROM sources s
-             INNER JOIN notebooks n ON s.notebook_id = n.id
-             WHERE s.id = $1 AND n.user_id = $2`,
+             LEFT JOIN notebooks n ON s.notebook_id = n.id
+             WHERE s.id = $1 AND (s.user_id = $2 OR n.user_id = $2)`,
             [id, req.userId]
         );
 

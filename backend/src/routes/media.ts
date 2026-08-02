@@ -14,8 +14,8 @@ router.get('/:sourceId', async (req: AuthRequest, res: Response) => {
         // Verify ownership via notebook
         const result = await pool.query(
             `SELECT s.media_data, s.media_url, s.type FROM sources s
-             INNER JOIN notebooks n ON s.notebook_id = n.id
-             WHERE s.id = $1 AND n.user_id = $2`,
+             LEFT JOIN notebooks n ON s.notebook_id = n.id
+             WHERE s.id = $1 AND (s.user_id = $2 OR n.user_id = $2)`,
             [sourceId, req.userId]
         );
 
@@ -56,8 +56,8 @@ router.get('/:sourceId/url', async (req: AuthRequest, res: Response) => {
 
         const result = await pool.query(
             `SELECT s.media_url FROM sources s
-             INNER JOIN notebooks n ON s.notebook_id = n.id
-             WHERE s.id = $1 AND n.user_id = $2`,
+             LEFT JOIN notebooks n ON s.notebook_id = n.id
+             WHERE s.id = $1 AND (s.user_id = $2 OR n.user_id = $2)`,
             [sourceId, req.userId]
         );
 
@@ -120,8 +120,8 @@ router.post('/upload/:sourceId', async (req: AuthRequest, res: Response) => {
         // Verify ownership
         const sourceResult = await pool.query(
             `SELECT s.id, s.title, s.type FROM sources s
-             INNER JOIN notebooks n ON s.notebook_id = n.id
-             WHERE s.id = $1 AND n.user_id = $2`,
+             LEFT JOIN notebooks n ON s.notebook_id = n.id
+             WHERE s.id = $1 AND (s.user_id = $2 OR n.user_id = $2)`,
             [sourceId, req.userId]
         );
 
@@ -242,8 +242,8 @@ router.delete('/:sourceId', async (req: AuthRequest, res: Response) => {
         // Verify ownership and get media path
         const sourceResult = await pool.query(
             `SELECT s.id, s.media_path FROM sources s
-             INNER JOIN notebooks n ON s.notebook_id = n.id
-             WHERE s.id = $1 AND n.user_id = $2`,
+             LEFT JOIN notebooks n ON s.notebook_id = n.id
+             WHERE s.id = $1 AND (s.user_id = $2 OR n.user_id = $2)`,
             [sourceId, req.userId]
         );
 

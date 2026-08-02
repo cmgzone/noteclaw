@@ -1191,8 +1191,8 @@ router.get('/followups', authenticateToken, async (req: Request, res: Response) 
           `SELECT s.title, s.content, s.metadata, s.type, s.notebook_id,
                   n.title AS notebook_title
            FROM sources s
-           JOIN notebooks n ON n.id = s.notebook_id
-           WHERE s.id = $1 AND n.user_id = $2`,
+           LEFT JOIN notebooks n ON n.id = s.notebook_id
+           WHERE s.id = $1 AND (s.user_id = $2 OR n.user_id = $2)`,
           [msg.sourceId, userId],
         );
         const source = sourceResult.rows[0];
@@ -1279,9 +1279,9 @@ router.post('/followups/:id/respond', authenticateToken, async (req: Request, re
       `SELECT cm.*, sc.source_id, sc.agent_session_id, s.type AS source_type
        FROM conversation_messages cm
        JOIN source_conversations sc ON cm.conversation_id = sc.id
-        JOIN sources s ON s.id::text = sc.source_id
-        JOIN notebooks n ON n.id = s.notebook_id
-        WHERE cm.id = $1 AND n.user_id = $2`,
+         JOIN sources s ON s.id::text = sc.source_id
+         LEFT JOIN notebooks n ON n.id = s.notebook_id
+         WHERE cm.id = $1 AND (s.user_id = $2 OR n.user_id = $2)`,
        [messageId, userId]
     );
 
@@ -1452,8 +1452,8 @@ router.post('/followups/send', authenticateToken, async (req: Request, res: Resp
     const sourceResult = await pool.query(
       `SELECT s.*, n.agent_session_id 
        FROM sources s
-       JOIN notebooks n ON s.notebook_id = n.id
-       WHERE s.id = $1 AND n.user_id = $2`,
+       LEFT JOIN notebooks n ON s.notebook_id = n.id
+       WHERE s.id = $1 AND (s.user_id = $2 OR n.user_id = $2)`,
       [sourceId, userId]
     );
 
@@ -1800,8 +1800,8 @@ router.get('/conversations/:sourceId', authenticateToken, async (req: Request, r
     const sourceResult = await pool.query(
       `SELECT s.id, s.metadata, n.agent_session_id
        FROM sources s
-       JOIN notebooks n ON s.notebook_id = n.id
-       WHERE s.id = $1 AND n.user_id = $2`,
+       LEFT JOIN notebooks n ON s.notebook_id = n.id
+       WHERE s.id = $1 AND (s.user_id = $2 OR n.user_id = $2)`,
       [sourceId, userId]
     );
 
@@ -2171,7 +2171,7 @@ router.get('/sources/:id', authenticateToken, async (req: Request, res: Response
       `SELECT s.*, n.title as notebook_title 
        FROM sources s
        LEFT JOIN notebooks n ON s.notebook_id = n.id
-       WHERE s.id = $1 AND s.user_id = $2`,
+       WHERE s.id = $1 AND (s.user_id = $2 OR n.user_id = $2)`,
       [id, userId]
     );
 

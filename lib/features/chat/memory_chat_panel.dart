@@ -132,8 +132,7 @@ class _MemoryChatPanelState extends ConsumerState<MemoryChatPanel> {
     Map<String, List<AIModelOption>> grouped,
   ) {
     return [
-      ...grouped['gemini'] ?? const <AIModelOption>[],
-      ...grouped['openrouter'] ?? const <AIModelOption>[],
+      for (final models in grouped.values) ...models,
     ];
   }
 
@@ -155,12 +154,11 @@ class _MemoryChatPanelState extends ConsumerState<MemoryChatPanel> {
 
   String _providerFor(AIModelOption? model) {
     final provider = model?.provider.toLowerCase() ?? 'gemini';
-    if (provider == 'openrouter' ||
-        provider == 'openai' ||
-        provider == 'anthropic') {
+    if (provider == 'openai' || provider == 'anthropic') {
       return 'openrouter';
     }
-    return provider == 'alibaba_token_plan' ? provider : 'gemini';
+    if (provider.isEmpty) return 'gemini';
+    return provider;
   }
 
   Future<void> _switchMode(_MemoryChatMode mode) async {

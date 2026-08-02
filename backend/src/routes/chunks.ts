@@ -15,8 +15,8 @@ router.get('/source/:sourceId', async (req: AuthRequest, res: Response) => {
         // Verify source belongs to user's notebook
         const sourceResult = await pool.query(
             `SELECT s.id FROM sources s
-             INNER JOIN notebooks n ON s.notebook_id = n.id
-             WHERE s.id = $1 AND n.user_id = $2`,
+             LEFT JOIN notebooks n ON s.notebook_id = n.id
+             WHERE s.id = $1 AND (s.user_id = $2 OR n.user_id = $2)`,
             [sourceId, req.userId]
         );
 
@@ -48,8 +48,8 @@ router.post('/bulk', async (req: AuthRequest, res: Response) => {
         // Verify source belongs to user's notebook
         const sourceResult = await pool.query(
             `SELECT s.id, s.notebook_id FROM sources s
-             INNER JOIN notebooks n ON s.notebook_id = n.id
-             WHERE s.id = $1 AND n.user_id = $2`,
+             LEFT JOIN notebooks n ON s.notebook_id = n.id
+             WHERE s.id = $1 AND (s.user_id = $2 OR n.user_id = $2)`,
             [sourceId, req.userId]
         );
 
@@ -97,8 +97,8 @@ router.delete('/source/:sourceId', async (req: AuthRequest, res: Response) => {
         // Verify source belongs to user's notebook
         const sourceResult = await pool.query(
             `SELECT s.id, s.notebook_id FROM sources s
-             INNER JOIN notebooks n ON s.notebook_id = n.id
-             WHERE s.id = $1 AND n.user_id = $2`,
+             LEFT JOIN notebooks n ON s.notebook_id = n.id
+             WHERE s.id = $1 AND (s.user_id = $2 OR n.user_id = $2)`,
             [sourceId, req.userId]
         );
 
