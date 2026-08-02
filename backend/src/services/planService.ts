@@ -581,6 +581,56 @@ class PlanService {
     return createdRequirements;
   }
 
+  /** Update an existing requirement after verifying plan ownership. */
+  async updateRequirement(
+    planId: string,
+    requirementId: string,
+    userId: string,
+    input: {
+      title: string;
+      description?: string;
+      earsPattern?: 'ubiquitous' | 'event' | 'state' | 'unwanted' | 'optional' | 'complex';
+      acceptanceCriteria?: string[];
+    }
+  ): Promise<Requirement | null> {
+    const existing = await pool.query(
+      `SELECT r.id, p.user_id, p.status
+       FROM plan_requirements r
+       JOIN plans p ON r.plan_id = p.id
+       WHERE r.id = $1 AND r.plan_id = $2`,
+      [requirementId, planId]
+    );
+
+    if (existing.rows.length === 0) {
+      return null;
+    }
+    if (existing.rows[0].user_id !== userId) {
+      throw new Error('Access denied');
+    }
+    if (existing.rows[0].status === 'archived') {
+      throw new Error('Cannot edit requirements in an archived plan');
+    }
+
+    const result = await pool.query(
+      `UPDATE plan_requirements
+       SET title = $2,
+           description = $3,
+           ears_pattern = $4,
+           acceptance_criteria = $5::jsonb
+       WHERE id = $1
+       RETURNING *`,
+      [
+        requirementId,
+        input.title,
+        input.description || null,
+        input.earsPattern || 'ubiquitous',
+        JSON.stringify(input.acceptanceCriteria || []),
+      ]
+    );
+
+    return this.mapRowToRequirement(result.rows[0]);
+  }
+
   /**
    * Delete a requirement.
    */

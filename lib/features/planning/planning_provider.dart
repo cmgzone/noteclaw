@@ -924,6 +924,43 @@ class PlanningNotifier extends StateNotifier<PlanningState> {
     }
   }
 
+  /// Update a requirement in the current plan and refresh its detail view.
+  Future<Requirement?> updateRequirement({
+    required String requirementId,
+    required String title,
+    String? description,
+    required String earsPattern,
+    required List<String> acceptanceCriteria,
+  }) async {
+    final planId = state.currentPlan?.id;
+    if (planId == null) {
+      state = state.copyWith(error: 'No plan selected');
+      return null;
+    }
+
+    try {
+      final requirement = await _planningService.updateRequirement(
+        planId: planId,
+        requirementId: requirementId,
+        title: title,
+        description: description,
+        earsPattern: earsPattern,
+        acceptanceCriteria: acceptanceCriteria,
+      );
+      await loadPlan(planId);
+      return requirement;
+    } catch (e, stack) {
+      developer.log(
+        '[PLANNING_PROVIDER] Error updating requirement: $e',
+        name: 'PlanningProvider',
+        error: e,
+        stackTrace: stack,
+      );
+      state = state.copyWith(error: e.toString());
+      return null;
+    }
+  }
+
   /// Delete a requirement from the current plan
   Future<bool> deleteRequirement(String requirementId) async {
     final planId = state.currentPlan?.id;
@@ -1202,6 +1239,7 @@ class PlanningNotifier extends StateNotifier<PlanningState> {
     await _wsChannel?.sink.close();
     _wsChannel = null;
 
+    if (_disposed) return;
     state = state.copyWith(isConnected: false);
   }
 

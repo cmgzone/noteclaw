@@ -65,39 +65,46 @@ class _TasksEmptyState extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
 
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              LucideIcons.listTodo,
-              size: 64,
-              color: scheme.primary.withValues(alpha: 0.5),
-            ).animate().scale(duration: 600.ms, curve: Curves.elasticOut),
-            const SizedBox(height: 24),
-            Text(
-              title,
-              style: text.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-            ).animate().fadeIn(delay: 200.ms),
-            const SizedBox(height: 8),
-            Text(
-              subtitle,
-              style: text.bodyMedium?.copyWith(
-                color: scheme.onSurface.withValues(alpha: 0.6),
-              ),
-              textAlign: TextAlign.center,
-            ).animate().fadeIn(delay: 400.ms),
-            if (onAddTask != null) ...[
-              const SizedBox(height: 24),
-              FilledButton.icon(
-                onPressed: onAddTask,
-                icon: const Icon(LucideIcons.plus),
-                label: const Text('Add Task'),
-              ).animate().fadeIn(delay: 600.ms),
+    return LayoutBuilder(
+      builder: (context, constraints) => SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            minHeight:
+                constraints.maxHeight > 48 ? constraints.maxHeight - 48 : 0,
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                LucideIcons.listTodo,
+                size: 56,
+                color: scheme.primary.withValues(alpha: 0.5),
+              ).animate().scale(duration: 600.ms, curve: Curves.elasticOut),
+              const SizedBox(height: 18),
+              Text(
+                title,
+                style: text.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+              ).animate().fadeIn(delay: 200.ms),
+              const SizedBox(height: 8),
+              Text(
+                subtitle,
+                style: text.bodyMedium?.copyWith(
+                  color: scheme.onSurface.withValues(alpha: 0.6),
+                ),
+                textAlign: TextAlign.center,
+              ).animate().fadeIn(delay: 400.ms),
+              if (onAddTask != null) ...[
+                const SizedBox(height: 18),
+                FilledButton.icon(
+                  onPressed: onAddTask,
+                  icon: const Icon(LucideIcons.plus),
+                  label: const Text('Add Task'),
+                ).animate().fadeIn(delay: 600.ms),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );

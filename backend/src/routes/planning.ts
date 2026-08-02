@@ -982,6 +982,51 @@ router.post('/:id/requirements/batch', async (req: AuthRequest, res: Response) =
     }
 });
 
+/** PUT /plans/:id/requirements/:requirementId - Update a requirement. */
+router.put('/:id/requirements/:requirementId', async (req: AuthRequest, res: Response) => {
+    try {
+        const { id, requirementId } = req.params;
+        const { title, description, earsPattern, acceptanceCriteria } = req.body;
+
+        if (!title || typeof title !== 'string' || title.trim() === '') {
+            return res.status(400).json({ error: 'Title is required' });
+        }
+
+        const validPatterns = ['ubiquitous', 'event', 'state', 'unwanted', 'optional', 'complex'];
+        if (earsPattern && !validPatterns.includes(earsPattern)) {
+            return res.status(400).json({ error: `Invalid EARS pattern. Must be one of: ${validPatterns.join(', ')}` });
+        }
+        if (acceptanceCriteria != null && !Array.isArray(acceptanceCriteria)) {
+            return res.status(400).json({ error: 'Acceptance criteria must be an array' });
+        }
+
+        const requirement = await planService.updateRequirement(id, requirementId, req.userId!, {
+            title: title.trim(),
+            description: description?.trim(),
+            earsPattern,
+            acceptanceCriteria: (acceptanceCriteria || [])
+                .filter((item: unknown) => typeof item === 'string')
+                .map((item: string) => item.trim())
+                .filter(Boolean),
+        });
+
+        if (!requirement) {
+            return res.status(404).json({ error: 'Requirement not found' });
+        }
+
+        res.json({ success: true, requirement });
+    } catch (error: any) {
+        console.error('Update requirement error:', error);
+        if (error.message.includes('Access denied')) {
+            return res.status(403).json({ error: error.message });
+        }
+        if (error.message.includes('archived')) {
+            return res.status(400).json({ error: error.message });
+        }
+        res.status(500).json({ error: 'Failed to update requirement', message: error.message });
+    }
+});
+
 /**
  * DELETE /plans/:id/requirements/:requirementId
  * Delete a requirement.

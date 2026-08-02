@@ -652,6 +652,34 @@ class PlanningService {
     }
   }
 
+  /// Update an existing requirement.
+  Future<Requirement> updateRequirement({
+    required String planId,
+    required String requirementId,
+    required String title,
+    String? description,
+    required String earsPattern,
+    required List<String> acceptanceCriteria,
+  }) async {
+    try {
+      developer.log('[PLANNING] Updating requirement: $requirementId',
+          name: 'PlanningService');
+      final response =
+          await _api.put('/planning/$planId/requirements/$requirementId', {
+        'title': title,
+        'description': description,
+        'earsPattern': earsPattern,
+        'acceptanceCriteria': acceptanceCriteria,
+      });
+      return Requirement.fromBackendJson(
+          response['requirement'] as Map<String, dynamic>);
+    } catch (e, stack) {
+      developer.log('[PLANNING] Error updating requirement: $e',
+          name: 'PlanningService', error: e, stackTrace: stack);
+      rethrow;
+    }
+  }
+
   /// Delete a requirement.
   Future<bool> deleteRequirement(String planId, String requirementId) async {
     try {
@@ -749,8 +777,8 @@ class PlanningService {
       developer.log('[PLANNING] Getting design artifact: $artifactId',
           name: 'PlanningService');
       final query = includeVersions ? '?includeVersions=true' : '';
-      final response =
-          await _api.get('/planning/$planId/design-artifacts/$artifactId$query');
+      final response = await _api
+          .get('/planning/$planId/design-artifacts/$artifactId$query');
       if (response['designArtifact'] == null) return null;
       return DesignArtifact.fromBackendJson(
           response['designArtifact'] as Map<String, dynamic>);
@@ -853,8 +881,7 @@ class PlanningService {
     String artifactId,
   ) async {
     try {
-      developer.log(
-          '[PLANNING] Getting design artifact versions: $artifactId',
+      developer.log('[PLANNING] Getting design artifact versions: $artifactId',
           name: 'PlanningService');
       final response = await _api
           .get('/planning/$planId/design-artifacts/$artifactId/versions');

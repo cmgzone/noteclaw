@@ -4,7 +4,6 @@ import 'package:go_router/go_router.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 
-import '../../../theme/app_theme.dart';
 import '../models/plan.dart';
 import '../models/plan_task.dart';
 import '../models/requirement.dart';
@@ -13,6 +12,8 @@ import 'plan_sharing_sheet.dart';
 import 'task_list_widget.dart';
 import '../../social/ui/share_content_sheet.dart';
 import '../../social/ui/content_privacy_sheet.dart';
+
+const _requirementsAccent = Color(0xFFA78BFA);
 
 /// Plan detail screen showing requirements, design notes, tasks sections.
 /// Implements Requirements: 1.3, 4.1, 8.1
@@ -55,128 +56,54 @@ class _PlanDetailScreenState extends ConsumerState<PlanDetailScreen>
     return Scaffold(
       body: CustomScrollView(
         slivers: [
-          // App Bar with gradient header
+          // Compact project header. Keep content on the app surface so the
+          // workspace is never covered by a decorative gradient.
           SliverAppBar(
             floating: false,
             pinned: true,
-            expandedHeight: 200,
-            flexibleSpace: FlexibleSpaceBar(
-              background: Container(
-                decoration: const BoxDecoration(
-                  gradient: AppTheme.premiumGradient,
-                ),
-                child: Stack(
-                  children: [
-                    // Decorative elements
-                    Positioned(
-                      top: -30,
-                      right: -30,
-                      child: Container(
-                        width: 150,
-                        height: 150,
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.1),
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                    ),
-                    Positioned(
-                      bottom: -20,
-                      left: -20,
-                      child: Container(
-                        width: 100,
-                        height: 100,
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.1),
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                    ),
-                    SafeArea(
-                      child: Padding(
-                        padding: const EdgeInsets.all(20.0),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            if (plan != null) ...[
-                              Row(
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.all(8),
-                                    decoration: BoxDecoration(
-                                      color:
-                                          Colors.white.withValues(alpha: 0.2),
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: Icon(
-                                      _getStatusIcon(plan.status),
-                                      color: Colors.white,
-                                      size: 24,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Text(
-                                      plan.title,
-                                      style: text.headlineSmall?.copyWith(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                ],
-                              ).animate().fadeIn().slideX(),
-                              if (plan.description.isNotEmpty) ...[
-                                const SizedBox(height: 8),
-                                Text(
-                                  plan.description,
-                                  style: text.bodyMedium?.copyWith(
-                                    color: Colors.white.withValues(alpha: 0.8),
-                                  ),
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                ).animate().fadeIn(delay: 100.ms).slideX(),
-                              ],
-                              const SizedBox(height: 12),
-                              // Progress indicator
-                              _ProgressIndicator(
-                                percentage: plan.completionPercentage,
-                              ).animate().fadeIn(delay: 200.ms),
-                            ] else ...[
-                              Text(
-                                'Loading...',
-                                style: text.headlineSmall?.copyWith(
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+            backgroundColor: scheme.surface,
+            surfaceTintColor: Colors.transparent,
+            foregroundColor: scheme.onSurface,
+            elevation: 0,
+            scrolledUnderElevation: 0,
             leading: IconButton(
-              icon: const Icon(Icons.arrow_back, color: Colors.white),
+              icon: const Icon(LucideIcons.arrowLeft),
               onPressed: () => context.pop(),
             ),
+            titleSpacing: 0,
+            title: Row(
+              children: [
+                Icon(
+                  plan == null
+                      ? LucideIcons.fileText
+                      : _getStatusIcon(plan.status),
+                  size: 20,
+                  color: scheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    plan?.title ?? 'Project',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: text.titleMedium?.copyWith(
+                      color: scheme.onSurface,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
             actions: [
-              // Connection status indicator
-              _ConnectionIndicator(isConnected: state.isConnected),
               IconButton(
-                icon: const Icon(Icons.refresh, color: Colors.white),
+                icon: const Icon(LucideIcons.refreshCw, size: 20),
                 onPressed: () =>
                     ref.read(planningProvider.notifier).loadPlan(widget.planId),
                 tooltip: 'Refresh',
               ),
               if (plan != null)
                 PopupMenuButton<String>(
-                  icon: const Icon(Icons.more_vert, color: Colors.white),
+                  icon: const Icon(Icons.more_vert),
                   onSelected: (value) => _handleMenuAction(value, plan),
                   itemBuilder: (ctx) => [
                     const PopupMenuItem(
@@ -247,9 +174,15 @@ class _PlanDetailScreenState extends ConsumerState<PlanDetailScreen>
             ],
             bottom: TabBar(
               controller: _tabController,
-              indicatorColor: Colors.white,
-              labelColor: Colors.white,
-              unselectedLabelColor: Colors.white70,
+              indicatorColor: const Color(0xFFA78BFA),
+              indicatorWeight: 3,
+              dividerColor: scheme.outlineVariant.withValues(alpha: 0.38),
+              labelColor: scheme.onSurface,
+              unselectedLabelColor: scheme.onSurfaceVariant,
+              labelStyle: text.labelMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+              unselectedLabelStyle: text.labelMedium,
               tabs: [
                 Tab(
                   child: Row(
@@ -312,19 +245,6 @@ class _PlanDetailScreenState extends ConsumerState<PlanDetailScreen>
                     ),
                   ],
                 ),
-              ),
-            ),
-
-          if (plan != null)
-            SliverToBoxAdapter(
-              child: _PlanToolsSection(
-                plan: plan,
-                onAddTask: () => _showAddTaskDialog(context, plan),
-                onAskAi: () => context.push('/planning/${plan.id}/ai'),
-                onBuildPrototype: () =>
-                    context.push('/planning/${plan.id}/prototype'),
-                onDesignUi: () =>
-                    context.push('/planning/${plan.id}/ui-designer'),
               ),
             ),
 
@@ -621,326 +541,6 @@ class _PlanDetailScreenState extends ConsumerState<PlanDetailScreen>
   }
 }
 
-/// Progress indicator widget showing completion percentage
-/// Implements Requirement 8.1
-class _ProgressIndicator extends StatelessWidget {
-  final int percentage;
-
-  const _ProgressIndicator({required this.percentage});
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: LinearProgressIndicator(
-              value: percentage / 100,
-              backgroundColor: Colors.white.withValues(alpha: 0.3),
-              valueColor: AlwaysStoppedAnimation(
-                _getProgressColor(percentage),
-              ),
-              minHeight: 8,
-            ),
-          ),
-        ),
-        const SizedBox(width: 12),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.2),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Text(
-            '$percentage%',
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
-              fontSize: 14,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Color _getProgressColor(int percentage) {
-    if (percentage >= 100) return Colors.greenAccent;
-    if (percentage >= 75) return Colors.lightGreenAccent;
-    if (percentage >= 50) return Colors.amberAccent;
-    if (percentage >= 25) return Colors.orangeAccent;
-    return Colors.white;
-  }
-}
-
-/// Connection status indicator widget
-class _ConnectionIndicator extends StatelessWidget {
-  final bool isConnected;
-
-  const _ConnectionIndicator({required this.isConnected});
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: isConnected ? 'Real-time sync active' : 'Offline',
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 8),
-        padding: const EdgeInsets.all(6),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.2),
-          shape: BoxShape.circle,
-        ),
-        child: Icon(
-          isConnected ? LucideIcons.wifi : LucideIcons.wifiOff,
-          size: 16,
-          color: isConnected ? Colors.greenAccent : Colors.white70,
-        ),
-      ),
-    );
-  }
-}
-
-class _PlanToolsSection extends StatelessWidget {
-  final Plan plan;
-  final VoidCallback onAddTask;
-  final VoidCallback onAskAi;
-  final VoidCallback onBuildPrototype;
-  final VoidCallback onDesignUi;
-
-  const _PlanToolsSection({
-    required this.plan,
-    required this.onAddTask,
-    required this.onAskAi,
-    required this.onBuildPrototype,
-    required this.onDesignUi,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final text = Theme.of(context).textTheme;
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-      child: Container(
-        decoration: BoxDecoration(
-          color: scheme.surfaceContainerLow,
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: scheme.outline.withValues(alpha: 0.08)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.04),
-              blurRadius: 18,
-              offset: const Offset(0, 8),
-            ),
-          ],
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: scheme.primary.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Icon(
-                      LucideIcons.sparkles,
-                      color: scheme.primary,
-                      size: 20,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Project Tools',
-                          style: text.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'Keep your main build actions close without covering the workspace.',
-                          style: text.bodySmall?.copyWith(
-                            color: scheme.onSurface.withValues(alpha: 0.68),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 18),
-              Wrap(
-                spacing: 12,
-                runSpacing: 12,
-                children: [
-                  FilledButton.icon(
-                    onPressed: onAddTask,
-                    icon: const Icon(LucideIcons.plus, size: 18),
-                    label: const Text('Add Task'),
-                  ),
-                  OutlinedButton.icon(
-                    onPressed: onAskAi,
-                    icon: const Icon(LucideIcons.brain, size: 18),
-                    label: const Text('Ask AI'),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  final isWide = constraints.maxWidth >= 720;
-
-                  final prototypeCard = _PlanToolCard(
-                    icon: LucideIcons.layoutDashboard,
-                    title: 'Build Prototype',
-                    subtitle:
-                        'Turn this project into a working product prototype when the flow is ready.',
-                    onTap: onBuildPrototype,
-                    accentColor: scheme.primary,
-                    badge: 'Build',
-                  );
-                  final uiCard = _PlanToolCard(
-                    icon: LucideIcons.palette,
-                    title: 'UI Concepts',
-                    subtitle:
-                        'Generate interface directions as a secondary design step, not the main workflow.',
-                    onTap: onDesignUi,
-                    accentColor: scheme.tertiary,
-                    badge: 'Advanced',
-                  );
-
-                  if (isWide) {
-                    return Row(
-                      children: [
-                        Expanded(child: prototypeCard),
-                        const SizedBox(width: 12),
-                        Expanded(child: uiCard),
-                      ],
-                    );
-                  }
-
-                  return Column(
-                    children: [
-                      prototypeCard,
-                      const SizedBox(height: 12),
-                      uiCard,
-                    ],
-                  );
-                },
-              ),
-              if (plan.tasks.isEmpty) ...[
-                const SizedBox(height: 16),
-                Text(
-                  'Start by adding a task, then use prototype and UI tools once the project has enough structure.',
-                  style: text.bodySmall?.copyWith(
-                    color: scheme.onSurface.withValues(alpha: 0.62),
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ).animate().fadeIn(delay: 120.ms).slideY(begin: 0.06),
-    );
-  }
-}
-
-class _PlanToolCard extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final String badge;
-  final Color accentColor;
-  final VoidCallback onTap;
-
-  const _PlanToolCard({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.badge,
-    required this.accentColor,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final text = Theme.of(context).textTheme;
-
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(20),
-        child: Ink(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: scheme.surface,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: scheme.outline.withValues(alpha: 0.08)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: accentColor.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(icon, size: 18, color: accentColor),
-                  ),
-                  const Spacer(),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: accentColor.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: Text(
-                      badge,
-                      style: text.labelSmall?.copyWith(
-                        color: accentColor,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 14),
-              Text(
-                title,
-                style: text.titleSmall?.copyWith(fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                subtitle,
-                style: text.bodySmall?.copyWith(
-                  color: scheme.onSurface.withValues(alpha: 0.7),
-                  height: 1.45,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _SectionToolbar extends StatelessWidget {
   final IconData icon;
   final String title;
@@ -1031,31 +631,38 @@ class _EmptyState extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
 
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              icon,
-              size: 64,
-              color: scheme.primary.withValues(alpha: 0.5),
-            ).animate().scale(duration: 600.ms, curve: Curves.elasticOut),
-            const SizedBox(height: 24),
-            Text(
-              title,
-              style: text.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-            ).animate().fadeIn(delay: 200.ms),
-            const SizedBox(height: 8),
-            Text(
-              subtitle,
-              style: text.bodyMedium?.copyWith(
-                color: scheme.onSurface.withValues(alpha: 0.6),
-              ),
-              textAlign: TextAlign.center,
-            ).animate().fadeIn(delay: 400.ms),
-          ],
+    return LayoutBuilder(
+      builder: (context, constraints) => SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            minHeight:
+                constraints.maxHeight > 48 ? constraints.maxHeight - 48 : 0,
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                size: 56,
+                color: scheme.primary.withValues(alpha: 0.5),
+              ).animate().scale(duration: 600.ms, curve: Curves.elasticOut),
+              const SizedBox(height: 18),
+              Text(
+                title,
+                style: text.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+              ).animate().fadeIn(delay: 200.ms),
+              const SizedBox(height: 8),
+              Text(
+                subtitle,
+                style: text.bodyMedium?.copyWith(
+                  color: scheme.onSurface.withValues(alpha: 0.6),
+                ),
+                textAlign: TextAlign.center,
+              ).animate().fadeIn(delay: 400.ms),
+            ],
+          ),
         ),
       ),
     );
@@ -1110,209 +717,532 @@ class _RequirementsSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final scheme = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+
+    if (requirements.isEmpty) {
+      return Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 560),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(24, 34, 24, 28),
+              decoration: BoxDecoration(
+                color: scheme.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(
+                  color: scheme.outlineVariant.withValues(alpha: 0.55),
+                ),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 58,
+                    height: 58,
+                    decoration: BoxDecoration(
+                      color: scheme.surfaceContainerHigh,
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                    child: Icon(
+                      LucideIcons.fileText,
+                      size: 30,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    'No Requirements Yet',
+                    style: text.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Document the core needs of this project\nbefore you build.',
+                    textAlign: TextAlign.center,
+                    style: text.bodyMedium?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                      height: 1.45,
+                    ),
+                  ),
+                  const SizedBox(height: 22),
+                  SizedBox(
+                    width: 220,
+                    child: OutlinedButton.icon(
+                      onPressed: () => _showRequirementSheet(context, ref),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: _requirementsAccent,
+                        side: const BorderSide(color: _requirementsAccent),
+                        padding: const EdgeInsets.symmetric(vertical: 13),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      icon: const Icon(LucideIcons.plus, size: 17),
+                      label: const Text('Add Requirement'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     return Column(
       children: [
-        _SectionToolbar(
-          icon: LucideIcons.fileText,
-          title: 'Requirements',
-          subtitle:
-              'Capture the outcomes, constraints, and acceptance criteria this project needs.',
-          actionLabel: 'Add Requirement',
-          onAction: () => _showAddRequirementDialog(context, ref),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Requirements',
+                      style: text.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      '${requirements.length} documented for this project',
+                      style: text.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              OutlinedButton.icon(
+                onPressed: () => _showRequirementSheet(context, ref),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: _requirementsAccent,
+                  side: const BorderSide(color: _requirementsAccent),
+                ),
+                icon: const Icon(LucideIcons.plus, size: 16),
+                label: const Text('Add'),
+              ),
+            ],
+          ),
         ),
         Expanded(
-          child: requirements.isEmpty
-              ? const _EmptyState(
-                  icon: LucideIcons.fileText,
-                  title: 'No Requirements Yet',
-                  subtitle:
-                      'Document the core needs of this project before you build.',
-                )
-              : ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                  itemCount: requirements.length,
-                  itemBuilder: (context, index) {
-                    final requirement = requirements[index];
-                    return _RequirementCard(requirement: requirement)
-                        .animate()
-                        .fadeIn(delay: Duration(milliseconds: index * 50));
-                  },
-                ),
+          child: ListView.builder(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+            itemCount: requirements.length,
+            itemBuilder: (context, index) {
+              final requirement = requirements[index];
+              return _RequirementCard(
+                requirement: requirement,
+                onEdit: () => _showRequirementSheet(context, ref, requirement),
+                onDelete: () =>
+                    _confirmDeleteRequirement(context, ref, requirement),
+              ).animate().fadeIn(delay: Duration(milliseconds: index * 50));
+            },
+          ),
         ),
       ],
     );
   }
 
-  void _showAddRequirementDialog(BuildContext context, WidgetRef ref) {
-    final titleController = TextEditingController();
-    final descController = TextEditingController();
-    EarsPattern selectedPattern = EarsPattern.ubiquitous;
-    final acceptanceCriteria = <String>[];
+  Future<void> _showRequirementSheet(
+    BuildContext context,
+    WidgetRef ref, [
+    Requirement? requirement,
+  ]) async {
+    final scheme = Theme.of(context).colorScheme;
+    final titleController = TextEditingController(text: requirement?.title);
+    final descController =
+        TextEditingController(text: requirement?.description);
+    EarsPattern selectedPattern =
+        requirement?.earsPattern ?? EarsPattern.ubiquitous;
+    final acceptanceCriteria = <String>[
+      ...?requirement?.acceptanceCriteria,
+    ];
     final criteriaController = TextEditingController();
+    var isSaving = false;
 
-    showDialog(
+    await showModalBottomSheet<void>(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Row(
+      useSafeArea: true,
+      isScrollControlled: true,
+      showDragHandle: true,
+      backgroundColor: scheme.surfaceContainerLow,
+      barrierColor: Colors.black.withValues(alpha: 0.74),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, setSheetState) => DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.9,
+          minChildSize: 0.55,
+          maxChildSize: 0.96,
+          builder: (sheetContext, scrollController) => ListView(
+            controller: scrollController,
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            padding: EdgeInsets.fromLTRB(
+              20,
+              4,
+              20,
+              MediaQuery.viewInsetsOf(sheetContext).bottom + 24,
+            ),
             children: [
-              Icon(LucideIcons.fileText),
-              SizedBox(width: 12),
-              Text('Add Requirement'),
-            ],
-          ),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                TextField(
+              Row(
+                children: [
+                  Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      color: _requirementsAccent.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      LucideIcons.fileText,
+                      color: _requirementsAccent,
+                      size: 20,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    requirement == null
+                        ? 'Add Requirement'
+                        : 'Edit Requirement',
+                    style:
+                        Theme.of(sheetContext).textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
+              _RequirementFieldLabel(
+                label: 'Requirement Title',
+                child: TextField(
                   controller: titleController,
-                  decoration: const InputDecoration(
-                    labelText: 'Requirement Title',
-                    prefixIcon: Icon(LucideIcons.type),
+                  autofocus: requirement == null,
+                  textInputAction: TextInputAction.next,
+                  decoration: _requirementInputDecoration(
+                    scheme,
                     hintText: 'e.g., User Authentication',
+                    prefixIcon: LucideIcons.type,
                   ),
-                  autofocus: true,
                 ),
-                const SizedBox(height: 16),
-                TextField(
+              ),
+              const SizedBox(height: 18),
+              _RequirementFieldLabel(
+                label: 'Description (optional)',
+                child: TextField(
                   controller: descController,
-                  decoration: const InputDecoration(
-                    labelText: 'Description (optional)',
-                    prefixIcon: Icon(LucideIcons.alignLeft),
-                    hintText: 'Detailed description or user story',
+                  minLines: 3,
+                  maxLines: 5,
+                  decoration: _requirementInputDecoration(
+                    scheme,
+                    hintText: 'Add a detailed description...',
+                    prefixIcon: LucideIcons.alignLeft,
                   ),
-                  maxLines: 3,
                 ),
-                const SizedBox(height: 16),
-                Text(
-                  'EARS Pattern',
-                  style: Theme.of(context).textTheme.labelMedium,
-                ),
-                const SizedBox(height: 8),
-                DropdownButtonFormField<EarsPattern>(
+              ),
+              const SizedBox(height: 18),
+              _RequirementFieldLabel(
+                label: 'EARS Pattern',
+                child: DropdownButtonFormField<EarsPattern>(
                   initialValue: selectedPattern,
-                  decoration: const InputDecoration(
-                    border: OutlineInputBorder(),
-                    contentPadding:
-                        EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  ),
+                  isExpanded: true,
+                  dropdownColor: scheme.surfaceContainerHigh,
+                  decoration: _requirementInputDecoration(scheme),
                   items: EarsPattern.values.map((pattern) {
                     return DropdownMenuItem(
                       value: pattern,
-                      child: Text(_getPatternLabel(pattern)),
+                      child: Text(
+                        _getPatternLabel(pattern),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     );
                   }).toList(),
-                  onChanged: (value) {
-                    if (value != null) {
-                      setDialogState(() {
-                        selectedPattern = value;
-                      });
-                    }
-                  },
+                  onChanged: isSaving
+                      ? null
+                      : (value) {
+                          if (value != null) {
+                            setSheetState(() => selectedPattern = value);
+                          }
+                        },
                 ),
-                const SizedBox(height: 16),
-                Text(
-                  'Acceptance Criteria',
-                  style: Theme.of(context).textTheme.labelMedium,
-                ),
-                const SizedBox(height: 8),
-                ...acceptanceCriteria.asMap().entries.map((entry) {
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            '${entry.key + 1}. ${entry.value}',
-                            style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 18),
+              _RequirementFieldLabel(
+                label: 'Acceptance Criteria',
+                child: Column(
+                  children: [
+                    ...acceptanceCriteria.asMap().entries.map((entry) {
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+                        decoration: BoxDecoration(
+                          color: scheme.surfaceContainerHigh,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color:
+                                scheme.outlineVariant.withValues(alpha: 0.55),
                           ),
                         ),
-                        IconButton(
-                          icon: const Icon(LucideIcons.x, size: 16),
-                          onPressed: () {
-                            setDialogState(() {
-                              acceptanceCriteria.removeAt(entry.key);
-                            });
-                          },
+                        child: Row(
+                          children: [
+                            Text(
+                              '${entry.key + 1}',
+                              style: const TextStyle(
+                                color: _requirementsAccent,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(child: Text(entry.value)),
+                            IconButton(
+                              onPressed: isSaving
+                                  ? null
+                                  : () => setSheetState(
+                                        () => acceptanceCriteria
+                                            .removeAt(entry.key),
+                                      ),
+                              tooltip: 'Remove criterion',
+                              icon: const Icon(LucideIcons.x, size: 16),
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: criteriaController,
+                            textInputAction: TextInputAction.done,
+                            decoration: _requirementInputDecoration(
+                              scheme,
+                              hintText: 'Add acceptance criterion',
+                            ),
+                            onSubmitted: isSaving
+                                ? null
+                                : (_) => _addCriterion(
+                                      criteriaController,
+                                      acceptanceCriteria,
+                                      setSheetState,
+                                    ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        IconButton.outlined(
+                          onPressed: isSaving
+                              ? null
+                              : () => _addCriterion(
+                                    criteriaController,
+                                    acceptanceCriteria,
+                                    setSheetState,
+                                  ),
+                          style: IconButton.styleFrom(
+                            foregroundColor: _requirementsAccent,
+                            side: BorderSide(
+                              color: scheme.outlineVariant,
+                            ),
+                            minimumSize: const Size(48, 48),
+                          ),
+                          tooltip: 'Add criterion',
+                          icon: const Icon(LucideIcons.plus, size: 20),
                         ),
                       ],
                     ),
-                  );
-                }),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: criteriaController,
-                        decoration: const InputDecoration(
-                          hintText: 'Add acceptance criterion',
-                          border: OutlineInputBorder(),
-                          contentPadding:
-                              EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        ),
-                        onSubmitted: (value) {
-                          if (value.trim().isNotEmpty) {
-                            setDialogState(() {
-                              acceptanceCriteria.add(value.trim());
-                              criteriaController.clear();
-                            });
-                          }
-                        },
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(LucideIcons.plus),
-                      onPressed: () {
-                        if (criteriaController.text.trim().isNotEmpty) {
-                          setDialogState(() {
-                            acceptanceCriteria
-                                .add(criteriaController.text.trim());
-                            criteriaController.clear();
-                          });
-                        }
-                      },
-                    ),
                   ],
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(height: 28),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed:
+                        isSaving ? null : () => Navigator.pop(sheetContext),
+                    style: TextButton.styleFrom(
+                      foregroundColor: _requirementsAccent,
+                    ),
+                    child: const Text('Cancel'),
+                  ),
+                  const SizedBox(width: 10),
+                  FilledButton(
+                    onPressed: isSaving
+                        ? null
+                        : () async {
+                            final title = titleController.text.trim();
+                            if (title.isEmpty) {
+                              ScaffoldMessenger.of(sheetContext).showSnackBar(
+                                const SnackBar(
+                                  content:
+                                      Text('Requirement title is required'),
+                                ),
+                              );
+                              return;
+                            }
+
+                            setSheetState(() => isSaving = true);
+                            final description = descController.text.trim();
+                            final saved = requirement == null
+                                ? await ref
+                                    .read(planningProvider.notifier)
+                                    .createRequirement(
+                                      title: title,
+                                      description: description.isEmpty
+                                          ? null
+                                          : description,
+                                      earsPattern: selectedPattern.name,
+                                      acceptanceCriteria: acceptanceCriteria,
+                                    )
+                                : await ref
+                                    .read(planningProvider.notifier)
+                                    .updateRequirement(
+                                      requirementId: requirement.id,
+                                      title: title,
+                                      description: description.isEmpty
+                                          ? null
+                                          : description,
+                                      earsPattern: selectedPattern.name,
+                                      acceptanceCriteria: acceptanceCriteria,
+                                    );
+
+                            if (!sheetContext.mounted) return;
+                            if (saved == null) {
+                              setSheetState(() => isSaving = false);
+                              return;
+                            }
+
+                            Navigator.pop(sheetContext);
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    requirement == null
+                                        ? 'Requirement added'
+                                        : 'Requirement updated',
+                                  ),
+                                ),
+                              );
+                            }
+                          },
+                    style: FilledButton.styleFrom(
+                      backgroundColor: _requirementsAccent,
+                      foregroundColor: const Color(0xFF17111F),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 26,
+                        vertical: 13,
+                      ),
+                    ),
+                    child: isSaving
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Color(0xFF17111F),
+                            ),
+                          )
+                        : Text(requirement == null ? 'Add' : 'Save'),
+                  ),
+                ],
+              ),
+            ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () async {
-                if (titleController.text.trim().isEmpty) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Title is required')),
-                  );
-                  return;
-                }
-                Navigator.pop(ctx);
-                await ref.read(planningProvider.notifier).createRequirement(
-                      title: titleController.text.trim(),
-                      description: descController.text.trim().isEmpty
-                          ? null
-                          : descController.text.trim(),
-                      earsPattern: selectedPattern.name,
-                      acceptanceCriteria: acceptanceCriteria,
-                    );
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                        content: Text('Requirement added successfully')),
-                  );
-                }
-              },
-              child: const Text('Add'),
-            ),
-          ],
         ),
       ),
+    );
+
+    titleController.dispose();
+    descController.dispose();
+    criteriaController.dispose();
+  }
+
+  void _addCriterion(
+    TextEditingController controller,
+    List<String> criteria,
+    StateSetter setSheetState,
+  ) {
+    final value = controller.text.trim();
+    if (value.isEmpty) return;
+    setSheetState(() {
+      criteria.add(value);
+      controller.clear();
+    });
+  }
+
+  Future<void> _confirmDeleteRequirement(
+    BuildContext context,
+    WidgetRef ref,
+    Requirement requirement,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Delete requirement?'),
+        content: Text(
+          '“${requirement.title}” will be permanently removed from this project.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !context.mounted) return;
+    final deleted = await ref
+        .read(planningProvider.notifier)
+        .deleteRequirement(requirement.id);
+    if (!context.mounted) return;
+    if (deleted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Requirement deleted')),
+      );
+    }
+  }
+
+  InputDecoration _requirementInputDecoration(
+    ColorScheme scheme, {
+    String? hintText,
+    IconData? prefixIcon,
+  }) {
+    final border = OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: BorderSide(
+        color: scheme.outlineVariant.withValues(alpha: 0.8),
+      ),
+    );
+    return InputDecoration(
+      hintText: hintText,
+      prefixIcon: prefixIcon == null ? null : Icon(prefixIcon, size: 18),
+      filled: true,
+      fillColor: scheme.surface.withValues(alpha: 0.5),
+      border: border,
+      enabledBorder: border,
+      focusedBorder: border.copyWith(
+        borderSide: const BorderSide(
+          color: _requirementsAccent,
+          width: 1.4,
+        ),
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 15),
     );
   }
 
@@ -1334,111 +1264,263 @@ class _RequirementsSection extends ConsumerWidget {
   }
 }
 
+class _RequirementFieldLabel extends StatelessWidget {
+  const _RequirementFieldLabel({
+    required this.label,
+    required this.child,
+  });
+
+  final String label;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w600,
+              ),
+        ),
+        const SizedBox(height: 8),
+        child,
+      ],
+    );
+  }
+}
+
+class _RequirementMetaChip extends StatelessWidget {
+  const _RequirementMetaChip({
+    required this.icon,
+    required this.label,
+  });
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHigh.withValues(alpha: 0.75),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: scheme.onSurfaceVariant),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// Requirement card widget
 class _RequirementCard extends StatelessWidget {
   final Requirement requirement;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
 
-  const _RequirementCard({required this.requirement});
+  const _RequirementCard({
+    required this.requirement,
+    required this.onEdit,
+    required this.onDelete,
+  });
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
 
-    return Card(
+    return Container(
       margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: scheme.primary.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(
-                    LucideIcons.fileCheck,
-                    color: scheme.primary,
-                    size: 20,
-                  ),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: scheme.outlineVariant.withValues(alpha: 0.52),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: _requirementsAccent.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
+                child: const Icon(
+                  LucideIcons.fileCheck,
+                  color: _requirementsAccent,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 3),
                   child: Text(
                     requirement.title,
                     style: text.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w600,
+                      fontWeight: FontWeight.w700,
+                      height: 1.35,
                     ),
                   ),
                 ),
-                _EarsPatternChip(pattern: requirement.earsPattern),
-              ],
-            ),
-            if (requirement.description.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              Text(
-                requirement.description,
-                style: text.bodyMedium?.copyWith(
-                  color: scheme.onSurface.withValues(alpha: 0.8),
-                ),
               ),
-            ],
-            if (requirement.acceptanceCriteria.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              Text(
-                'Acceptance Criteria',
-                style: text.labelMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
-                  color: scheme.primary,
-                ),
-              ),
-              const SizedBox(height: 8),
-              ...requirement.acceptanceCriteria.asMap().entries.map((entry) {
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        width: 20,
-                        height: 20,
-                        margin: const EdgeInsets.only(right: 8),
-                        decoration: BoxDecoration(
-                          color: scheme.primary.withValues(alpha: 0.1),
-                          shape: BoxShape.circle,
-                        ),
-                        child: Center(
-                          child: Text(
-                            '${entry.key + 1}',
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                              color: scheme.primary,
-                            ),
-                          ),
-                        ),
-                      ),
-                      Expanded(
-                        child: Text(
-                          entry.value,
-                          style: text.bodySmall?.copyWith(
-                            color: scheme.onSurface.withValues(alpha: 0.7),
-                          ),
-                        ),
-                      ),
-                    ],
+              PopupMenuButton<String>(
+                tooltip: 'Requirement actions',
+                onSelected: (value) {
+                  if (value == 'edit') onEdit();
+                  if (value == 'delete') onDelete();
+                },
+                itemBuilder: (context) => [
+                  const PopupMenuItem(
+                    value: 'edit',
+                    child: Row(
+                      children: [
+                        Icon(LucideIcons.edit3, size: 17),
+                        SizedBox(width: 10),
+                        Text('Edit'),
+                      ],
+                    ),
                   ),
-                );
-              }),
+                  PopupMenuItem(
+                    value: 'delete',
+                    child: Row(
+                      children: [
+                        Icon(
+                          LucideIcons.trash2,
+                          size: 17,
+                          color: scheme.error,
+                        ),
+                        const SizedBox(width: 10),
+                        Text(
+                          'Delete',
+                          style: TextStyle(color: scheme.error),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ],
+          ),
+          if (requirement.description.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Text(
+              requirement.description,
+              style: text.bodyMedium?.copyWith(
+                color: scheme.onSurfaceVariant,
+                height: 1.45,
+              ),
+            ),
           ],
-        ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              _EarsPatternChip(pattern: requirement.earsPattern),
+              _RequirementMetaChip(
+                icon: LucideIcons.listChecks,
+                label:
+                    '${requirement.acceptanceCriteria.length} ${requirement.acceptanceCriteria.length == 1 ? 'criterion' : 'criteria'}',
+              ),
+              _RequirementMetaChip(
+                icon: LucideIcons.calendar,
+                label: _formatCreatedDate(requirement.createdAt),
+              ),
+            ],
+          ),
+          if (requirement.acceptanceCriteria.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Text(
+              'Acceptance Criteria',
+              style: text.labelMedium?.copyWith(
+                color: scheme.onSurfaceVariant,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 8),
+            ...requirement.acceptanceCriteria.asMap().entries.map((entry) {
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 7),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 19,
+                      height: 19,
+                      margin: const EdgeInsets.only(right: 8),
+                      decoration: BoxDecoration(
+                        color: _requirementsAccent.withValues(alpha: 0.12),
+                        shape: BoxShape.circle,
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        '${entry.key + 1}',
+                        style: const TextStyle(
+                          color: _requirementsAccent,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: Text(
+                        entry.value,
+                        style: text.bodySmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                          height: 1.4,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ],
+        ],
       ),
     );
+  }
+
+  String _formatCreatedDate(DateTime date) {
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return '${months[date.month - 1]} ${date.day}, ${date.year}';
   }
 }
 
@@ -1450,26 +1532,28 @@ class _EarsPatternChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final (color, label) = switch (pattern) {
-      EarsPattern.ubiquitous => (Colors.blue, 'Ubiquitous'),
-      EarsPattern.event => (Colors.green, 'Event'),
-      EarsPattern.state => (Colors.purple, 'State'),
-      EarsPattern.unwanted => (Colors.orange, 'Unwanted'),
-      EarsPattern.optional => (Colors.teal, 'Optional'),
-      EarsPattern.complex => (Colors.indigo, 'Complex'),
+    final label = switch (pattern) {
+      EarsPattern.ubiquitous => 'Ubiquitous',
+      EarsPattern.event => 'Event',
+      EarsPattern.state => 'State',
+      EarsPattern.unwanted => 'Unwanted',
+      EarsPattern.optional => 'Optional',
+      EarsPattern.complex => 'Complex',
     };
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
+        color: _requirementsAccent.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withValues(alpha: 0.3)),
+        border: Border.all(
+          color: _requirementsAccent.withValues(alpha: 0.3),
+        ),
       ),
       child: Text(
         label,
-        style: TextStyle(
-          color: color,
+        style: const TextStyle(
+          color: _requirementsAccent,
           fontSize: 10,
           fontWeight: FontWeight.w600,
         ),
