@@ -243,35 +243,30 @@ class AgentConnectionsScreen extends ConsumerWidget {
     );
 
     try {
-      final response =
-          await ref.read(apiServiceProvider).getMemoryNotebook(notebook.id);
-      final detail = MemoryNotebookDetail.fromJson(response);
+      final response = await ref
+          .read(apiServiceProvider)
+          .getOrCreateNotebookLiveAgentChat(notebook.id);
+      final sourceMap = response['source'];
+      final sourceId =
+          sourceMap is Map ? (sourceMap['id']?.toString().trim() ?? '') : '';
+      if (sourceId.isEmpty) {
+        throw Exception('The realtime agent chat could not be opened.');
+      }
       if (!context.mounted) return;
 
-      if (detail.sources.isEmpty) {
-        messenger.showSnackBar(
-          const SnackBar(
-            content: Text(
-              'This agent needs to save its first memory before conversation can start.',
-            ),
-          ),
-        );
-        return;
-      }
-
-      final memorySource = detail.sources.first;
       final source = Source(
-        id: memorySource.id,
+        id: sourceId,
         notebookId: notebook.id,
-        title: memorySource.title,
-        type: memorySource.sourceType,
-        addedAt: memorySource.updatedAt ?? DateTime.now(),
-        content: memorySource.content,
-        summary: memorySource.summary,
+        title: sourceMap is Map
+            ? (sourceMap['title']?.toString() ?? 'Live agent conversation')
+            : 'Live agent conversation',
+        type: 'agent_chat',
+        addedAt: DateTime.now(),
+        content: '',
+        summary: '',
         metadata: {
           'agentSessionId': notebook.session.id,
           'agentName': notebook.session.displayAgentName,
-          'namespace': memorySource.namespace,
         },
       );
       showSourceChatSheet(
