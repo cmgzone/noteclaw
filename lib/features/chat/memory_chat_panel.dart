@@ -395,10 +395,7 @@ class _MemoryChatPanelState extends ConsumerState<MemoryChatPanel> {
                   controller: _scrollController,
                   padding: const EdgeInsets.symmetric(vertical: 8),
                   itemCount: displayedMessages.length + (isBusy ? 1 : 0),
-                  separatorBuilder: (_, __) => Divider(
-                    height: 1,
-                    color: scheme.outlineVariant.withValues(alpha: 0.55),
-                  ),
+                  separatorBuilder: (_, __) => const SizedBox(height: 6),
                   itemBuilder: (context, index) {
                     if (index == displayedMessages.length) {
                       return _ThinkingBubble(

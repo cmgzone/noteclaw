@@ -1040,6 +1040,18 @@ export async function initializeDatabase() {
         await client.query(planningMigration);
         console.log('Planning mode tables initialized');
 
+        const codeReviewsMigration = await readFile(
+            new URL('../../migrations/add_code_reviews.sql', import.meta.url),
+            'utf8',
+        );
+        await client.query(codeReviewsMigration);
+        const contextAwareReviewsMigration = await readFile(
+            new URL('../../migrations/add_context_aware_reviews.sql', import.meta.url),
+            'utf8',
+        );
+        await client.query(contextAwareReviewsMigration);
+        console.log('Code review tables initialized');
+
         const initialAdminEmail = process.env.INITIAL_ADMIN_EMAIL?.trim().toLowerCase();
         const initialAdminPasswordHash = process.env.INITIAL_ADMIN_PASSWORD_HASH?.trim();
         if (initialAdminEmail && initialAdminPasswordHash) {

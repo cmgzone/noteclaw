@@ -49,92 +49,19 @@ class _MemoryNotebookScreenState extends ConsumerState<MemoryNotebookScreen> {
     MemorySource source,
   ) async {
     if (!source.isMemorySource || detail.notebook.session.id.isEmpty) return;
-    final controller = TextEditingController(
-      text: const JsonEncoder.withIndent('  ').convert(source.memory),
-    );
-    String? validationError;
-    final shouldSave = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: Text('Edit ${source.namespace} memory'),
-          content: SizedBox(
-            width: 620,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const Text(
-                    'Edit the JSON object. Version checking prevents overwriting a newer agent update.'),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: controller,
-                  minLines: 12,
-                  maxLines: 20,
-                  style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
-                  decoration: InputDecoration(
-                    border: const OutlineInputBorder(),
-                    errorText: validationError,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(dialogContext, false),
-                child: const Text('Cancel')),
-            FilledButton(
-              onPressed: () {
-                try {
-                  final decoded = jsonDecode(controller.text);
-                  if (decoded is! Map) {
-                    throw const FormatException('Memory must be a JSON object');
-                  }
-                  Navigator.pop(dialogContext, true);
-                } catch (error) {
-                  setDialogState(
-                      () => validationError = 'Invalid JSON: $error');
-                }
-              },
-              child: const Text('Save memory'),
-            ),
-          ],
+    final saved = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => MemoryEditorScreen(
+          agentSessionId: detail.notebook.session.id,
+          namespace: source.namespace,
+          version: source.version,
+          memory: source.memory,
+          title: source.title,
         ),
       ),
     );
-
-    if (shouldSave != true || !mounted) {
-      controller.dispose();
-      return;
-    }
-
-    try {
-      final memory =
-          Map<String, dynamic>.from(jsonDecode(controller.text) as Map);
-      await ref.read(apiServiceProvider).updateAgentMemory(
-            agentSessionId: detail.notebook.session.id,
-            namespace: source.namespace,
-            mode: 'replace',
-            memory: memory,
-            expectedVersion: source.version,
-            actorIdentifier: 'noteclaw_flutter',
-          );
+    if (saved == true && mounted) {
       await _refresh();
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('Memory updated')));
-      }
-    } catch (error) {
-      if (mounted) {
-        final message = error.toString().contains('409')
-            ? 'This memory changed while you were editing. Refresh and try again.'
-            : 'Failed to update memory: $error';
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(message)));
-      }
-    } finally {
-      controller.dispose();
     }
   }
 
@@ -244,6 +171,417 @@ class _MemoryNotebookScreenState extends ConsumerState<MemoryNotebookScreen> {
           );
         },
       ),
+    );
+  }
+}
+
+class MemoryEditorScreen extends ConsumerStatefulWidget {
+  const MemoryEditorScreen({
+    super.key,
+    required this.agentSessionId,
+    required this.namespace,
+    required this.version,
+    required this.memory,
+    required this.title,
+  });
+
+  final String agentSessionId;
+  final String namespace;
+  final int version;
+  final Map<String, dynamic> memory;
+  final String title;
+
+  @override
+  ConsumerState<MemoryEditorScreen> createState() =>
+      _MemoryEditorScreenState();
+}
+
+class _MemoryEditorScreenState extends ConsumerState<MemoryEditorScreen> {
+  late Map<String, dynamic> _draft;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _draft = jsonDecode(jsonEncode(widget.memory)) as Map<String, dynamic>;
+  }
+
+  Future<void> _save() async {
+    if (_saving) return;
+    setState(() => _saving = true);
+    try {
+      await ref.read(apiServiceProvider).updateAgentMemory(
+            agentSessionId: widget.agentSessionId,
+            namespace: widget.namespace,
+            mode: 'replace',
+            memory: _draft,
+            expectedVersion: widget.version,
+            actorIdentifier: 'noteclaw_flutter',
+          );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Memory updated')));
+      Navigator.of(context).pop(true);
+    } catch (error) {
+      if (!mounted) return;
+      final message = error.toString().contains('409')
+          ? 'This memory changed while you were editing. Refresh and try again.'
+          : 'Failed to update memory: $error';
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(message)));
+      setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Edit ${_readableMemoryLabel(widget.namespace)} memory'),
+        actions: [
+          FilledButton.icon(
+            onPressed: _saving ? null : _save,
+            icon: _saving
+                ? const SizedBox(
+                    width: 15,
+                    height: 15,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(LucideIcons.check, size: 16),
+            label: const Text('Save'),
+          ),
+          const SizedBox(width: 12),
+        ],
+      ),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(18, 18, 18, 48),
+        children: [
+          Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 860),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    widget.title,
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Update the fields below. Version checking prevents overwriting a newer agent update.',
+                    style: TextStyle(
+                      color: scheme.onSurfaceVariant,
+                      fontSize: 13,
+                      height: 1.5,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  _Panel(
+                    padding: const EdgeInsets.all(18),
+                    child: _MemoryMapFields(
+                      map: _draft,
+                      path: 'root',
+                      depth: 0,
+                      onChanged: () => setState(() {}),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MemoryMapFields extends StatelessWidget {
+  const _MemoryMapFields({
+    required this.map,
+    required this.path,
+    required this.depth,
+    required this.onChanged,
+  });
+
+  final Map<String, dynamic> map;
+  final String path;
+  final int depth;
+  final VoidCallback onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    if (map.isEmpty) {
+      return Text(
+        'No fields',
+        style: TextStyle(color: scheme.onSurfaceVariant),
+      );
+    }
+    final entries = map.entries.toList();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (var index = 0; index < entries.length; index++) ...[
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  _readableMemoryLabel(entries[index].key),
+                  style: TextStyle(
+                    color: scheme.onSurfaceVariant,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.45,
+                  ),
+                ),
+              ),
+              IconButton(
+                tooltip: 'Remove field',
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+                icon: Icon(
+                  LucideIcons.trash2,
+                  size: 15,
+                  color: scheme.error.withValues(alpha: 0.8),
+                ),
+                onPressed: () {
+                  map.remove(entries[index].key);
+                  onChanged();
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 5),
+          _MemoryValueField(
+            key: ValueKey('$path.${entries[index].key}'),
+            value: entries[index].value,
+            path: '$path.${entries[index].key}',
+            depth: depth + 1,
+            onChanged: (newValue) {
+              map[entries[index].key] = newValue;
+              onChanged();
+            },
+          ),
+          if (index < entries.length - 1) const SizedBox(height: 16),
+        ],
+      ],
+    );
+  }
+}
+
+class _MemoryValueField extends StatelessWidget {
+  const _MemoryValueField({
+    super.key,
+    required this.value,
+    required this.path,
+    required this.depth,
+    required this.onChanged,
+  });
+
+  final dynamic value;
+  final String path;
+  final int depth;
+  final ValueChanged<dynamic> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    if (value is bool) {
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: Switch(
+          value: value as bool,
+          onChanged: (next) => onChanged(next),
+        ),
+      );
+    }
+
+    if (value is Map) {
+      final subMap = value is Map<String, dynamic>
+          ? value as Map<String, dynamic>
+          : Map<String, dynamic>.from(value as Map);
+      return DecoratedBox(
+        decoration: BoxDecoration(
+          border: Border.all(
+            color: Theme.of(context).colorScheme.outlineVariant,
+          ),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(13),
+          child: _MemoryMapFields(
+            map: subMap,
+            path: path,
+            depth: depth,
+            onChanged: () => onChanged(subMap),
+          ),
+        ),
+      );
+    }
+
+    if (value is List) {
+      final list = value is List<dynamic>
+          ? value as List<dynamic>
+          : List<dynamic>.from(value as List);
+      return _MemoryListField(
+        list: list,
+        path: path,
+        depth: depth,
+        onChanged: () => onChanged(list),
+      );
+    }
+
+    return _MemoryTextLeaf(
+      initialValue: value,
+      isNumeric: value is num,
+      onChanged: onChanged,
+    );
+  }
+}
+
+class _MemoryListField extends StatelessWidget {
+  const _MemoryListField({
+    required this.list,
+    required this.path,
+    required this.depth,
+    required this.onChanged,
+  });
+
+  final List<dynamic> list;
+  final String path;
+  final int depth;
+  final VoidCallback onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (list.isEmpty)
+          Text(
+            'No items',
+            style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12),
+          ),
+        for (var index = 0; index < list.length; index++) ...[
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: 24,
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: Text(
+                    '${index + 1}.',
+                    style: TextStyle(
+                      color: scheme.primary,
+                      fontFamily: 'monospace',
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: _MemoryValueField(
+                  key: ValueKey('$path[$index]'),
+                  value: list[index],
+                  path: '$path[$index]',
+                  depth: depth + 1,
+                  onChanged: (newValue) {
+                    list[index] = newValue;
+                    onChanged();
+                  },
+                ),
+              ),
+              IconButton(
+                tooltip: 'Remove item',
+                icon: Icon(
+                  LucideIcons.x,
+                  size: 15,
+                  color: scheme.error.withValues(alpha: 0.8),
+                ),
+                onPressed: () {
+                  list.removeAt(index);
+                  onChanged();
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+        ],
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            onPressed: () {
+              list.add('');
+              onChanged();
+            },
+            icon: const Icon(LucideIcons.plus, size: 15),
+            label: const Text('Add item'),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _MemoryTextLeaf extends StatefulWidget {
+  const _MemoryTextLeaf({
+    required this.initialValue,
+    required this.isNumeric,
+    required this.onChanged,
+  });
+
+  final dynamic initialValue;
+  final bool isNumeric;
+  final ValueChanged<dynamic> onChanged;
+
+  @override
+  State<_MemoryTextLeaf> createState() => _MemoryTextLeafState();
+}
+
+class _MemoryTextLeafState extends State<_MemoryTextLeaf> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(
+      text: widget.initialValue?.toString() ?? '',
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: _controller,
+      minLines: 1,
+      maxLines: widget.isNumeric ? 1 : 10,
+      keyboardType:
+          widget.isNumeric ? TextInputType.number : TextInputType.multiline,
+      style: const TextStyle(fontSize: 13.5, height: 1.5),
+      decoration: const InputDecoration(
+        border: OutlineInputBorder(),
+        isDense: true,
+        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      ),
+      onChanged: (text) {
+        if (widget.isNumeric) {
+          widget.onChanged(num.tryParse(text) ?? text);
+        } else {
+          widget.onChanged(text);
+        }
+      },
     );
   }
 }
