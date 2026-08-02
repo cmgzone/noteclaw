@@ -4,7 +4,7 @@
 -- Code reviews table
 CREATE TABLE IF NOT EXISTS code_reviews (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL,
   code TEXT NOT NULL,
   language VARCHAR(50) NOT NULL,
   review_type VARCHAR(50) NOT NULL DEFAULT 'comprehensive',
@@ -28,7 +28,7 @@ CREATE INDEX IF NOT EXISTS idx_code_reviews_review_type ON code_reviews(review_t
 -- Code review comparisons table (for tracking improvements)
 CREATE TABLE IF NOT EXISTS code_review_comparisons (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL,
   original_review_id UUID REFERENCES code_reviews(id) ON DELETE SET NULL,
   updated_review_id UUID REFERENCES code_reviews(id) ON DELETE SET NULL,
   original_code TEXT NOT NULL,
