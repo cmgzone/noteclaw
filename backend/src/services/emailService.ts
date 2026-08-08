@@ -340,16 +340,16 @@ function buildEmailShell({
     preview: string;
     heading: string;
     body: string[];
-    ctaLabel: string;
-    ctaUrl: string;
+    ctaLabel?: string;
+    ctaUrl?: string;
     secondaryCtaLabel?: string;
     secondaryCtaUrl?: string;
     footnote: string;
 }): { html: string; text: string } {
     const safeHeading = escapeHtml(heading);
     const safePreview = escapeHtml(preview);
-    const safeCtaLabel = escapeHtml(ctaLabel);
-    const safeCtaUrl = escapeHtml(ctaUrl);
+    const safeCtaLabel = ctaLabel ? escapeHtml(ctaLabel) : '';
+    const safeCtaUrl = ctaUrl ? escapeHtml(ctaUrl) : '';
     const safeSecondaryCtaLabel = secondaryCtaLabel ? escapeHtml(secondaryCtaLabel) : '';
     const safeSecondaryCtaUrl = secondaryCtaUrl ? escapeHtml(secondaryCtaUrl) : '';
     const safeFootnote = escapeHtml(footnote);
@@ -366,14 +366,16 @@ function buildEmailShell({
       <p style="margin:0 0 8px;font-size:12px;letter-spacing:0.12em;text-transform:uppercase;color:#2563eb;font-weight:700;">NoteClaw</p>
       <h1 style="margin:0 0 20px;font-size:28px;line-height:1.2;color:#111827;">${safeHeading}</h1>
       ${htmlParagraphs}
-      <div style="margin:28px 0;">
-        <a href="${safeCtaUrl}" style="display:inline-block;background:#111827;color:#ffffff;text-decoration:none;padding:14px 20px;border-radius:12px;font-weight:700;">${safeCtaLabel}</a>
-        ${safeSecondaryCtaUrl && safeSecondaryCtaLabel
-            ? `<a href="${safeSecondaryCtaUrl}" style="display:inline-block;margin-left:8px;background:#e5e7eb;color:#111827;text-decoration:none;padding:14px 20px;border-radius:12px;font-weight:700;">${safeSecondaryCtaLabel}</a>`
+      ${safeCtaUrl
+            ? `<div style="margin:28px 0;">
+                <a href="${safeCtaUrl}" style="display:inline-block;background:#111827;color:#ffffff;text-decoration:none;padding:14px 20px;border-radius:12px;font-weight:700;">${safeCtaLabel}</a>
+                ${safeSecondaryCtaUrl && safeSecondaryCtaLabel
+                    ? `<a href="${safeSecondaryCtaUrl}" style="display:inline-block;margin-left:8px;background:#e5e7eb;color:#111827;text-decoration:none;padding:14px 20px;border-radius:12px;font-weight:700;">${safeSecondaryCtaLabel}</a>`
+                    : ''}
+              </div>
+              <p style="margin:0 0 12px;color:#4b5563;line-height:1.6;">If the button does not work, copy and paste this link into your browser:</p>
+              <p style="margin:0 0 20px;word-break:break-all;"><a href="${safeCtaUrl}" style="color:#2563eb;">${safeCtaUrl}</a></p>`
             : ''}
-      </div>
-      <p style="margin:0 0 12px;color:#4b5563;line-height:1.6;">If the button does not work, copy and paste this link into your browser:</p>
-      <p style="margin:0 0 20px;word-break:break-all;"><a href="${safeCtaUrl}" style="color:#2563eb;">${safeCtaUrl}</a></p>
       <p style="margin:0;font-size:12px;color:#6b7280;line-height:1.6;">${safeFootnote}</p>
     </div>
   </body>
@@ -383,9 +385,10 @@ function buildEmailShell({
         heading,
         '',
         ...body,
-        '',
-        `${ctaLabel}: ${ctaUrl}`,
-        ...(secondaryCtaLabel && secondaryCtaUrl
+        ...(ctaLabel && ctaUrl
+            ? ['', `${ctaLabel}: ${ctaUrl}`]
+            : []),
+        ...(ctaLabel && ctaUrl && secondaryCtaLabel && secondaryCtaUrl
             ? [`${secondaryCtaLabel}: ${secondaryCtaUrl}`]
             : []),
         '',
@@ -497,6 +500,31 @@ export async function sendPlayTestingInviteEmail(params: {
     return sendWithConfiguredProvider({
         to: params.to,
         subject: 'Your NoteClaw Android testing invite',
+        html: body.html,
+        text: body.text,
+    });
+}
+
+export async function sendAdminDirectEmail(params: {
+    to: string;
+    displayName?: string | null;
+    subject: string;
+    message: string;
+}): Promise<boolean> {
+    const paragraphs = params.message
+        .split(/\r?\n+/)
+        .map((paragraph) => paragraph.trim())
+        .filter(Boolean);
+    const body = buildEmailShell({
+        preview: params.subject,
+        heading: params.subject,
+        body: paragraphs.length > 0 ? paragraphs : [' '],
+        footnote: 'You are receiving this email because you have an account with NoteClaw.',
+    });
+
+    return sendWithConfiguredProvider({
+        to: params.to,
+        subject: params.subject,
         html: body.html,
         text: body.text,
     });

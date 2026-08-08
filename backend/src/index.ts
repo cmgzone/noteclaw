@@ -4,6 +4,8 @@ import compression from 'compression';
 import dotenv from 'dotenv';
 import { createServer } from 'http';
 import { parse } from 'url';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 // Memory-bank surface
 import authRoutes from './routes/auth.js';
@@ -151,6 +153,9 @@ app.use('/api/research', researchRoutes);
 app.use('/api/search', searchRoutes);
 app.use('/api/media', mediaRoutes);
 app.use('/api/generation', generationRoutes);
+// Admin web panels (served from backend/public/admin-*)
+const currentModuleDir = path.dirname(fileURLToPath(import.meta.url));
+app.use('/admin', express.static(path.join(currentModuleDir, '../public')));
 // 404 handler
 app.use((req, res) => {
     console.log(`[404] Route not found: ${req.method} ${req.path}`);

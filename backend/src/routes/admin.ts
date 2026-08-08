@@ -39,6 +39,7 @@ import {
 } from '../services/planFeatureService.js';
 import {
     getEmailDeliveryStatus,
+    sendAdminDirectEmail,
     sendPlayTestingInviteEmail,
 } from '../services/emailService.js';
 import {
@@ -619,6 +620,105 @@ router.get('/email-status', async (_req: AuthRequest, res: Response) => {
     }
 });
 
+const EMAIL_ADDRESS_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const MAX_EMAIL_RECIPIENTS = 100;
+
+router.post('/emails/send', async (req: AuthRequest, res: Response) => {
+    try {
+        const subject =
+            typeof req.body?.subject === 'string' ? req.body.subject.trim() : '';
+        const message =
+            typeof req.body?.message === 'string' ? req.body.message.trim() : '';
+        const rawEmails = req.body?.emails;
+        const rawUserIds = req.body?.userIds;
+
+        if (!subject || subject.length > 200) {
+            return res.status(400).json({ error: 'A subject (max 200 characters) is required' });
+        }
+        if (!message) {
+            return res.status(400).json({ error: 'A message body is required' });
+        }
+
+        const directEmails = Array.isArray(rawEmails)
+            ? rawEmails.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+            : [];
+        const userIds = Array.isArray(rawUserIds)
+            ? rawUserIds.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+            : [];
+
+        if (directEmails.length === 0 && userIds.length === 0) {
+            return res.status(400).json({ error: 'Provide at least one email address or user ID' });
+        }
+
+        const recipients: Array<{ email: string; displayName: string | null }> = [];
+
+        if (userIds.length > 0) {
+            const userResult = await pool.query(
+                `SELECT id, email, COALESCE(display_name, '') AS display_name
+                 FROM users
+                 WHERE id = ANY($1::text[]) AND is_active = true`,
+                [userIds],
+            );
+            recipients.push(
+                ...userResult.rows.map((row) => ({
+                    email: row.email,
+                    displayName: row.display_name || null,
+                })),
+            );
+        }
+
+        for (const rawEmail of directEmails) {
+            const email = rawEmail.trim().toLowerCase();
+            if (!EMAIL_ADDRESS_PATTERN.test(email)) {
+                return res.status(400).json({ error: `Invalid email address: ${email}` });
+            }
+            if (!recipients.some((recipient) => recipient.email.toLowerCase() === email)) {
+                recipients.push({ email, displayName: null });
+            }
+        }
+
+        if (recipients.length === 0) {
+            return res.status(400).json({ error: 'No recipients found (users may be inactive)' });
+        }
+        if (recipients.length > MAX_EMAIL_RECIPIENTS) {
+            return res.status(400).json({
+                error: `Cannot email more than ${MAX_EMAIL_RECIPIENTS} recipients at once`,
+            });
+        }
+
+        const sent: string[] = [];
+        const failed: Array<{ email: string; error: string }> = [];
+        for (const recipient of recipients) {
+            const delivered = await sendAdminDirectEmail({
+                to: recipient.email,
+                displayName: recipient.displayName,
+                subject,
+                message,
+            });
+            if (delivered) {
+                sent.push(recipient.email);
+            } else {
+                failed.push({ email: recipient.email, error: 'Email delivery failed' });
+            }
+        }
+
+        res.json({
+            success: failed.length === 0,
+            message: `Email sent to ${sent.length} of ${recipients.length} recipient(s)`,
+            summary: {
+                requested: recipients.length,
+                sent: sent.length,
+                failed: failed.length,
+            },
+            sent,
+            failed,
+        });
+    } catch (error) {
+        console.error('Error sending admin emails:', error);
+        res.status(500).json({ error: 'Failed to send emails' });
+    }
+});
+
 router.get('/play-testers', async (req: AuthRequest, res: Response) => {
     try {
         const search = typeof req.query.search === 'string' ? req.query.search : '';
@@ -1123,6 +1223,18 @@ router.get('/users', async (req: AuthRequest, res: Response) => {
     try {
         const limit = parseInt(req.query.limit as string) || 50;
         const offset = parseInt(req.query.offset as string) || 0;
+        const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
+
+        const values: any[] = [];
+        let whereClause = '';
+        if (search.length > 0) {
+            values.push(`%${search}%`);
+            whereClause = `WHERE u.email ILIKE $${values.length}
+                OR COALESCE(u.display_name, '') ILIKE $${values.length}`;
+        }
+        values.push(limit, offset);
+        const limitIndex = values.length - 1;
+        const offsetIndex = values.length;
 
         const result = await pool.query(`
             SELECT u.id, u.email, u.display_name, u.role, u.email_verified, u.is_active, u.created_at,
@@ -1132,11 +1244,15 @@ router.get('/users', async (req: AuthRequest, res: Response) => {
             FROM users u
             LEFT JOIN user_subscriptions us ON u.id = us.user_id
             LEFT JOIN subscription_plans sp ON us.plan_id = sp.id
+            ${whereClause}
             ORDER BY u.created_at DESC
-            LIMIT $1 OFFSET $2
-        `, [limit, offset]);
+            LIMIT $${limitIndex} OFFSET $${offsetIndex}
+        `, values);
 
-        const countResult = await pool.query('SELECT COUNT(*) FROM users');
+        const countResult = await pool.query(
+            `SELECT COUNT(*) FROM users ${whereClause}`,
+            values.slice(0, values.length - 2),
+        );
 
         res.json({
             users: result.rows,

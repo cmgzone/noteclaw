@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Email Admin Panel</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #0f766e 0%, #115e59 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 860px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #0f766e 0%, #115e59 100%);
+            color: white;
+            padding: 24px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+
+        .header h1 {
+            font-size: 24px;
+            font-weight: 700;
+        }
+
+        .header-nav {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            padding: 10px 18px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        }
+
+        .btn-primary {
+            background: white;
+            color: #0f766e;
+        }
+
+        .btn-ghost {
+            background: rgba(255, 255, 255, 0.15);
+            color: white;
+            text-decoration: none;
+        }
+
+        .btn-success {
+            background: #10b981;
+            color: white;
+        }
+
+        .btn-success:disabled {
+            background: #a7f3d0;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .btn-secondary {
+            background: #6b7280;
+            color: white;
+        }
+
+        .content {
+            padding: 30px;
+        }
+
+        .section {
+            border: 2px solid #e5e7eb;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .section-title {
+            font-size: 16px;
+            font-weight: 700;
+            color: #1f2937;
+            margin-bottom: 14px;
+        }
+
+        .form-group {
+            margin-bottom: 16px;
+        }
+
+        .form-label {
+            display: block;
+            font-size: 13px;
+            font-weight: 600;
+            color: #374151;
+            margin-bottom: 6px;
+        }
+
+        .form-input,
+        .form-textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e5e7eb;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.2s;
+        }
+
+        .form-input:focus,
+        .form-textarea:focus {
+            outline: none;
+            border-color: #0f766e;
+        }
+
+        .form-textarea {
+            resize: vertical;
+            min-height: 130px;
+            line-height: 1.5;
+        }
+
+        .form-hint {
+            font-size: 12px;
+            color: #6b7280;
+            margin-top: 6px;
+        }
+
+        .error {
+            background: #fee2e2;
+            color: #991b1b;
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+        }
+
+        .success {
+            background: #d1fae5;
+            color: #065f46;
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+        }
+
+        .status-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            font-size: 14px;
+            color: #374151;
+        }
+
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+
+        .status-dot.ok {
+            background: #10b981;
+        }
+
+        .status-dot.fail {
+            background: #ef4444;
+        }
+
+        .user-search-row {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 12px;
+        }
+
+        .user-search-row .form-input {
+            flex: 1;
+        }
+
+        .user-results {
+            border: 2px solid #e5e7eb;
+            border-radius: 10px;
+            max-height: 260px;
+            overflow-y: auto;
+        }
+
+        .user-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 14px;
+            border-bottom: 1px solid #f3f4f6;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .user-row:hover {
+            background: #f0fdfa;
+        }
+
+        .user-row:last-child {
+            border-bottom: none;
+        }
+
+        .user-email {
+            font-weight: 600;
+            color: #1f2937;
+        }
+
+        .user-meta {
+            color: #6b7280;
+            font-size: 12px;
+            margin-left: auto;
+        }
+
+        .chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 12px;
+        }
+
+        .chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            background: #ccfbf1;
+            color: #0f766e;
+            border: 1px solid #99f6e4;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .chip button {
+            background: none;
+            border: none;
+            color: #0f766e;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 700;
+            padding: 0;
+            line-height: 1;
+        }
+
+        .chips-empty {
+            font-size: 13px;
+            color: #6b7280;
+        }
+
+        .send-row {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            flex-wrap: wrap;
+            margin-top: 4px;
+        }
+
+        .send-spinner {
+            font-size: 14px;
+            color: #0f766e;
+        }
+
+        .login-title {
+            font-size: 22px;
+            font-weight: 700;
+            color: #1f2937;
+            margin-bottom: 8px;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useCallback } = React;
+
+        const API_BASE = window.location.origin;
+        const TOKEN_KEY = 'noteclaw_admin_token';
+        const USER_KEY = 'noteclaw_admin_user';
+
+        function getStoredUser() {
+            try {
+                return JSON.parse(localStorage.getItem(USER_KEY) || 'null');
+            } catch (e) {
+                return null;
+            }
+        }
+
+        function apiHeaders() {
+            const token = localStorage.getItem(TOKEN_KEY) || '';
+            return token ? { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` } : { 'Content-Type': 'application/json' };
+        }
+
+        function AuthScreen({ onAuthenticated }) {
+            const [email, setEmail] = useState('');
+            const [password, setPassword] = useState('');
+            const [error, setError] = useState(null);
+            const [sending, setSending] = useState(false);
+
+            async function handleLogin(e) {
+                e.preventDefault();
+                setError(null);
+                setSending(true);
+                try {
+                    const response = await fetch(`${API_BASE}/api/auth/login`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ email, password, rememberMe: true }),
+                    });
+                    const data = await response.json();
+                    if (!response.ok) {
+                        throw new Error(data.error || 'Login failed');
+                    }
+                    if (data.user && data.user.role !== 'admin') {
+                        throw new Error('This account does not have admin access.');
+                    }
+                    localStorage.setItem(TOKEN_KEY, data.accessToken || data.token);
+                    localStorage.setItem(USER_KEY, JSON.stringify(data.user || null));
+                    onAuthenticated();
+                } catch (err) {
+                    setError(err.message);
+                } finally {
+                    setSending(false);
+                }
+            }
+
+            return (
+                <div className="result-card" style={{ maxWidth: 420, margin: '60px auto', background: 'white', borderRadius: 16, padding: 36, boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+                    <div className="login-title">NoteClaw Email Admin</div>
+                    <p style={{ color: '#6b7280', fontSize: 14, marginBottom: 20 }}>
+                        Sign in with an admin account to send emails to users.
+                    </p>
+                    {error && <div className="error">{error}</div>}
+                    <form onSubmit={handleLogin}>
+                        <div className="form-group">
+                            <label className="form-label">Email</label>
+                            <input
+                                type="email"
+                                className="form-input"
+                                value={email}
+                                onChange={e => setEmail(e.target.value)}
+                                placeholder="admin@noteclaw.app"
+                                autoComplete="username"
+                                required
+                            />
+                        </div>
+                        <div className="form-group">
+                            <label className="form-label">Password</label>
+                            <input
+                                type="password"
+                                className="form-input"
+                                value={password}
+                                onChange={e => setPassword(e.target.value)}
+                                placeholder="••••••••"
+                                autoComplete="current-password"
+                                required
+                            />
+                        </div>
+                        <button type="submit" className="btn btn-success" style={{ width: '100%' }} disabled={sending}>
+                            {sending ? 'Signing in...' : 'Sign in'}
+                        </button>
+                    </form>
+                </div>
+            );
+        }
+
+        function EmailAdminPanel({ user, onLogout }) {
+            const [status, setStatus] = useState(null);
+            const [subject, setSubject] = useState('');
+            const [message, setMessage] = useState('');
+
+            const [query, setQuery] = useState('');
+            const [searchResults, setSearchResults] = useState([]);
+            const [searching, setSearching] = useState(false);
+            const [selectedUsers, setSelectedUsers] = useState([]);
+            const [directEmails, setDirectEmails] = useState('');
+
+            const [sending, setSending] = useState(false);
+            const [error, setError] = useState(null);
+            const [result, setResult] = useState(null);
+
+            const loadStatus = useCallback(async () => {
+                try {
+                    const response = await fetch(`${API_BASE}/api/admin/email-status`, { headers: apiHeaders() });
+                    if (!response.ok) throw new Error('Failed to load email status');
+                    const data = await response.json();
+                    setStatus(data.status || null);
+                } catch (err) {
+                    setError(err.message);
+                }
+            }, []);
+
+            const searchUsers = useCallback(async (searchQuery) => {
+                setSearching(true);
+                setError(null);
+                try {
+                    const url = `${API_BASE}/api/admin/users?limit=50${searchQuery.trim() ? `&search=${encodeURIComponent(searchQuery.trim())}` : ''}`;
+                    const response = await fetch(url, { headers: apiHeaders() });
+                    if (!response.ok) {
+                        const data = await response.json().catch(() => ({}));
+                        throw new Error(data.error || 'Failed to search users');
+                    }
+                    const data = await response.json();
+                    setSearchResults(data.users || []);
+                } catch (err) {
+                    setError(err.message);
+                } finally {
+                    setSearching(false);
+                }
+            }, []);
+
+            useEffect(() => {
+                loadStatus();
+                searchUsers('');
+            }, [loadStatus, searchUsers]);
+
+            function toggleUser(user) {
+                setSelectedUsers(prev =>
+                    prev.some(u => u.id !== null && u.id === user.id) ||
+                    prev.some(u => u.id === null && u.email === user.email)
+                        ? prev.filter(u => !(u.id !== null ? u.id === user.id : u.email === user.email))
+                        : [...prev, user]
+                );
+            }
+
+            function removeUser(key) {
+                setSelectedUsers(prev => prev.filter(u => (u.id !== null ? u.id : u.email) !== key));
+            }
+
+            function addTypedEmails() {
+                const raw = directEmails
+                    .split(/[\n,;]+/)
+                    .map(e => e.trim())
+                    .filter(Boolean);
+                const parsed = [];
+                for (const email of raw) {
+                    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+                        setError(`Invalid email address: ${email}`);
+                        return;
+                    }
+                    const alreadySelected =
+                        selectedUsers.some(u => u.email.toLowerCase() === email.toLowerCase()) ||
+                        parsed.includes(email.toLowerCase());
+                    if (!alreadySelected) {
+                        parsed.push(email.toLowerCase());
+                    }
+                }
+                if (parsed.length > 0) {
+                    setSelectedUsers(prev => [...prev, ...parsed.map(email => ({ id: null, email, display_name: '' }))]);
+                    setDirectEmails('');
+                }
+            }
+
+            async function handleSend() {
+                setError(null);
+                setResult(null);
+                if (!subject.trim() || !message.trim()) {
+                    setError('Subject and message are required.');
+                    return;
+                }
+                if (selectedUsers.length === 0) {
+                    setError('Add at least one recipient.');
+                    return;
+                }
+                setSending(true);
+                try {
+                    const directEmailsList = selectedUsers
+                        .filter(u => u.id === null && u.email)
+                        .map(u => u.email);
+                    const userIds = selectedUsers
+                        .filter(u => u.id !== null)
+                        .map(u => u.id);
+
+                    const response = await fetch(`${API_BASE}/api/admin/emails/send`, {
+                        method: 'POST',
+                        headers: apiHeaders(),
+                        body: JSON.stringify({
+                            subject: subject.trim(),
+                            message: message.trim(),
+                            ...(userIds.length > 0 ? { userIds } : {}),
+                            ...(directEmailsList.length > 0 ? { emails: directEmailsList } : {}),
+                        }),
+                    });
+                    const data = await response.json();
+                    if (!response.ok) {
+                        throw new Error(data.error || 'Failed to send emails');
+                    }
+                    setResult(data);
+                } catch (err) {
+                    setError(err.message);
+                } finally {
+                    setSending(false);
+                }
+            }
+
+            return (
+                <div className="container">
+                    <div className="header">
+                        <h1>✉️ Email Admin Panel</h1>
+                        <div className="header-nav">
+                            <a className="btn btn-ghost" href="admin-ai-models.html">AI Models</a>
+                            <button className="btn btn-ghost" onClick={onLogout}>Log out</button>
+                        </div>
+                    </div>
+
+                    <div className="content">
+                        {user && (
+                            <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 16 }}>
+                                Signed in as <strong>{user.email}</strong>
+                            </div>
+                        )}
+                        {error && <div className="error">{error}</div>}
+                        {result && (
+                            <div className="success">
+                                <strong>{result.message}</strong>
+                                <div style={{ marginTop: 6, fontSize: 13 }}>
+                                    Sent: {result.summary.sent} · Failed: {result.summary.failed} · Total: {result.summary.requested}
+                                </div>
+                                {result.failed.length > 0 && (
+                                    <div style={{ marginTop: 6, fontSize: 12 }}>
+                                        {result.failed.map(f => (
+                                            <div key={f.email}>✗ {f.email} — {f.error}</div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        <div className="section">
+                            <div className="section-title">📡 Email delivery status</div>
+                            <div className="status-row">
+                                {status ? (
+                                    <>
+                                        <span className={`status-dot ${status.provider === 'none' ? 'fail' : 'ok'}`}></span>
+                                        <span>
+                                            Provider: <strong>{status.provider}</strong>
+                                            {status.provider !== 'none' && (
+                                                <span style={{ color: '#6b7280' }}>
+                                                    {status.smtpConfigured ? ' (SMTP)' : ''}
+                                                    {status.resendConfigured ? ' (Resend)' : ''}
+                                                </span>
+                                            )}
+                                        </span>
+                                        {status.provider === 'none' && (
+                                            <span style={{ color: '#991b1b', fontSize: 13 }}>
+                                                No SMTP or Resend provider is configured — emails will not be delivered.
+                                            </span>
+                                        )}
+                                    </>
+                                ) : (
+                                    <span>Loading status...</span>
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="section">
+                            <div className="section-title">👥 Recipients</div>
+
+                            <div className="user-search-row">
+                                <input
+                                    type="text"
+                                    className="form-input"
+                                    placeholder="Search users by email or display name..."
+                                    value={query}
+                                    onChange={e => setQuery(e.target.value)}
+                                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); searchUsers(query); } }}
+                                />
+                                <button className="btn btn-secondary" onClick={() => searchUsers(query)} disabled={searching}>
+                                    {searching ? 'Searching...' : 'Search'}
+                                </button>
+                            </div>
+                            <div className="form-hint" style={{ marginBottom: 10 }}>
+                                Click users below to add them as recipients.
+                            </div>
+
+                            {searchResults.length > 0 ? (
+                                <div className="user-results">
+                                    {searchResults.map(user => {
+                                        const selected =
+                                            selectedUsers.some(u => u.id !== null && u.id === user.id) ||
+                                            selectedUsers.some(u => u.id === null && u.email === user.email);
+                                        return (
+                                            <div
+                                                key={user.id}
+                                                className="user-row"
+                                                style={selected ? { background: '#ccfbf1' } : {}}
+                                                onClick={() => toggleUser(user)}
+                                            >
+                                                <input type="checkbox" checked={selected} readOnly />
+                                                <span className="user-email">{user.email}</span>
+                                                {user.display_name && <span style={{ color: '#6b7280' }}>— {user.display_name}</span>}
+                                                <span className="user-meta">
+                                                    {user.plan_name || 'Free'}{user.is_active ? '' : ' · inactive'}
+                                                </span>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            ) : (
+                                <div className="form-hint">{searching ? 'Searching...' : 'No users found.'}</div>
+                            )}
+
+                            <div style={{ marginTop: 16 }}>
+                                <label className="form-label">Or type email addresses directly</label>
+                                <div className="user-search-row">
+                                    <input
+                                        type="text"
+                                        className="form-input"
+                                        placeholder="user@example.com, another@example.com"
+                                        value={directEmails}
+                                        onChange={e => setDirectEmails(e.target.value)}
+                                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addTypedEmails(); } }}
+                                    />
+                                    <button className="btn btn-secondary" onClick={addTypedEmails}>Add</button>
+                                </div>
+                            </div>
+
+                            <div className="chips">
+                                {selectedUsers.length === 0 ? (
+                                    <span className="chips-empty">No recipients selected yet.</span>
+                                ) : selectedUsers.map(user => (
+                                    <span key={user.id !== null ? user.id : user.email} className="chip">
+                                        {user.email}
+                                        <button onClick={() => removeUser(user.id !== null ? user.id : user.email)}>×</button>
+                                    </span>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="section">
+                            <div className="section-title">📝 Compose email</div>
+                            <div className="form-group">
+                                <label className="form-label">Subject</label>
+                                <input
+                                    type="text"
+                                    className="form-input"
+                                    placeholder="e.g., Important update about NoteClaw"
+                                    value={subject}
+                                    onChange={e => setSubject(e.target.value)}
+                                    maxLength={200}
+                                />
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Message</label>
+                                <textarea
+                                    className="form-textarea"
+                                    placeholder="Write your message here. Each line becomes a paragraph."
+                                    value={message}
+                                    onChange={e => setMessage(e.target.value)}
+                                />
+                            </div>
+                            <div className="send-row">
+                                <button className="btn btn-success" onClick={handleSend} disabled={sending}>
+                                    {sending ? 'Sending...' : `Send to ${selectedUsers.length} recipient${selectedUsers.length === 1 ? '' : 's'}`}
+                                </button>
+                                {sending && <span className="send-spinner">Sending emails...</span>}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        function App() {
+            const [user, setUser] = useState(getStoredUser());
+
+            function handleLogout() {
+                localStorage.removeItem(TOKEN_KEY);
+                localStorage.removeItem(USER_KEY);
+                setUser(null);
+            }
+
+            if (!user) {
+                return <AuthScreen onAuthenticated={() => setUser(getStoredUser())} />;
+            }
+
+            return <EmailAdminPanel user={user} onLogout={handleLogout} />;
+        }
+
+        ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
+</body>
+
+</html>
