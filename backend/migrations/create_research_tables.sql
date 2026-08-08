@@ -6,7 +6,7 @@ BEGIN;
 -- Research sessions table
 CREATE TABLE IF NOT EXISTS research_sessions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   notebook_id UUID REFERENCES notebooks(id) ON DELETE SET NULL,
   query TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'in_progress', -- 'in_progress', 'completed', 'failed'

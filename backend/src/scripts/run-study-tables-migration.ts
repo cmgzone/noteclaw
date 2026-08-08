@@ -9,7 +9,7 @@ async function runStudyTablesMigration() {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS flashcard_decks (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         notebook_id UUID REFERENCES notebooks(id) ON DELETE SET NULL,
         source_id UUID REFERENCES sources(id) ON DELETE SET NULL,
         title TEXT NOT NULL,
@@ -42,7 +42,7 @@ async function runStudyTablesMigration() {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS quizzes (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         notebook_id UUID REFERENCES notebooks(id) ON DELETE SET NULL,
         source_id UUID REFERENCES sources(id) ON DELETE SET NULL,
         title TEXT NOT NULL,
@@ -76,7 +76,7 @@ async function runStudyTablesMigration() {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS mind_maps (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         notebook_id UUID REFERENCES notebooks(id) ON DELETE SET NULL,
         source_id UUID REFERENCES sources(id) ON DELETE SET NULL,
         title TEXT NOT NULL,
@@ -93,7 +93,7 @@ async function runStudyTablesMigration() {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS infographics (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         notebook_id UUID REFERENCES notebooks(id) ON DELETE SET NULL,
         source_id UUID REFERENCES sources(id) ON DELETE SET NULL,
         title TEXT NOT NULL,

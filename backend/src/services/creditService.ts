@@ -96,7 +96,7 @@ export async function ensureFeatureCreditCostsTable(): Promise<void> {
         CREATE TABLE IF NOT EXISTS feature_credit_costs (
             feature_key TEXT PRIMARY KEY,
             credit_cost INTEGER NOT NULL CHECK (credit_cost >= 0),
-            updated_by UUID REFERENCES users(id) ON DELETE SET NULL,
+            updated_by TEXT REFERENCES users(id) ON DELETE SET NULL,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )

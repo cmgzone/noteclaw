@@ -12,7 +12,7 @@ export async function initializeFeatureTables() {
         await client.query(`
             CREATE TABLE IF NOT EXISTS ebook_projects (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                 notebook_id UUID REFERENCES notebooks(id) ON DELETE SET NULL,
                 title TEXT NOT NULL,
                 topic TEXT,
@@ -52,7 +52,7 @@ export async function initializeFeatureTables() {
         await client.query(`
             CREATE TABLE IF NOT EXISTS research_sessions (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                 notebook_id UUID REFERENCES notebooks(id) ON DELETE SET NULL,
                 query TEXT NOT NULL,
                 report TEXT,
@@ -74,7 +74,7 @@ export async function initializeFeatureTables() {
         await client.query(`
             CREATE TABLE IF NOT EXISTS tutor_sessions (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                 notebook_id UUID REFERENCES notebooks(id) ON DELETE SET NULL,
                 source_id UUID REFERENCES sources(id) ON DELETE SET NULL,
                 topic TEXT NOT NULL,
@@ -93,7 +93,7 @@ export async function initializeFeatureTables() {
         await client.query(`
             CREATE TABLE IF NOT EXISTS language_sessions (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                 target_language TEXT NOT NULL,
                 native_language TEXT DEFAULT 'English',
                 proficiency TEXT DEFAULT 'beginner',
@@ -108,7 +108,7 @@ export async function initializeFeatureTables() {
         await client.query(`
             CREATE TABLE IF NOT EXISTS stories (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                 title TEXT NOT NULL,
                 summary TEXT,
                 cover_image TEXT,
@@ -127,7 +127,7 @@ export async function initializeFeatureTables() {
         await client.query(`
             CREATE TABLE IF NOT EXISTS meal_plans (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                 week_start DATE NOT NULL,
                 days JSONB DEFAULT '[]',
                 created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -137,7 +137,7 @@ export async function initializeFeatureTables() {
 
             CREATE TABLE IF NOT EXISTS saved_meals (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                 name TEXT NOT NULL,
                 description TEXT,
                 meal_type TEXT,
@@ -158,7 +158,7 @@ export async function initializeFeatureTables() {
         await client.query(`
             CREATE TABLE IF NOT EXISTS audio_overviews (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                 notebook_id UUID REFERENCES notebooks(id) ON DELETE SET NULL,
                 title TEXT NOT NULL,
                 audio_path TEXT,

@@ -110,7 +110,7 @@ export async function initializeDatabase() {
         // Core tables - split into smaller chunks
         await client.query(`
             CREATE TABLE IF NOT EXISTS users (
-                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                id TEXT PRIMARY KEY DEFAULT gen_random_uuid(),
                 email TEXT UNIQUE NOT NULL,
                 display_name TEXT,
                 password_hash TEXT NOT NULL,
@@ -132,7 +132,7 @@ export async function initializeDatabase() {
         await client.query(`
             CREATE TABLE IF NOT EXISTS notebooks (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                 title TEXT NOT NULL,
                 description TEXT,
                 cover_image TEXT,
@@ -234,7 +234,7 @@ export async function initializeDatabase() {
         await client.query(`
             CREATE TABLE IF NOT EXISTS tags (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                 name TEXT NOT NULL,
                 color TEXT NOT NULL,
                 created_at TIMESTAMPTZ DEFAULT NOW()
@@ -289,7 +289,7 @@ export async function initializeDatabase() {
         await client.query(`
             CREATE TABLE IF NOT EXISTS user_subscriptions (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                 plan_id UUID REFERENCES subscription_plans(id),
                 current_credits INTEGER DEFAULT 0,
                 credits_consumed_this_month INTEGER DEFAULT 0,
@@ -305,7 +305,7 @@ export async function initializeDatabase() {
         await client.query(`
             CREATE TABLE IF NOT EXISTS credit_transactions (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                 amount INTEGER NOT NULL,
                 transaction_type TEXT NOT NULL,
                 description TEXT,
@@ -344,7 +344,7 @@ export async function initializeDatabase() {
                 premium_api_calls_per_day INTEGER NOT NULL DEFAULT 10000,
                 is_mcp_enabled BOOLEAN NOT NULL DEFAULT TRUE,
                 updated_at TIMESTAMPTZ DEFAULT NOW(),
-                updated_by UUID REFERENCES users(id) ON DELETE SET NULL
+                updated_by TEXT REFERENCES users(id) ON DELETE SET NULL
             );
 
             INSERT INTO mcp_settings (
@@ -360,7 +360,7 @@ export async function initializeDatabase() {
             ON CONFLICT (id) DO NOTHING;
 
             CREATE TABLE IF NOT EXISTS user_mcp_usage (
-                user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+                user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
                 sources_count INTEGER NOT NULL DEFAULT 0,
                 api_calls_today INTEGER NOT NULL DEFAULT 0,
                 last_api_call_date DATE DEFAULT CURRENT_DATE,
@@ -369,18 +369,18 @@ export async function initializeDatabase() {
             );
 
             CREATE TABLE IF NOT EXISTS mcp_user_limits (
-                user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+                user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
                 sources_limit_override INTEGER,
                 tokens_limit_override INTEGER,
                 api_calls_per_day_override INTEGER,
                 is_mcp_enabled_override BOOLEAN,
                 updated_at TIMESTAMPTZ DEFAULT NOW(),
-                updated_by UUID REFERENCES users(id) ON DELETE SET NULL
+                updated_by TEXT REFERENCES users(id) ON DELETE SET NULL
             );
 
             CREATE TABLE IF NOT EXISTS mcp_user_settings (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                user_id UUID NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+                user_id TEXT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
                 code_analysis_model_id TEXT,
                 code_analysis_enabled BOOLEAN DEFAULT TRUE,
                 created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -506,10 +506,10 @@ export async function initializeDatabase() {
                 updated_at TIMESTAMPTZ DEFAULT NOW()
             );
 
-            CREATE TABLE IF NOT EXISTS feature_credit_costs (
+CREATE TABLE IF NOT EXISTS feature_credit_costs (
                 feature_key TEXT PRIMARY KEY,
                 credit_cost INTEGER NOT NULL CHECK (credit_cost >= 0),
-                updated_by UUID REFERENCES users(id) ON DELETE SET NULL,
+                updated_by TEXT REFERENCES users(id) ON DELETE SET NULL,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             );
@@ -538,7 +538,7 @@ export async function initializeDatabase() {
         await client.query(`
             CREATE TABLE IF NOT EXISTS research_sessions (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                 notebook_id UUID REFERENCES notebooks(id) ON DELETE SET NULL,
                 query TEXT NOT NULL,
                 report TEXT,
@@ -566,7 +566,7 @@ export async function initializeDatabase() {
 
             CREATE TABLE IF NOT EXISTS research_jobs (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                 query TEXT NOT NULL,
                 config JSONB NOT NULL DEFAULT '{}',
                 status VARCHAR(20) NOT NULL DEFAULT 'pending',
@@ -598,7 +598,7 @@ export async function initializeDatabase() {
         await client.query(`
             CREATE TABLE IF NOT EXISTS media_generations (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                 kind VARCHAR(20) NOT NULL CHECK (kind IN ('image', 'video')),
                 provider TEXT NOT NULL,
                 model TEXT NOT NULL,
@@ -629,7 +629,7 @@ export async function initializeDatabase() {
         await client.query(`
             CREATE TABLE IF NOT EXISTS user_stats (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                user_id UUID UNIQUE NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                user_id TEXT UNIQUE NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                 total_xp INTEGER DEFAULT 0,
                 level INTEGER DEFAULT 1,
                 current_streak INTEGER DEFAULT 0,
@@ -648,7 +648,7 @@ export async function initializeDatabase() {
         await client.query(`
             CREATE TABLE IF NOT EXISTS achievements (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                 achievement_id TEXT NOT NULL,
                 current_value INTEGER DEFAULT 0,
                 is_unlocked BOOLEAN DEFAULT false,
@@ -661,7 +661,7 @@ export async function initializeDatabase() {
         await client.query(`
             CREATE TABLE IF NOT EXISTS daily_challenges (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                 type TEXT NOT NULL,
                 title TEXT NOT NULL,
                 description TEXT,
@@ -679,7 +679,7 @@ export async function initializeDatabase() {
         await client.query(`
             CREATE TABLE IF NOT EXISTS flashcard_decks (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                 notebook_id UUID REFERENCES notebooks(id) ON DELETE SET NULL,
                 source_id UUID REFERENCES sources(id) ON DELETE SET NULL,
                 title TEXT NOT NULL,
@@ -706,7 +706,7 @@ export async function initializeDatabase() {
         await client.query(`
             CREATE TABLE IF NOT EXISTS quizzes (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                 notebook_id UUID REFERENCES notebooks(id) ON DELETE SET NULL,
                 source_id UUID REFERENCES sources(id) ON DELETE SET NULL,
                 title TEXT NOT NULL,
@@ -734,7 +734,7 @@ export async function initializeDatabase() {
         await client.query(`
             CREATE TABLE IF NOT EXISTS mind_maps (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                 notebook_id UUID REFERENCES notebooks(id) ON DELETE SET NULL,
                 source_id UUID REFERENCES sources(id) ON DELETE SET NULL,
                 title TEXT NOT NULL,
@@ -746,7 +746,7 @@ export async function initializeDatabase() {
 
             CREATE TABLE IF NOT EXISTS infographics (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                 notebook_id UUID REFERENCES notebooks(id) ON DELETE SET NULL,
                 source_id UUID REFERENCES sources(id) ON DELETE SET NULL,
                 title TEXT NOT NULL,

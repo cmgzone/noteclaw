@@ -8,7 +8,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- Users table
 CREATE TABLE IF NOT EXISTS users (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id TEXT PRIMARY KEY DEFAULT gen_random_uuid(),
     email TEXT UNIQUE NOT NULL,
     display_name TEXT,
     password_hash TEXT NOT NULL,
@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS users (
 -- Notebooks table
 CREATE TABLE IF NOT EXISTS notebooks (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     title TEXT NOT NULL,
     description TEXT,
     cover_image TEXT,
@@ -73,7 +73,7 @@ CREATE TABLE IF NOT EXISTS chunks (
 -- Tags table
 CREATE TABLE IF NOT EXISTS tags (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
     color TEXT NOT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW()
@@ -109,7 +109,7 @@ CREATE TABLE IF NOT EXISTS subscription_plans (
 
 CREATE TABLE IF NOT EXISTS user_subscriptions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     plan_id UUID REFERENCES subscription_plans(id),
     current_credits INTEGER DEFAULT 0,
     credits_consumed_this_month INTEGER DEFAULT 0,
@@ -123,7 +123,7 @@ CREATE TABLE IF NOT EXISTS user_subscriptions (
 
 CREATE TABLE IF NOT EXISTS credit_transactions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     amount INTEGER NOT NULL,
     transaction_type TEXT NOT NULL,
     description TEXT,
@@ -149,7 +149,7 @@ CREATE TABLE IF NOT EXISTS credit_packages (
 
 CREATE TABLE IF NOT EXISTS user_stats (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID UNIQUE NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id TEXT UNIQUE NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     total_xp INTEGER DEFAULT 0,
     level INTEGER DEFAULT 1,
     current_streak INTEGER DEFAULT 0,
@@ -166,7 +166,7 @@ CREATE TABLE IF NOT EXISTS user_stats (
 
 CREATE TABLE IF NOT EXISTS achievements (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     achievement_id TEXT NOT NULL,
     current_value INTEGER DEFAULT 0,
     is_unlocked BOOLEAN DEFAULT false,
@@ -177,7 +177,7 @@ CREATE TABLE IF NOT EXISTS achievements (
 
 CREATE TABLE IF NOT EXISTS daily_challenges (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     type TEXT NOT NULL,
     title TEXT NOT NULL,
     description TEXT,
@@ -194,7 +194,7 @@ CREATE TABLE IF NOT EXISTS daily_challenges (
 
 CREATE TABLE IF NOT EXISTS flashcard_decks (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     notebook_id UUID REFERENCES notebooks(id) ON DELETE SET NULL,
     source_id UUID REFERENCES sources(id) ON DELETE SET NULL,
     title TEXT NOT NULL,
@@ -217,7 +217,7 @@ CREATE TABLE IF NOT EXISTS flashcards (
 
 CREATE TABLE IF NOT EXISTS quizzes (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     notebook_id UUID REFERENCES notebooks(id) ON DELETE SET NULL,
     source_id UUID REFERENCES sources(id) ON DELETE SET NULL,
     title TEXT NOT NULL,
@@ -241,7 +241,7 @@ CREATE TABLE IF NOT EXISTS quiz_questions (
 
 CREATE TABLE IF NOT EXISTS mind_maps (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     notebook_id UUID REFERENCES notebooks(id) ON DELETE SET NULL,
     source_id UUID REFERENCES sources(id) ON DELETE SET NULL,
     title TEXT NOT NULL,
@@ -253,7 +253,7 @@ CREATE TABLE IF NOT EXISTS mind_maps (
 
 CREATE TABLE IF NOT EXISTS infographics (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     notebook_id UUID REFERENCES notebooks(id) ON DELETE SET NULL,
     source_id UUID REFERENCES sources(id) ON DELETE SET NULL,
     title TEXT NOT NULL,
@@ -268,7 +268,7 @@ CREATE TABLE IF NOT EXISTS infographics (
 -- Ebook projects
 CREATE TABLE IF NOT EXISTS ebook_projects (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     notebook_id UUID REFERENCES notebooks(id) ON DELETE SET NULL,
     title TEXT NOT NULL,
     topic TEXT,
@@ -299,7 +299,7 @@ CREATE TABLE IF NOT EXISTS ebook_chapters (
 -- Research sessions
 CREATE TABLE IF NOT EXISTS research_sessions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     notebook_id UUID REFERENCES notebooks(id) ON DELETE SET NULL,
     query TEXT NOT NULL,
     report TEXT,
@@ -319,7 +319,7 @@ CREATE TABLE IF NOT EXISTS research_sources (
 -- Tutor sessions
 CREATE TABLE IF NOT EXISTS tutor_sessions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     notebook_id UUID REFERENCES notebooks(id) ON DELETE SET NULL,
     source_id UUID REFERENCES sources(id) ON DELETE SET NULL,
     topic TEXT NOT NULL,
@@ -336,7 +336,7 @@ CREATE TABLE IF NOT EXISTS tutor_sessions (
 -- Language learning sessions
 CREATE TABLE IF NOT EXISTS language_sessions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     target_language TEXT NOT NULL,
     native_language TEXT DEFAULT 'English',
     proficiency TEXT DEFAULT 'beginner',
@@ -349,7 +349,7 @@ CREATE TABLE IF NOT EXISTS language_sessions (
 -- Stories
 CREATE TABLE IF NOT EXISTS stories (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     title TEXT NOT NULL,
     summary TEXT,
     cover_image TEXT,
@@ -366,7 +366,7 @@ CREATE TABLE IF NOT EXISTS stories (
 -- Meal planner
 CREATE TABLE IF NOT EXISTS meal_plans (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     week_start DATE NOT NULL,
     days JSONB DEFAULT '[]',
     created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -376,7 +376,7 @@ CREATE TABLE IF NOT EXISTS meal_plans (
 
 CREATE TABLE IF NOT EXISTS saved_meals (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
     description TEXT,
     meal_type TEXT,
@@ -395,7 +395,7 @@ CREATE TABLE IF NOT EXISTS saved_meals (
 -- Audio overviews
 CREATE TABLE IF NOT EXISTS audio_overviews (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     notebook_id UUID REFERENCES notebooks(id) ON DELETE SET NULL,
     title TEXT NOT NULL,
     audio_path TEXT,

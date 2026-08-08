@@ -93,13 +93,13 @@ export async function ensureGooglePlayTables(
             await query(`
                 CREATE TABLE IF NOT EXISTS google_play_purchases (
                     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                     purchase_token TEXT NOT NULL UNIQUE,
                     product_id TEXT NOT NULL,
                     product_type TEXT NOT NULL,
                     package_name TEXT NOT NULL,
                     internal_plan_id UUID REFERENCES subscription_plans(id),
-                    internal_package_id UUID REFERENCES credit_packages(id),
+                    internal_package_id TEXT REFERENCES credit_packages(id),
                     order_id TEXT,
                     latest_expiry_time TIMESTAMPTZ,
                     last_granted_order_id TEXT,

@@ -617,7 +617,7 @@ router.get('/seed-defaults', async (req: Request, res: Response) => {
 
             CREATE TABLE IF NOT EXISTS user_subscriptions (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                 plan_id UUID REFERENCES subscription_plans(id),
                 current_credits INTEGER DEFAULT 0,
                 credits_consumed_this_month INTEGER DEFAULT 0,
@@ -631,7 +631,7 @@ router.get('/seed-defaults', async (req: Request, res: Response) => {
 
             CREATE TABLE IF NOT EXISTS credit_transactions (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                 amount INTEGER NOT NULL,
                 transaction_type TEXT NOT NULL,
                 description TEXT,

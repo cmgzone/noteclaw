@@ -8,7 +8,7 @@ async function ensureTables() {
         // Credit packages table
         await client.query(`
             CREATE TABLE IF NOT EXISTS credit_packages (
-                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                id TEXT PRIMARY KEY DEFAULT gen_random_uuid(),
                 name TEXT NOT NULL,
                 credits INTEGER NOT NULL,
                 price DECIMAL NOT NULL,
@@ -41,7 +41,7 @@ async function ensureTables() {
         await client.query(`
             CREATE TABLE IF NOT EXISTS user_subscriptions (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                user_id UUID NOT NULL,
+                user_id TEXT NOT NULL,
                 plan_id UUID REFERENCES subscription_plans(id),
                 current_credits INTEGER DEFAULT 0,
                 credits_consumed_this_month INTEGER DEFAULT 0,
@@ -59,7 +59,7 @@ async function ensureTables() {
         await client.query(`
             CREATE TABLE IF NOT EXISTS credit_transactions (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                user_id UUID NOT NULL,
+                user_id TEXT NOT NULL,
                 amount INTEGER NOT NULL,
                 transaction_type TEXT NOT NULL,
                 description TEXT,

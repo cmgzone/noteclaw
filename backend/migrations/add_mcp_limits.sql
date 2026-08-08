@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS mcp_settings (
   premium_api_calls_per_day INTEGER NOT NULL DEFAULT 10000,
   is_mcp_enabled BOOLEAN NOT NULL DEFAULT true,
   updated_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_by UUID REFERENCES users(id) ON DELETE SET NULL
+  updated_by TEXT REFERENCES users(id) ON DELETE SET NULL
 );
 
 -- Insert default settings
@@ -24,7 +24,7 @@ ON CONFLICT (id) DO NOTHING;
 -- ==================== USER MCP USAGE TABLE ====================
 -- Track per-user MCP usage for quota enforcement
 CREATE TABLE IF NOT EXISTS user_mcp_usage (
-  user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
   sources_count INTEGER NOT NULL DEFAULT 0,
   api_calls_today INTEGER NOT NULL DEFAULT 0,
   last_api_call_date DATE DEFAULT CURRENT_DATE,
